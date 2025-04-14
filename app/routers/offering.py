@@ -1,16 +1,23 @@
 from fastapi import APIRouter
-from app.schemas import Offering
+from pydantic import BaseModel
+from typing import List
 
 router = APIRouter()
 
-# In-memory store (you'll replace with a database later)
-offerings = []
+class Offering(BaseModel):
+    title: str
+    description: str
+    benefits: List[str]
+    price: float
 
-@router.post("/offering/")
+offerings: List[Offering] = []
+
+@router.post("/offerings/")
 def create_offering(offering: Offering):
     offerings.append(offering)
-    return {"message": "Offering created", "offering": offering}
+    return {"message": "Offering created", "data": offering.model_dump()}
 
-@router.get("/offering/")
-def get_all_offerings():
-    return offerings
+@router.get("/offerings/")
+def get_offerings():
+    return [o.model_dump() for o in offerings]
+
