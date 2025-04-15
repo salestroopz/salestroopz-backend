@@ -37,3 +37,5 @@ app.include_router(emailcampaign.router, prefix="/email", tags=["Email Campaign 
 from app.routes import insidesales
 app.include_router(insidesales.router, prefix="/sales", tags=["Inside Sales Agent"])
 
+from app.routes import scheduler
+app.include_router(scheduler.router, prefix="/campaigns", tags=["Email Scheduler Agent"])
