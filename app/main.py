@@ -39,3 +39,18 @@ app.include_router(insidesales.router, prefix="/sales", tags=["Inside Sales Agen
 
 from app.routes import scheduler
 app.include_router(scheduler.router, prefix="/campaigns", tags=["Email Scheduler Agent"])
+
+from fastapi import FastAPI
+from app.routes import icp, offering, crm  # 👈 import crm from routes
+
+app = FastAPI()
+
+@app.get("/")
+def read_root():
+    return {"status": "Salestroopz backend is live!"}
+
+# Include Routers
+app.include_router(icp.router, prefix="/icp", tags=["ICP"])
+app.include_router(offering.router, prefix="/offering", tags=["Offering"])
+app.include_router(crm.router, prefix="/crm", tags=["CRM"])  # 👈 this enables /crm
+
