@@ -1,25 +1,12 @@
 # app/routers/crm.py
 
 from fastapi import APIRouter
-from pydantic import BaseModel
-from typing import Optional
-from app.agents import crmagent
+from typing import List
+from app.agents.crm import CRMConnectorAgent, LeadData
 
-router = APIRouter(prefix="/crm", tags=["CRM"])
+router = APIRouter()
 
-class LeadUpdateRequest(BaseModel):
-    email: str
-    status: str
-    notes: Optional[str] = ""
-
-@router.post("/update")
-def update_lead(lead: LeadUpdateRequest):
-    return crmagent.update_lead_status(lead.email, lead.status, lead.notes)
-
-@router.get("/get")
-def get_lead(email: str):
-    return crmagent.get_lead_status(email)
-
-@router.get("/all")
-def list_all():
-    return crmagent.list_all_leads()
+@router.post("/push-leads")
+def push_leads_to_crm(leads: List[LeadData]):
+    crm_agent = CRMConnectorAgent()
+    return crm_agent.push_leads(leads)
