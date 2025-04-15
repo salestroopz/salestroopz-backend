@@ -1,5 +1,5 @@
 # app/agents/datalist.py
-
+from typing import Optional
 from typing import List
 from pydantic import BaseModel
 import random
