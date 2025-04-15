@@ -14,3 +14,11 @@ app.include_router(icp.router, prefix="/icp", tags=["ICP"])
 from app.routers import offering
 
 app.include_router(offering.router, prefix="/api", tags=["Offering"])
+# Add to your FastAPI app in main.py
+from app.agents.datalist import ICPModel, DataListBuilderAgent
+
+@app.post("/generate-prospects")
+def generate_prospects(icp: ICPModel):
+    agent = DataListBuilderAgent()
+    return agent.generate_prospects(icp)
+
