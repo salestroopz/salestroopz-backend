@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from app.routers import icp
+from app.routes import crm
 from app.config import Settings
 
 app = FastAPI(title="Salestroopz Backend", version="0.1.0")
