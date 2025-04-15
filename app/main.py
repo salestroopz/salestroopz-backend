@@ -32,5 +32,8 @@ from app.routes import agents  # add this
 app.include_router(agents.router)  # and this
 
 from app.routes import emailcampaign
-
 app.include_router(emailcampaign.router, prefix="/email", tags=["Email Campaign Manager"])
+
+from app.routes import insidesales
+app.include_router(insidesales.router, prefix="/sales", tags=["Inside Sales Agent"])
+
