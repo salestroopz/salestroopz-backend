@@ -22,3 +22,9 @@ def generate_prospects(icp: ICPModel):
     agent = DataListBuilderAgent()
     return agent.generate_prospects(icp)
 
+from fastapi import FastAPI
+from app.agents import datalist  # make sure import path is correct
+
+@app.post("/generate-prospects")
+def generate_prospects(data: datalist.ProspectRequest):
+    return datalist.generate_prospect_data(data)
