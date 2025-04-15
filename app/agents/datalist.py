@@ -4,6 +4,11 @@ from typing import List
 from pydantic import BaseModel
 import random
 
+class ProspectRequest(BaseModel):
+    industry: str
+    company_size: Optional[str] = None
+    title_keywords: Optional[list[str]] = None
+
 class ICPModel(BaseModel):
     industry: str
     company_size: str
