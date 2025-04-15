@@ -24,5 +24,5 @@ Let me know if you'd be open to a quick call!
 
 Best,  
 SalesTroopz.ai
-"""
+
     return {"subject": subject.strip(), "body": body.strip()}
