@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.routers import icp
+from app.routers import icp, offering 
 from app.routes import crm
 from app.config import Settings
 
