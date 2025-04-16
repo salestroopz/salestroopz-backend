@@ -3,7 +3,7 @@ from app.config import Settings
 
 # Import routers from the correct folders
 from app.routers import icp, offering
-from app.routes import crm, agents, emailcampaign, insidesales, scheduler, leadenrichment
+from app.routes import crm, agents, emailcampaign, insidesales, scheduler, leadenrichment, leadenrichment, icpmatch
 
 # If you need datalist agent separately
 from app.agents import datalist  # for direct calls if needed
@@ -24,3 +24,4 @@ app.include_router(emailcampaign.router, prefix="/email", tags=["Email Campaign 
 app.include_router(insidesales.router, prefix="/sales", tags=["Inside Sales Agent"])
 app.include_router(scheduler.router, prefix="/campaigns", tags=["Email Scheduler Agent"])
 app.include_router(leadenrichment.router, prefix="/leads", tags=["Lead Enrichment Agent"])
+app.include_router(icpmatch.router)
