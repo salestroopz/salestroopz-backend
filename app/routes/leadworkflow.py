@@ -2,7 +2,7 @@ from fastapi import APIRouter
 from typing import List
 from app.schemas import LeadData
 from app.agents.leadworkflow import LeadWorkflowAgent
-from db.database import get_all_leads
+from app.db.database import get_all_leads
 
 router = APIRouter(prefix="/lead", tags=["Lead Workflow"])
 agent = LeadWorkflowAgent()
