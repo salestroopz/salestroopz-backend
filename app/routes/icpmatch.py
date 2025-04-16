@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from typing import List
 from app.schemas import LeadData
-from agents.icp_matcher import ICPMatcherAgent
+from app.agents.icp_matcher import ICPMatcherAgent
 
 router = APIRouter(prefix="/lead", tags=["ICP Matching"])
 agent = ICPMatcherAgent()
