@@ -27,3 +27,10 @@ class LeadEnrichmentResponse(BaseModel):
     company_size: Optional[str] = None
     industry: Optional[str] = None
     location: Optional[str] = None
+
+class LeadData(BaseModel):
+    name: str
+    email: str
+    company: str
+    title: str
+    source: str
