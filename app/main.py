@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from app.config import Settings
+from app.routes import workflow
 
 # Import routers from the correct folders
 from app.routers import icp, offering
@@ -34,3 +35,4 @@ app.include_router(scheduler.router, prefix="/campaigns", tags=["Email Scheduler
 app.include_router(leadenrichment.router, prefix="/leads", tags=["Lead Enrichment Agent"])
 app.include_router(icpmatch.router)
 app.include_router(leadworkflow.router)
+app.include_router(workflow.router, prefix="/workflow", tags=["Lead Workflow"])
