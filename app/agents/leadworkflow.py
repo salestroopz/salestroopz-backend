@@ -2,7 +2,7 @@ from typing import List
 from app.schemas import LeadData
 from app.agents.leadenrichment import LeadEnrichmentAgent
 from app.agents.icp_matcher import ICPMatcherAgent
-from app.agents.crm_sync import CRMConnectorAgent
+from app.agents.crmagent import CRMConnectorAgent
 from db.database import save_lead_result
 
 def process_leads(self, leads: List[LeadData]):
