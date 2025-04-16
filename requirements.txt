@@ -2,3 +2,4 @@ fastapi
 uvicorn[standard]
 openai
 pydantic-settings>=2.0.0
+tinydb==4.8.0
