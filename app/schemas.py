@@ -10,3 +10,20 @@ class ICPRequest(BaseModel):
 class ICPResponse(BaseModel):
     message: str
     icp_summary: str
+
+
+class LeadEnrichmentRequest(BaseModel):
+    name: str
+    company: str
+    title: Optional[str] = None
+    email: Optional[str] = None
+
+class LeadEnrichmentResponse(BaseModel):
+    name: str
+    company: str
+    title: Optional[str] = None
+    email: Optional[str] = None
+    linkedin_profile: Optional[str] = None
+    company_size: Optional[str] = None
+    industry: Optional[str] = None
+    location: Optional[str] = None
