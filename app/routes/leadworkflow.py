@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from typing import List
-from schemas import LeadData
+from app.schemas import LeadData
 from agents.leadworkflow import LeadWorkflowAgent
 
 router = APIRouter(prefix="/lead", tags=["Lead Workflow"])
