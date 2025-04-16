@@ -1,4 +1,5 @@
-from .schemas import LeadEnrichmentRequest, LeadEnrichmentResponse
+from app.schemas import LeadEnrichmentRequest, LeadEnrichmentResponse
+
 
 class LeadEnrichmentAgent:
     def enrich_lead(self, lead: LeadEnrichmentRequest) -> LeadEnrichmentResponse:
