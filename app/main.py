@@ -8,6 +8,14 @@ from app.routes import crm, agents, emailcampaign, insidesales, scheduler, leade
 # If you need datalist agent separately
 from app.agents import datalist  # for direct calls if needed
 
+from app.agents.crmagent import CRMConnectorAgent
+
+# Create a single instance to be used throughout the app
+crm_agent_instance = CRMConnectorAgent()
+
+# Pass crm_agent_instance to other agents/functions that need it
+# (e.g., pass it to the LeadWorkflowAgent during its initialization)
+
 app = FastAPI(title="Salestroopz Backend", version="0.1.0")
 settings = Settings()
 
