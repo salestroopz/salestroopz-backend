@@ -1,5 +1,5 @@
 from typing import List
-from schemas import LeadData
+from app.schemas import LeadData
 from agents.leadenrichment import LeadEnrichmentAgent
 from agents.icp_matcher import ICPMatcherAgent
 
