@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.routes.schemas import LeadEnrichmentRequest
+from app.schemas import LeadEnrichmentRequest
 from app.agents.leadenrichment import LeadEnrichmentAgent
 
 router = APIRouter()
