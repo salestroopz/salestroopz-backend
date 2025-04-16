@@ -1,4 +1,4 @@
-from app.routes.schemas import LeadEnrichmentRequest, LeadEnrichmentResponse
+from .schemas import LeadEnrichmentRequest, LeadEnrichmentResponse
 
 class LeadEnrichmentAgent:
     def enrich_lead(self, lead: LeadEnrichmentRequest) -> LeadEnrichmentResponse:
