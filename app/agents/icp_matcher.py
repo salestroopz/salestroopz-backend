@@ -1,5 +1,5 @@
 from typing import List, Dict
-from schemas import LeadData
+from app.schemas import LeadData
 
 class ICPMatcherAgent:
     def __init__(self):
