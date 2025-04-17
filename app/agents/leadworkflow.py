@@ -15,7 +15,7 @@ class LeadWorkflowAgent:
         self.crm_agent = CRMConnectorAgent()
         self.appointment_agent = AppointmentAgent()
 
-    def process_leads(self, leads: List[LeadData]):
+    def process_leads(self, leads: List[LeadInput]):
         logger.info("Starting full lead generation workflow")
 
         # Step 1: Enrich the leads
