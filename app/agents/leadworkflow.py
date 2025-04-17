@@ -5,13 +5,14 @@ from app.agents.icp_matcher import ICPMatcherAgent
 from app.agents.crmagent import CRMConnectorAgent
 from app.db.database import save_lead_result
 from app.utils.logger import logger
-
+from app.agents.appointment import AppointmentAgent
 
 class LeadWorkflowAgent:
     def __init__(self):
         self.enrichment_agent = LeadEnrichmentAgent()
         self.matcher_agent = ICPMatcherAgent()
         self.crm_agent = CRMConnectorAgent()
+        self.appointment_agent = AppointmentAgent()
 
     def process_leads(self, leads: List[LeadData]):
         logger.info("Starting full lead generation workflow")
@@ -33,7 +34,11 @@ class LeadWorkflowAgent:
         crm_response = self.crm_agent.push_leads(qualified)
         logger.info("Leads successfully pushed to CRM")
 
-        # Step 5: Save each lead result
+        # Step 5: Confirm appointments
+        appointment_statuses = self.appointment_agent.confirm_appointments(qualified)
+        logger.info(f"Confirmed {len(appointment_statuses)} appointments.")
+
+        # Step 6: Save each lead result
         for lead, score in matched_results:
             lead_dict = lead.dict()
             lead_dict["match_score"] = score
@@ -45,6 +50,7 @@ class LeadWorkflowAgent:
         return {
             "qualified_count": len(qualified),
             "crm_status": crm_response,
+            "appointments": [status.dict() for status in appointment_statuses],
             "detailed_scores": [
                 {"lead": lead.dict(), "score": score} for lead, score in matched_results
             ]
