@@ -7,6 +7,6 @@ router = APIRouter(prefix="/lead", tags=["ICP Matching"])
 agent = ICPMatcherAgent()
 
 @router.post("/match")
-async def match_leads_to_icp(leads: List[LeadData]):
+async def match_leads_to_icp(leads: List[LeadInput]):
     scored_leads = agent.match_leads(leads)
     return {"status": "success", "scored_leads": scored_leads}
