@@ -34,3 +34,8 @@ class LeadData(BaseModel):
     company: str
     title: str
     source: str
+
+class AppointmentStatus(BaseModel):
+    lead_email: str
+    status: str  # e.g., "confirmed", "pending", "failed"
+    confirmation_notes: Optional[str] = None
