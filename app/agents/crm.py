@@ -1,5 +1,7 @@
 from typing import List
 from pydantic import BaseModel
+from app.utils.logger import logger
+
 
 class LeadData(BaseModel):
     name: str
@@ -17,3 +19,5 @@ class CRMConnectorAgent:
         for lead in leads:
             print(f"Pushing {lead.name} to {self.crm_provider}...")
         return {"status": "success", "message": f"{len(leads)} leads pushed to {self.crm_provider}"}
+
+logger.info(f"Pushing {len(leads)} leads to {self.crm_provider}")
