@@ -83,30 +83,21 @@ def save_lead_result(lead: dict):
 
 # --- ADD THIS FUNCTION ---
 def get_all_leads() -> list[dict]:
-    """Fetches all leads from the database and returns them as a list of dictionaries."""
     leads = []
     conn = None
     try:
         conn = get_connection()
-        # Optional: Make the connection return dictionaries directly
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-
-        cursor.execute("SELECT * FROM leads ORDER BY id DESC") # Fetch all columns
-        # fetchall() returns a list of Row objects (if row_factory is set) or tuples
+        cursor.execute("SELECT * FROM leads ORDER BY id DESC")
         results = cursor.fetchall()
-
-        # Convert Row objects (or tuples) to standard dictionaries
         for row in results:
-            leads.append(dict(row)) # Convert each row to a dictionary
-
+            leads.append(dict(row))
     except sqlite3.Error as e:
         print(f"Database error fetching leads: {e}")
     finally:
-        if conn:
+        # Correct indent: One level deeper than 'finally'
+        if conn: # Line 111 (or wherever it is now)
+            # Correct indent: One level deeper than 'if'
             conn.close()
     return leads
-        # Indentation fixed: close belongs inside the function block
-        # Make sure connection exists before closing
-        if conn:
-            conn.close()
