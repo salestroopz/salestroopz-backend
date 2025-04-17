@@ -1,5 +1,5 @@
 from typing import List, Dict
-from app.schemas import LeadData
+from app.schemas import LeadInput
 
 class ICPMatcherAgent:
     def __init__(self):
@@ -8,7 +8,7 @@ class ICPMatcherAgent:
             "min_company_size": 50  # Simulated
         }
 
-    def match_leads(self, leads: List[LeadData]) -> List[Dict]:
+    def match_leads(self, leads: List[LeadInput]) -> List[Dict]:
         scored_leads = []
 
         for lead in leads:
