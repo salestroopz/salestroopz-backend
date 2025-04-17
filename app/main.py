@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from app.config import Settings
 from app.routes import workflow
+from app.db.database import initialize_db
 
 # Import routers from the correct folders
 from app.routers import icp, offering
