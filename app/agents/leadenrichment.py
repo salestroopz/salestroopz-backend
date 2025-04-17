@@ -1,4 +1,5 @@
 from app.schemas import LeadEnrichmentRequest, LeadEnrichmentResponse
+from app.utils.logger import logger
 
 
 class LeadEnrichmentAgent:
@@ -13,5 +14,9 @@ class LeadEnrichmentAgent:
             "company_size": "51-200 employees",
             "industry": "SaaS",
             "location": "San Francisco, CA"
-        }
+
+                    }
+        logger.info(f"Enriching {len(leads)} leads...")
+        logger.error("Error enriching leads", exc_info=True)
         return LeadEnrichmentResponse(**enriched_data)
+
