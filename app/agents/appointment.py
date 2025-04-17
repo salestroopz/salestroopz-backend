@@ -3,7 +3,7 @@ from app.utils.logger import logger
 from typing import List
 
 class AppointmentAgent:
-    def confirm_appointments(self, leads: List[LeadData]) -> List[AppointmentStatus]:
+    def confirm_appointments(self, leads: List[LeadInput]) -> List[AppointmentStatus]:
         confirmed = []
         for lead in leads:
             logger.info(f"Confirming appointment for {lead.name} at {lead.company}")
