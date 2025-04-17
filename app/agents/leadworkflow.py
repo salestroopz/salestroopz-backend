@@ -4,6 +4,7 @@ from app.agents.leadenrichment import LeadEnrichmentAgent
 from app.agents.icp_matcher import ICPMatcherAgent
 from app.agents.crmagent import CRMConnectorAgent
 from app.db.database import save_lead_result
+from app.utils.logger import logger
 
 def process_leads(self, leads: List[LeadData]):
     results = []
@@ -56,3 +57,21 @@ def process_leads(self, leads: List[LeadData]):
         save_lead_result(lead_dict)
         results.append(lead_dict)
     return results
+
+logger.info("Starting full lead generation workflow")
+
+# After ICP Matching
+logger.info(f"Matched leads: {len(matched_leads)}")
+
+# After Lead Enrichment
+logger.info("Lead enrichment completed")
+
+# Before pushing to CRM
+logger.info("Pushing leads to CRM...")
+
+# After Email Campaign
+logger.info("Email campaign initiated")
+
+# At the end
+logger.info("Workflow completed successfully")
+
