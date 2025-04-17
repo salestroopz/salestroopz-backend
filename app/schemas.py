@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, List, Dict, Any, Literal # Added types we need
+from enum import Enum #
 
 # --- Existing Schemas (from your image) ---
 
@@ -74,3 +75,12 @@ class WorkflowInitiateRequest(BaseModel):
     icp: ICPDefinition # Use the ICP details collected by the chatbot
     source_type: Literal["file_upload", "apollo", "crm", "manual_entry"] # Define allowed source types
     source_details: Optional[Dict[str, Any]] = Field(None, description="Additional details specific to the source type (e.g., filename, search ID)")
+
+class AppointmentStatus(str, Enum):
+    """Enumeration for possible appointment statuses."""
+    PENDING = "pending"           # Initial state or waiting for confirmation
+    CONFIRMED = "confirmed"       # Appointment details agreed upon
+    SCHEDULED = "scheduled"       # Added to calendar / specific time set
+    CANCELLED = "cancelled"       # Appointment cancelled
+    COMPLETED = "completed"       # Appointment took place
+    NO_SHOW = "no_show"           # Scheduled but attendee did not show up
