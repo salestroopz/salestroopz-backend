@@ -1,4 +1,4 @@
-from app.schemas import LeadData, AppointmentStatus
+from app.schemas import LeadInput, AppointmentStatus
 from app.utils.logger import logger
 from typing import List
 
