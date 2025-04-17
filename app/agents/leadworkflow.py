@@ -3,9 +3,10 @@ from app.schemas import LeadData
 from app.agents.leadenrichment import LeadEnrichmentAgent
 from app.agents.icp_matcher import ICPMatcherAgent
 from app.agents.crmagent import CRMConnectorAgent
-from app.db.database import save_lead_result
 from app.utils.logger import logger
 from app.agents.appointment import AppointmentAgent
+from app.db.sqlhelper import save_lead_to_db
+
 
 class LeadWorkflowAgent:
     def __init__(self):
@@ -43,7 +44,7 @@ class LeadWorkflowAgent:
             lead_dict = lead.dict()
             lead_dict["match_score"] = score
             lead_dict["qualified"] = score >= 0.7
-            save_lead_result(lead_dict)
+            save_lead_to_db(lead_dict)
 
         logger.info("Workflow completed successfully")
 
