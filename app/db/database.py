@@ -24,10 +24,7 @@ def initialize_db():
         appointment_confirmed INTEGER DEFAULT 0
     )
     """)
- conn.commit()
-    conn.close()
-
-    
+  
     def save_lead_result(lead: dict):
     conn = get_connection()
     cursor = conn.cursor()
