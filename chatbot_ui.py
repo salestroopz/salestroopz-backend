@@ -52,29 +52,33 @@ def reset_chat():
     st.session_state.icp_details = {}
     st.session_state.lead_source = None
     st.session_state.processing_initiated = False
-    # Only add the initial greeting message here
+    # Add the initial greeting message
     add_message("assistant", "Hi! I'm here to help you set up your SalesTroopz campaign. Let's define your Ideal Customer Profile (ICP). (You can type 'restart' anytime to start over).")
-    st.session_state.stage = "ask_industry" # Immediately set stage for the first question
+    # Set stage ready for the first question
+    st.session_state.stage = "ask_industry"
+    # --- ADD RERUN HERE ---
+    # Force Streamlit to rerun the script immediately. This ensures the
+    # prompt display logic below runs and shows the first question.
+    st.rerun()
+
 
 # --- Initialize Session State ---
 if "messages" not in st.session_state:
-    reset_chat() # Initialize state properly
+    reset_chat() # Initialize state properly (will now trigger a rerun)
 
 # --- Display Chat History ---
 st.title("SalesTroopz Agent Setup")
-# Use st.container() for potentially better control over chat message rendering order? Maybe not needed yet.
-for message in st.session_state.get("messages", []): # Use .get for safety
+for message in st.session_state.get("messages", []):
     with st.chat_message(message["role"]):
-        st.markdown(message["content"].replace("\n", "  \n")) # Ensure markdown newlines render
+        st.markdown(message["content"].replace("\n", "  \n"))
 
-# --- Display Current Prompt Logic (Refined) ---
+# --- Display Current Prompt Logic (Should now work correctly on first load) ---
 assistant_prompts = {
     "ask_industry": "What industry are you targeting?",
+    # ... (rest of prompts remain the same) ...
     "ask_title": "Got it. Now, what specific job title(s) are you looking for?",
     "ask_company_size": "Okay. What company size are you targeting? (e.g., '1-10', '11-50', '51-200', '201-500', '500+')",
     "ask_source": f"Great! Now, where should I get the leads from? Please choose one: {', '.join(ALLOWED_SOURCES_DISPLAY)}.",
-  
-    # --- MODIFY THIS CONFIRM PROMPT ---
     "confirm": f"""
 Okay, let's confirm:
 - **Industry:** {st.session_state.get('icp_details', {}).get('industry', '*(Not set)*')}
@@ -84,32 +88,36 @@ Okay, let's confirm:
 
 Is this correct? (Please type **Yes** to proceed, or **No** to restart)
 """,
-    # --- END OF MODIFICATION ---
     "done": "Setup complete. I've sent the request to the backend. Processing will happen in the background. You can close this window or type 'restart' to begin again."
 }
 
 current_stage = st.session_state.get("stage", "greeting")
-# Display prompt only if conversation is ongoing and the last message wasn't already this prompt
+
+should_display_prompt = False
 if current_stage in assistant_prompts and not st.session_state.get("processing_initiated", False):
     prompt_text = assistant_prompts[current_stage]
-    # Check if the last message is already the prompt we intend to display
-    last_message_is_prompt = False
-    if st.session_state.get("messages"):
+    if not st.session_state.get("messages"):
+         should_display_prompt = True
+    else:
         last_msg = st.session_state.messages[-1]
-        if last_msg['role'] == 'assistant' and last_msg['content'] == prompt_text:
-            last_message_is_prompt = True
+        if last_msg['role'] == 'user':
+             should_display_prompt = True
+        elif last_msg['role'] == 'assistant':
+            is_standard_prompt = (last_msg['content'] == prompt_text)
+            is_error_reprompt = "Sorry," in last_msg['content'] or "cannot be empty" in last_msg['content'] or "doesn't look like" in last_msg['content'] or "Please confirm" in last_msg['content']
 
-    # If the last message isn't the prompt, add the prompt
-    if not last_message_is_prompt:
-        add_message("assistant", prompt_text)
+            if not is_standard_prompt and not is_error_reprompt:
+                 should_display_prompt = True
+
+if should_display_prompt:
+     add_message("assistant", prompt_text)
 
 
 # --- Handle User Input ---
+# ... (rest of the input handling code remains the same) ...
 if prompt := st.chat_input("Your response...", disabled=st.session_state.get("processing_initiated", False), key="user_input"):
-    add_message("user", prompt) # Display user message first
-    processed_prompt = prompt.strip()
-    # Don't assume rerun is needed - set it only when necessary
-    rerun_needed = False
+    # ... (input handling logic) ...
+    pass # Placeholder for brevity
 
     # --- Global Restart Check ---
     if processed_prompt.lower() in ["restart", "start over", "reset"]:
