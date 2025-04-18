@@ -34,6 +34,11 @@ def initiate_backend_workflow(icp_data, source_type, source_details=None):
         st.error(f"Backend returned non-JSON response: {response.text}. You can type 'restart'.")
         return None
 
+# --- Function to add message (basic duplicate check) ---
+def add_message(role, content):
+    if not st.session_state.messages or st.session_state.messages[-1]['content'] != content:
+        st.session_state.messages.append({"role": role, "content": content})
+
 # --- Function to reset chat state ---
 def reset_chat():
     st.session_state.messages = []
@@ -50,10 +55,6 @@ def reset_chat():
 if "messages" not in st.session_state:
     reset_chat() # Initialize state properly
 
-# --- Function to add message (basic duplicate check) ---
-def add_message(role, content):
-    if not st.session_state.messages or st.session_state.messages[-1]['content'] != content:
-        st.session_state.messages.append({"role": role, "content": content})
 
 # --- Display Chat History ---
 st.title("SalesTroopz Agent Setup")
