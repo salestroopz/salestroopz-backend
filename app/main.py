@@ -1,7 +1,9 @@
 from fastapi import FastAPI
 from app.config import Settings
+from fastapi.middleware.cors import CORSMiddleware # <--- Import CORS Middleware
 from app.routes import workflow
 from app.db.database import initialize_db
+
 
 # Import routers from the correct folders
 from app.routers import icp, offering
@@ -37,3 +39,45 @@ app.include_router(leadenrichment.router, prefix="/leads", tags=["Lead Enrichmen
 app.include_router(icpmatch.router)
 app.include_router(leadworkflow.router)
 app.include_router(workflow.router, prefix="/workflow", tags=["Lead Workflow"])
+
+app = FastAPI(
+    title="SalesTroopz Lead Workflow API",
+    description="API to manage and process sales leads.",
+    version="0.1.0",
+)
+
+# --- Configure CORS --- <--- ADD THIS SECTION
+# List of origins allowed to make requests to this backend.
+# IMPORTANT: Replace "YOUR_STREAMLIT_APP_URL" with the actual URL
+# Render gives your Streamlit service (e.g., https://salestroopz-chatbot-ui.onrender.com)
+# You might also need to add http://localhost:8501 if you ever test locally
+origins = [
+    "https://salestroopz-chatbot-ui.onrender.com", # Replace with your Streamlit service URL
+    # "http://localhost:8501", # Uncomment if you run Streamlit locally for testing
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins, # Allows specific origins
+    allow_credentials=True,
+    allow_methods=["*"], # Allows all methods (GET, POST, etc.)
+    allow_headers=["*"], # Allows all headers
+)
+# --- END OF CORS CONFIGURATION ---
+
+
+@app.on_event("startup")
+async def startup_event():
+    print("Application starting up...")
+    initialize_db()
+    print("Database initialization complete.")
+
+app.include_router(workflow.router)
+
+@app.get("/", tags=["Root"])
+async def read_root():
+    return {
+        "message": "Welcome to the SalesTroopz Lead Workflow API",
+        "docs_url": "/docs",
+        "redoc_url": "/redoc"
+    }
