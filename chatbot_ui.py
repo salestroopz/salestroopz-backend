@@ -69,19 +69,22 @@ for message in st.session_state.get("messages", []): # Use .get for safety
 
 # --- Display Current Prompt Logic (Refined) ---
 assistant_prompts = {
-    "ask_industry": "What industry are you targeting?", # Simplified first prompt
+    "ask_industry": "What industry are you targeting?",
     "ask_title": "Got it. Now, what specific job title(s) are you looking for?",
     "ask_company_size": "Okay. What company size are you targeting? (e.g., '1-10', '11-50', '51-200', '201-500', '500+')",
     "ask_source": f"Great! Now, where should I get the leads from? Please choose one: {', '.join(ALLOWED_SOURCES_DISPLAY)}.",
+  
+    # --- MODIFY THIS CONFIRM PROMPT ---
     "confirm": f"""
 Okay, let's confirm:
 - **Industry:** {st.session_state.get('icp_details', {}).get('industry', '*(Not set)*')}
 - **Title(s):** {st.session_state.get('icp_details', {}).get('title', '*(Not set)*')}
 - **Company Size:** {st.session_state.get('icp_details', {}).get('company_size', '*(Not set)*')}
-- **Lead Source:** {st.session_state.get('lead_source', '*Not set*').replace('_',' ').title()}
+- **Lead Source:** {(lead_source := st.session_state.get('lead_source')) and lead_source.replace('_',' ').title() or '*(Not set)*'}
 
 Is this correct? (Please type **Yes** to proceed, or **No** to restart)
 """,
+    # --- END OF MODIFICATION ---
     "done": "Setup complete. I've sent the request to the backend. Processing will happen in the background. You can close this window or type 'restart' to begin again."
 }
 
