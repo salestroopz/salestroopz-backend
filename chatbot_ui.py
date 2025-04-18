@@ -2,11 +2,14 @@
 import streamlit as st
 import requests
 import json
-import time # Added for potential delays
+import time
+import re # Import regex for slightly better validation
 
 # --- Configuration ---
 BACKEND_URL = "https://salestroopz-backendpython-m-uvicorn-app.onrender.com" # Replace if needed
 INITIATE_ENDPOINT = f"{BACKEND_URL}/api/v1/workflow/initiate"
+ALLOWED_SOURCES = ["file_upload", "apollo", "crm", "manual_entry"]
+ALLOWED_SOURCES_DISPLAY = ["File Upload", "Apollo", "CRM", "Manual Entry"] # For display
 
 # --- Helper Function to call Backend ---
 def initiate_backend_workflow(icp_data, source_type, source_details=None):
@@ -18,158 +21,145 @@ def initiate_backend_workflow(icp_data, source_type, source_details=None):
     }
     try:
         headers = {'Content-Type': 'application/json'}
-        response = requests.post(INITIATE_ENDPOINT, headers=headers, data=json.dumps(payload), timeout=30) # Added timeout
+        response = requests.post(INITIATE_ENDPOINT, headers=headers, data=json.dumps(payload), timeout=30)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.Timeout:
-        st.error("Backend request timed out. Please try again later.")
+        st.error("Backend request timed out. Please try again later or type 'restart'.")
         return None
     except requests.exceptions.RequestException as e:
-        st.error(f"Error contacting backend: {e}")
+        st.error(f"Error contacting backend: {e}. You can type 'restart' to try again.")
         return None
     except json.JSONDecodeError:
-        st.error(f"Backend returned non-JSON response: {response.text}")
+        st.error(f"Backend returned non-JSON response: {response.text}. You can type 'restart'.")
         return None
+
+# --- Function to reset chat state ---
+def reset_chat():
+    st.session_state.messages = []
+    st.session_state.stage = "greeting"
+    st.session_state.icp_details = {}
+    st.session_state.lead_source = None
+    st.session_state.processing_initiated = False
+    # Add initial greeting message after reset
+    add_message("assistant", "Hi! I'm here to help you set up your SalesTroopz campaign. Let's start by defining your Ideal Customer Profile (ICP). What industry are you targeting? (You can type 'restart' anytime to start over).")
+    st.session_state.stage = "ask_industry" # Set stage for next input
+
 
 # --- Initialize Session State ---
 if "messages" not in st.session_state:
-    st.session_state.messages = []
-if "stage" not in st.session_state:
-    st.session_state.stage = "greeting"
-if "icp_details" not in st.session_state:
-    st.session_state.icp_details = {}
-if "lead_source" not in st.session_state:
-    st.session_state.lead_source = None
-if "processing_initiated" not in st.session_state: # Renamed for clarity
-    st.session_state.processing_initiated = False
+    reset_chat() # Initialize state properly
 
-# --- Function to add message (avoids duplicates slightly better) ---
+# --- Function to add message (basic duplicate check) ---
 def add_message(role, content):
-    # Add message only if it's different from the last one from the same role
-    if not st.session_state.messages or \
-       st.session_state.messages[-1]['role'] != role or \
-       st.session_state.messages[-1]['content'] != content:
+    if not st.session_state.messages or st.session_state.messages[-1]['content'] != content:
         st.session_state.messages.append({"role": role, "content": content})
 
 # --- Display Chat History ---
 st.title("SalesTroopz Agent Setup")
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+        st.markdown(message["content"].replace("\n", "  \n")) # Ensure markdown newlines render
 
-# --- Conversation Logic & Prompt Display ---
-# This section now focuses ONLY on displaying the correct prompt based on the stage
-if st.session_state.stage == "greeting":
-    add_message("assistant", "Hi! I'm here to help you set up your SalesTroopz campaign. Let's start by defining your Ideal Customer Profile (ICP). What industry are you targeting?")
-    st.session_state.stage = "ask_industry"
-    st.rerun() # Rerun needed here to show prompt before input
-
-elif st.session_state.stage == "ask_industry":
-    # Prompt was shown in the previous step. Wait for input.
-    pass
-
-elif st.session_state.stage == "ask_title":
-    add_message("assistant", "Got it. Now, what specific job title(s) are you looking for within that industry?")
-    # No rerun here, wait for input
-
-elif st.session_state.stage == "ask_company_size":
-    add_message("assistant", "Okay. What company size are you targeting? (e.g., '1-10', '11-50', '51-200', '201-500', '500+')")
-    # No rerun here
-
-elif st.session_state.stage == "ask_source":
-    add_message("assistant", "Great! Now, where should I get the leads from? Please choose one: 'File Upload', 'Apollo', 'CRM', or 'Manual Entry'.")
-    # No rerun here - THIS SHOULD FIX THE LOOP
-
-elif st.session_state.stage == "confirm":
-    confirmation_message = f"""
+# --- Display Current Prompt (based on stage, only if needed) ---
+# This logic tries to avoid re-prompting immediately after an error message was just added.
+assistant_prompts = {
+    "ask_industry": "What industry are you targeting? (You can type 'restart' anytime to start over).",
+    "ask_title": "Got it. Now, what specific job title(s) are you looking for?",
+    "ask_company_size": "Okay. What company size are you targeting? (e.g., '1-10', '11-50', '51-200', '201-500', '500+')",
+    "ask_source": f"Great! Now, where should I get the leads from? Please choose one: {', '.join(ALLOWED_SOURCES_DISPLAY)}.",
+    "confirm": f"""
 Okay, let's confirm:
-- **Industry:** {st.session_state.icp_details.get('industry', 'Not set')}
-- **Title(s):** {st.session_state.icp_details.get('title', 'Not set')}
-- **Company Size:** {st.session_state.icp_details.get('company_size', 'Not set')}
-- **Lead Source:** {st.session_state.lead_source}
+- **Industry:** {st.session_state.icp_details.get('industry', '*(Not set)*')}
+- **Title(s):** {st.session_state.icp_details.get('title', '*(Not set)*')}
+- **Company Size:** {st.session_state.icp_details.get('company_size', '*(Not set)*')}
+- **Lead Source:** {st.session_state.lead_source.replace('_',' ').title() if st.session_state.lead_source else '*(Not set)*'}
 
-Is this correct? (Please type 'Yes' to proceed, or 'No' to restart)
-"""
-    add_message("assistant", confirmation_message)
-    # No rerun here
+Is this correct? (Please type **Yes** to proceed, or **No** to restart)
+""",
+    "done": "Setup complete. I've sent the request to the backend. Processing will happen in the background."
+}
 
-elif st.session_state.stage == "done":
-    if not st.session_state.processing_initiated: # Check flag before adding message
-        add_message("assistant", "Okay, I've sent the request to the backend to start the process based on your criteria. Check backend logs or status later.")
-        st.session_state.processing_initiated = True # Set flag
-    # No rerun here
+current_stage = st.session_state.get("stage", "greeting")
+# Display prompt only if conversation is ongoing and the last message wasn't already this prompt
+if current_stage in assistant_prompts and not st.session_state.processing_initiated:
+    prompt_text = assistant_prompts[current_stage]
+    # Check if the last message is from the assistant and is different from the current prompt
+    if not st.session_state.messages or \
+       (st.session_state.messages[-1]['role'] == 'user') or \
+       (st.session_state.messages[-1]['role'] == 'assistant' and st.session_state.messages[-1]['content'] != prompt_text):
+        add_message("assistant", prompt_text)
+
 
 # --- Handle User Input ---
-# Input is disabled once processing is initiated
 if prompt := st.chat_input("Your response...", disabled=st.session_state.processing_initiated):
     add_message("user", prompt) # Display user message first
+    processed_prompt = prompt.strip()
+    rerun_needed = True # Assume a rerun is needed unless handled otherwise
 
-    rerun_needed = False # Flag to check if we need to rerun after processing input
+    # --- Global Restart Check ---
+    if processed_prompt.lower() in ["restart", "start over", "reset"]:
+        add_message("assistant", "Okay, restarting the conversation.")
+        reset_chat()
+        st.rerun() # Force immediate rerun after reset
 
-    # Process based on current stage
-    if st.session_state.stage == "ask_industry":
-        if prompt.strip(): # Basic Validation: Check if not empty
-            st.session_state.icp_details['industry'] = prompt.strip()
-            st.session_state.stage = "ask_title" # Move to next stage
+    # --- Stage-Specific Input Processing ---
+    current_stage = st.session_state.stage # Get current stage again after potential reset
+
+    if current_stage == "ask_industry":
+        if processed_prompt:
+            st.session_state.icp_details['industry'] = processed_prompt
+            st.session_state.stage = "ask_title"
         else:
             add_message("assistant", "Industry cannot be empty. Please tell me the target industry.")
-            rerun_needed = True # Need to rerun to show error prompt
 
-    elif st.session_state.stage == "ask_title":
-        if prompt.strip(): # Basic Validation
-            st.session_state.icp_details['title'] = prompt.strip()
+    elif current_stage == "ask_title":
+        if processed_prompt:
+            st.session_state.icp_details['title'] = processed_prompt
             st.session_state.stage = "ask_company_size"
         else:
             add_message("assistant", "Title cannot be empty. Please provide the target job title(s).")
-            rerun_needed = True
 
-    elif st.session_state.stage == "ask_company_size":
-        if prompt.strip(): # Basic Validation
-            st.session_state.icp_details['company_size'] = prompt.strip()
+    elif current_stage == "ask_company_size":
+         # Basic check: contains numbers or typical size ranges/words
+        if processed_prompt and (re.search(r'\d', processed_prompt) or any(s in processed_prompt.lower() for s in ['small', 'medium', 'large', 'enterprise', '+', '-'])):
+            st.session_state.icp_details['company_size'] = processed_prompt
             st.session_state.stage = "ask_source"
+        elif not processed_prompt:
+             add_message("assistant", "Company size cannot be empty. Please provide a target size range (e.g., '11-50', '500+').")
         else:
-            add_message("assistant", "Company size cannot be empty. Please provide a target size range.")
-            rerun_needed = True
+             add_message("assistant", f"'{prompt}' doesn't look like a standard company size. Please provide a range like '11-50', '500+', or describe it (e.g., 'Large Enterprise'). Let's try that again.")
+             # Stay in the same stage, error message added
 
-    elif st.session_state.stage == "ask_source":
-        allowed_sources = ["file upload", "apollo", "crm", "manual entry"]
-        processed_prompt = prompt.strip().lower()
-        if processed_prompt in allowed_sources:
-            st.session_state.lead_source = processed_prompt.replace(" ", "_") # Standardize
-            st.session_state.stage = "confirm" # Move to confirmation
+    elif current_stage == "ask_source":
+        source_input = processed_prompt.lower().replace(" ", "_")
+        if source_input in ALLOWED_SOURCES:
+            st.session_state.lead_source = source_input
+            st.session_state.stage = "confirm"
         else:
-            add_message("assistant", f"Sorry, '{prompt}' is not a valid source. Please choose only from 'File Upload', 'Apollo', 'CRM', or 'Manual Entry'.")
-            rerun_needed = True # Re-ask the source question
+            # Stay in the same stage, show error
+            add_message("assistant", f"Sorry, '{prompt}' is not a valid source. Please choose only from: {', '.join(ALLOWED_SOURCES_DISPLAY)}.")
 
-    elif st.session_state.stage == "confirm":
-        if prompt.strip().lower() == 'yes':
+    elif current_stage == "confirm":
+        if processed_prompt.lower() == 'yes':
             st.session_state.stage = "done" # Move to final stage
-            # Call the backend API
             with st.spinner("Sending request to backend..."):
                  backend_response = initiate_backend_workflow(
                      st.session_state.icp_details,
                      st.session_state.lead_source
                  )
             if backend_response:
-                 add_message("assistant", f"Backend acknowledged! Response: ```{json.dumps(backend_response, indent=2)}```")
-                 # Message indicating completion will be handled by the 'done' stage logic
-            # No else needed, error handled in initiate_backend_workflow
-            rerun_needed = True # Rerun to display the "done" message and disable input
-
-        elif prompt.strip().lower() == 'no':
-             add_message("assistant", "Okay, let's restart the process.")
-             # Reset state
-             st.session_state.stage = "greeting"
-             st.session_state.messages = [] # Clear history for restart
-             st.session_state.icp_details = {}
-             st.session_state.lead_source = None
-             st.session_state.processing_initiated = False
-             rerun_needed = True # Rerun to start from greeting
+                 # Add backend message, final "done" message will be shown by prompt logic
+                 add_message("assistant", f"Backend acknowledged! Response details: ```{json.dumps(backend_response, indent=2)}```")
+                 st.session_state.processing_initiated = True # Disable input now
+            # No else needed, error handled in initiate_backend_workflow which adds message
+        elif processed_prompt.lower() == 'no':
+             add_message("assistant", "Okay, discarding current setup. Let's restart.")
+             reset_chat()
         else:
-            add_message("assistant", "Please confirm with 'Yes' to proceed or 'No' to restart.")
-            rerun_needed = True # Rerun to show error prompt
+            add_message("assistant", "Please confirm with 'Yes' or 'No'.")
+            # Stay in confirm stage
 
-    # Only rerun if needed (e.g., after showing an error or moving to next stage)
-    if rerun_needed:
-        st.rerun()
+    # Rerun Streamlit to reflect state changes, display new prompts/messages
+    st.rerun()
     
