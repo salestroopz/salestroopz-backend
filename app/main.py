@@ -1,4 +1,43 @@
 # app/main.py
+# app/main.py
+import sys
+import os # <--- Add import os
+from pathlib import Path
+# --- ADD DEBUG PRINTS ---
+print("--- DEBUG: main.py starting ---")
+print(f"Current Working Directory: {os.getcwd()}")
+print("System Path (sys.path) BEFORE modification:")
+for p in sys.path:
+    print(f"  - {p}")
+print("---")
+# --- END DEBUG PRINTS ---
+
+project_root = Path(__file__).resolve().parent.parent # This is app/
+# The parent of app/ is the project root which should contain 'app' package
+project_root_for_sys_path = project_root.parent
+print(f"DEBUG: Calculated project root for sys.path: {project_root_for_sys_path}") # Debug the calculated root
+
+if str(project_root_for_sys_path) not in sys.path:
+    print(f"DEBUG: Adding project root to sys.path: {project_root_for_sys_path}")
+    sys.path.insert(0, str(project_root_for_sys_path))
+    print("System Path (sys.path) AFTER modification:")
+    for p in sys.path:
+        print(f"  - {p}")
+    print("---")
+else:
+     print("DEBUG: Project root already in sys.path.")
+
+
+print("--- DEBUG: Attempting imports ---")
+from fastapi import FastAPI
+# ... rest of imports ...
+try:
+    # This is where it fails
+    from app.utils.config import settings
+    print("Successfully imported settings in main.py")
+
+
+
 
 import sys
 from pathlib import Path
