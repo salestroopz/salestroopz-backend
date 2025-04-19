@@ -6,6 +6,47 @@ import os
 from pathlib import Path
 import warnings # Using warnings module for config warnings
 
+# app/main.py
+# ... (standard imports like sys, os, Path) ...
+
+# ... (sys.path modification and debug prints for CWD/sys.path) ...
+
+print("--- DEBUG: Attempting imports ---")
+
+# --- Third-Party Imports ---
+try:
+    from fastapi import FastAPI
+    from fastapi.middleware.cors import CORSMiddleware
+    print("Successfully imported FastAPI and CORSMiddleware.")
+except ImportError as e:
+     print(f"FATAL ERROR: Could not import FastAPI or CORSMiddleware: {e}")
+     raise SystemExit("FastAPI framework not found.") from e
+
+# --- Application Imports (within try...except blocks) ---
+
+# Configuration (Critical - Load FIRST)
+print("--- DEBUG: Checking existence of config files ---")
+utils_dir = project_root_dir / 'app' / 'utils' # project_root_dir calculated earlier
+config_file = utils_dir / 'config.py'
+utils_init_file = utils_dir / '__init__.py'
+app_init_file = project_root_dir / 'app' / '__init__.py'
+
+print(f"DEBUG: Checking app/__init__.py: {app_init_file} | Exists: {app_init_file.is_file()}")
+print(f"DEBUG: Checking app/utils/__init__.py: {utils_init_file} | Exists: {utils_init_file.is_file()}")
+print(f"DEBUG: Checking app/utils/config.py: {config_file} | Exists: {config_file.is_file()}")
+print("---")
+
+try:
+    from app.utils.config import settings # The failing import
+    print("Successfully imported settings from app.utils.config.")
+except ImportError as e:
+    print(f"FATAL ERROR: Could not import settings from app.utils.config: {e}")
+    # The debug prints above might give clues why
+    print("Check CWD, sys.path in logs above, and file existence checks.")
+    raise SystemExit(f"Failed to load settings: {e}") from e
+
+# ... (rest of the imports and main.py code) ...
+
 # --- ADD DEBUG PRINTS (Optional but keep for now) ---
 print("--- DEBUG: main.py starting ---")
 print(f"Current Working Directory: {os.getcwd()}")
