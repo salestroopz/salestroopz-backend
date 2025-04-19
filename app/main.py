@@ -4,12 +4,39 @@
 import sys
 import os
 from pathlib import Path
-import warnings # Using warnings module for config warnings
+import warnings # If using warnings
 
-# app/main.py
-# ... (standard imports like sys, os, Path) ...
+# --- ADD DEBUG PRINTS ---
+print("--- DEBUG: main.py starting ---")
+print(f"Current Working Directory: {os.getcwd()}")
+print("System Path (sys.path) BEFORE modification:")
+# Use repr(p) in case paths have unusual characters
+for p in sys.path:
+    print(f"  - {repr(p)}")
+print("---")
 
-# ... (sys.path modification and debug prints for CWD/sys.path) ...
+# --- sys.path modification (Ensures 'app' package is findable) ---
+# Calculate project root assuming main.py is inside app/
+# project_root_dir should be the directory CONTAINING the 'app' folder
+try:
+    # Resolve the path of the current file (main.py)
+    current_file_path = Path(__file__).resolve()
+    # parent is the directory containing main.py (app/)
+    # parent.parent is the directory containing app/ (the project root)
+    project_root_dir = current_file_path.parent.parent
+    print(f"DEBUG: Calculated project root for sys.path: {project_root_dir}")
+
+    if str(project_root_dir) not in sys.path:
+        print(f"DEBUG: Adding project root to sys.path: {project_root_dir}")
+        sys.path.insert(0, str(project_root_dir))
+        print("System Path (sys.path) AFTER modification:")
+        for p in sys.path: print(f"  - {repr(p)}")
+        print("---")
+    else:
+         print("DEBUG: Project root already in sys.path.")
+except Exception as e:
+    print(f"ERROR calculating or modifying sys.path: {e}")
+    project_root_dir = None # Indicate failure
 
 print("--- DEBUG: Attempting imports ---")
 
@@ -21,78 +48,44 @@ try:
 except ImportError as e:
      print(f"FATAL ERROR: Could not import FastAPI or CORSMiddleware: {e}")
      raise SystemExit("FastAPI framework not found.") from e
+
 
 # --- Application Imports (within try...except blocks) ---
 
 # Configuration (Critical - Load FIRST)
 print("--- DEBUG: Checking existence of config files ---")
-utils_dir = project_root_dir / 'app' / 'utils' # project_root_dir calculated earlier
-config_file = utils_dir / 'config.py'
-utils_init_file = utils_dir / '__init__.py'
-app_init_file = project_root_dir / 'app' / '__init__.py'
+if project_root_dir: # Only check if path calculation succeeded
+    utils_dir = project_root_dir / 'app' / 'utils'
+    config_file = utils_dir / 'config.py'
+    utils_init_file = utils_dir / '__init__.py'
+    app_init_file = project_root_dir / 'app' / '__init__.py' # Check app's init too
 
-print(f"DEBUG: Checking app/__init__.py: {app_init_file} | Exists: {app_init_file.is_file()}")
-print(f"DEBUG: Checking app/utils/__init__.py: {utils_init_file} | Exists: {utils_init_file.is_file()}")
-print(f"DEBUG: Checking app/utils/config.py: {config_file} | Exists: {config_file.is_file()}")
-print("---")
-
-try:
-    from app.utils.config import settings # The failing import
-    print("Successfully imported settings from app.utils.config.")
-except ImportError as e:
-    print(f"FATAL ERROR: Could not import settings from app.utils.config: {e}")
-    # The debug prints above might give clues why
-    print("Check CWD, sys.path in logs above, and file existence checks.")
-    raise SystemExit(f"Failed to load settings: {e}") from e
-
-# ... (rest of the imports and main.py code) ...
-
-# --- ADD DEBUG PRINTS (Optional but keep for now) ---
-print("--- DEBUG: main.py starting ---")
-print(f"Current Working Directory: {os.getcwd()}")
-print("System Path (sys.path) BEFORE modification:")
-for p in sys.path:
-    print(f"  - {p}")
-print("---")
-
-# --- sys.path modification (Ensures 'app' package is findable) ---
-# Calculate project root assuming main.py is inside app/
-project_root_dir = Path(__file__).resolve().parent.parent
-print(f"DEBUG: Calculated project root for sys.path: {project_root_dir}")
-
-if str(project_root_dir) not in sys.path:
-    print(f"DEBUG: Adding project root to sys.path: {project_root_dir}")
-    sys.path.insert(0, str(project_root_dir))
-    print("System Path (sys.path) AFTER modification:")
-    for p in sys.path: print(f"  - {p}")
-    print("---")
+    print(f"DEBUG: Checking app/__init__.py: {app_init_file} | Exists: {app_init_file.is_file()}")
+    print(f"DEBUG: Checking app/utils/__init__.py: {utils_init_file} | Exists: {utils_init_file.is_file()}")
+    print(f"DEBUG: Checking app/utils/config.py: {config_file} | Exists: {config_file.is_file()}")
 else:
-     print("DEBUG: Project root already in sys.path.")
+    print("DEBUG: Skipping file existence checks because project_root_dir calculation failed.")
+print("---")
 
-print("--- DEBUG: Attempting imports ---")
-
-# --- Third-Party Imports ---
 try:
-    from fastapi import FastAPI
-    from fastapi.middleware.cors import CORSMiddleware
-    print("Successfully imported FastAPI and CORSMiddleware.")
-except ImportError as e:
-     print(f"FATAL ERROR: Could not import FastAPI or CORSMiddleware: {e}")
-     raise SystemExit("FastAPI framework not found.") from e
-
-
-# --- Application Imports (within try...except blocks) ---
-
-# Configuration (Critical - Load FIRST)
-try:
+    # THE FAILING IMPORT
     from app.utils.config import settings
     print("Successfully imported settings from app.utils.config.")
 except ImportError as e:
     print(f"FATAL ERROR: Could not import settings from app.utils.config: {e}")
-    print("Check CWD, sys.path, and ensure app/utils/__init__.py and app/utils/config.py exist.")
+    print("Check CWD, sys.path in logs above, and file existence checks.")
+    # Add more detail based on checks if possible
+    if project_root_dir:
+         if not app_init_file.is_file(): print("-> 'app/__init__.py' seems MISSING!")
+         if not utils_init_file.is_file(): print("-> 'app/utils/__init__.py' seems MISSING!")
+         if not config_file.is_file(): print("-> 'app/utils/config.py' seems MISSING!")
     raise SystemExit(f"Failed to load settings: {e}") from e
+except Exception as e_generic: # Catch other potential errors during import/init of config
+    print(f"FATAL ERROR: An unexpected error occurred importing settings: {e_generic}")
+    raise SystemExit(f"Failed loading settings: {e_generic}") from e_generic
 
-# Database Initialization
+
+# Database Initialization Import
 try:
     from app.db.database import initialize_db
     print("Successfully imported initialize_db from app.db.database.")
@@ -100,27 +93,16 @@ except ImportError as e:
     print(f"ERROR: Could not import database initialization: {e}")
     initialize_db = None # Allow app to start but warn later
 
-# API Routers
+# API Routers Import
 try:
-    from app.routes import auth
-    from app.routes import workflow
-    from app.routes import leadworkflow
-    from app.routers import icp
-    from app.routers import offering
-    from app.routes import crm
-    from app.routes import agents
-    from app.routes import emailcampaign
-    from app.routes import insidesales
-    from app.routes import scheduler
-    from app.routes import leadenrichment
-    from app.routes import icpmatch
+    from app.routes import auth, workflow, leadworkflow, crm, agents, emailcampaign, insidesales, scheduler, leadenrichment, icpmatch
+    from app.routers import icp, offering
     print("Successfully imported API routers.")
 except ImportError as e:
     print(f"ERROR: Could not import one or more routers: {e}")
-    # Decide if this is fatal - probably is if core routes missing
     raise SystemExit(f"Failed to import routers: {e}") from e
 
-# Global Agent Instances (Optional)
+# Global Agent Instances Import (Optional)
 try:
     from app.agents.crmagent import CRMConnectorAgent
     crm_agent_instance = CRMConnectorAgent()
@@ -134,29 +116,37 @@ except ImportError as e:
 # --- Create FastAPI App Instance ---
 # ==============================================
 # Define the app instance ONCE
-app = FastAPI(
-    title=settings.app_name,
-    description="API to manage and process sales leads for multiple organizations.",
-    version="0.2.0", # Example version
-)
-print(f"FastAPI app created with title: {settings.app_name}")
+try:
+    app = FastAPI(
+        title=settings.app_name,
+        description="API to manage and process sales leads for multiple organizations.",
+        version="0.2.0", # Example version
+    )
+    print(f"FastAPI app created with title: {settings.app_name}")
+except Exception as e:
+    print(f"ERROR creating FastAPI app instance. Settings loaded?: {'settings' in locals()}. Error: {e}")
+    raise SystemExit("Failed to create FastAPI app.") from e
 
 # ==============================================
 # --- Configure CORS Middleware ---
 # ==============================================
-if not settings.allowed_origins_list:
-    print("WARNING: No CORS origins specified via ALLOWED_ORIGINS env var. Frontend API calls may fail.")
-    origins = ["*"] # Default to allow all if unset (Use with caution in production!)
-else:
-    origins = settings.allowed_origins_list
-print(f"Configuring CORS for origins: {origins}")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+try:
+    if not settings.allowed_origins_list:
+        print("WARNING: No CORS origins specified via ALLOWED_ORIGINS env var. Frontend API calls may fail.")
+        origins = ["*"] # Default to allow all if unset (Use with caution in production!)
+    else:
+        origins = settings.allowed_origins_list
+    print(f"Configuring CORS for origins: {origins}")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+except Exception as e:
+    print(f"ERROR configuring CORS middleware: {e}")
+    # Decide if this is critical
 
 # ==============================================
 # --- Database Initialization on Startup ---
@@ -171,7 +161,6 @@ async def startup_database_initialization():
             print("Database initialization logic executed.")
         except Exception as e:
             print(f"ERROR DURING DATABASE INITIALIZATION: {e}")
-            # Consider if app should stop if DB init fails critically
     else:
         print("WARNING: Database initialization function was not imported correctly.")
     print("Startup event sequence complete.")
@@ -184,9 +173,10 @@ async def startup_database_initialization():
 # within the APIRouter() in each router's file.
 print("Including API routers...")
 try:
-    app.include_router(auth.router)         # Expects prefix="/api/v1/auth", tags=["Authentication"]
-    app.include_router(workflow.router)     # Expects prefix="/api/v1", tags=["Lead Workflow & Data"]
-    app.include_router(leadworkflow.router, prefix="/api/v1/leadworkflow", tags=["Lead Workflow Specific"]) # Example - adjust in file if possible
+    # Include routers using variables imported above
+    app.include_router(auth.router)         # Assumes prefix/tags defined inside
+    app.include_router(workflow.router)     # Assumes prefix/tags defined inside
+    app.include_router(leadworkflow.router, prefix="/api/v1/leadworkflow", tags=["Lead Workflow Specific"]) # Example - adjust
     app.include_router(icp.router, prefix="/api/v1/icp", tags=["ICP"])
     app.include_router(offering.router, prefix="/api/v1/offering", tags=["Offering"])
     app.include_router(crm.router, prefix="/api/v1/crm", tags=["CRM"])
@@ -198,10 +188,7 @@ try:
     app.include_router(icpmatch.router, prefix="/api/v1/icpmatch", tags=["ICP Match"])
     print("Routers included successfully.")
 except Exception as e:
-    # Catching potential errors during include_router (e.g., if router variable missing)
     print(f"ERROR INCLUDING ROUTERS: {e}")
-    # Depending on severity, you might want to stop the app
-    # raise SystemExit(f"Failed to include routers: {e}") from e
 
 
 # ==============================================
@@ -210,12 +197,15 @@ except Exception as e:
 @app.get("/", tags=["Root"])
 async def read_root():
     """Provides a simple welcome message and links to docs."""
+    # Check if settings object exists before accessing it
+    app_name = getattr(settings, 'app_name', 'SalesTroopz API (Settings Load Failed)')
+    environment = getattr(settings, 'environment', 'unknown')
     return {
-        "status": f"{settings.app_name} backend is live!",
-        "environment": settings.environment,
-        "docs": app.docs_url,
-        "redoc": app.redoc_url
+        "status": f"{app_name} backend is live!",
+        "environment": environment,
+        "docs": getattr(app, 'docs_url', '/docs'), # Use getattr for safety
+        "redoc": getattr(app, 'redoc_url', '/redoc')
     }
 
 # --- Final Confirmation Log ---
-print(f"--- {settings.app_name} FastAPI application configuration complete ---")
+print(f"--- FastAPI application configuration potentially complete (check logs for errors) ---")
