@@ -1,83 +1,142 @@
+# app/main.py
+
+import sys
+from pathlib import Path
+project_root = Path(__file__).resolve().parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
 from fastapi import FastAPI
-from app.config import Settings
-from fastapi.middleware.cors import CORSMiddleware # <--- Import CORS Middleware
-from app.routes import workflow
-from app.db.database import initialize_db
+from fastapi.middleware.cors import CORSMiddleware
 
+# --- Import Configuration FIRST ---
+try:
+    from app.utils.config import settings
+    print("Successfully imported settings in main.py")
+except ImportError as e:
+    print(f"FATAL ERROR: Could not import settings from app.utils.config: {e}")
+    raise SystemExit(f"Failed to load settings: {e}") from e
 
-# Import routers from the correct folders
-from app.routers import icp, offering
-from app.routes import crm, agents, emailcampaign, insidesales, scheduler, leadenrichment, leadenrichment, icpmatch , leadworkflow 
+# --- Import Database Initialization ---
+try:
+    from app.db.database import initialize_db
+except ImportError as e:
+    print(f"ERROR: Could not import database initialization: {e}")
+    initialize_db = None
 
-# If you need datalist agent separately
-from app.agents import datalist  # for direct calls if needed
+# --- Import API Routers ---
+try:
+    # Routers defined during Phase 0
+    from app.routes import auth
+    # Your workflow routers (now distinct)
+    from app.routes import workflow          # Assumes app/routes/workflow.py
+    from app.routes import leadworkflow     # Assumes app/routes/leadworkflow.py
 
-from app.agents.crmagent import CRMConnectorAgent
+    # Your existing routers
+    from app.routers import icp                 # Assumes app/routers/icp.py
+    from app.routers import offering            # Assumes app/routers/offering.py
+    from app.routes import crm                  # Assumes app/routes/crm.py
+    from app.routes import agents               # Assumes app/routes/agents.py
+    from app.routes import emailcampaign        # Assumes app/routes/emailcampaign.py
+    from app.routes import insidesales          # Assumes app/routes/insidesales.py
+    from app.routes import scheduler            # Assumes app/routes/scheduler.py
+    from app.routes import leadenrichment       # Assumes app/routes/leadenrichment.py
+    from app.routes import icpmatch             # Assumes app/routes/icpmatch.py
 
-# Create a single instance to be used throughout the app
-crm_agent_instance = CRMConnectorAgent()
+    print("Successfully imported API routers.")
+except ImportError as e:
+    print(f"ERROR: Could not import one or more routers: {e}")
+    raise SystemExit(f"Failed to import routers: {e}") from e
 
-# Pass crm_agent_instance to other agents/functions that need it
-# (e.g., pass it to the LeadWorkflowAgent during its initialization)
+# --- Global Agent Instances (Use with caution) ---
+# ... (Keep CRM agent instantiation if needed) ...
+try:
+    from app.agents.crmagent import CRMConnectorAgent
+    crm_agent_instance = CRMConnectorAgent()
+    print("CRMConnectorAgent instance created.")
+except ImportError as e:
+     print(f"Warning: Could not import or instantiate CRMConnectorAgent: {e}")
+     crm_agent_instance = None
 
-app = FastAPI(title="Salestroopz Backend", version="0.1.0")
-settings = Settings()
-
-@app.get("/")
-async def root():
-    return {"status": "Salestroopz backend is live!"}
-
-# Include all routers
-app.include_router(icp.router, prefix="/icp", tags=["ICP"])
-app.include_router(offering.router, prefix="/offering", tags=["Offering"])
-app.include_router(crm.router, prefix="/crm", tags=["CRM"])
-app.include_router(agents.router)
-app.include_router(emailcampaign.router, prefix="/email", tags=["Email Campaign Manager"])
-app.include_router(insidesales.router, prefix="/sales", tags=["Inside Sales Agent"])
-app.include_router(scheduler.router, prefix="/campaigns", tags=["Email Scheduler Agent"])
-app.include_router(leadenrichment.router, prefix="/leads", tags=["Lead Enrichment Agent"])
-app.include_router(icpmatch.router)
-app.include_router(leadworkflow.router)
-app.include_router(workflow.router, prefix="/workflow", tags=["Lead Workflow"])
-
+# --- Create SINGLE FastAPI App Instance ---
 app = FastAPI(
-    title="SalesTroopz Lead Workflow API",
-    description="API to manage and process sales leads.",
-    version="0.1.0",
+    title=settings.app_name,
+    description="API to manage and process sales leads for multiple organizations.",
+    version="0.2.0",
 )
 
-# --- Configure CORS --- <--- ADD THIS SECTION
-# List of origins allowed to make requests to this backend.
-# IMPORTANT: Replace "YOUR_STREAMLIT_APP_URL" with the actual URL
-# Render gives your Streamlit service (e.g., https://salestroopz-chatbot-ui.onrender.com)
-# You might also need to add http://localhost:8501 if you ever test locally
-origins = [
-    "https://salestroopz-chatbot-ui.onrender.com", # Replace with your Streamlit service URL
-    # "http://localhost:8501", # Uncomment if you run Streamlit locally for testing
-]
+# --- Configure CORS Middleware ---
+# ... (Keep CORS setup using settings.allowed_origins_list) ...
+if not settings.allowed_origins_list:
+    print("WARNING: No CORS origins specified via ALLOWED_ORIGINS env var. Frontend API calls may fail.")
+    origins = ["*"] # Example: Allow all if empty (use caution)
+else:
+    origins = settings.allowed_origins_list
+    print(f"Configuring CORS for origins: {origins}")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins, # Allows specific origins
+    allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"], # Allows all methods (GET, POST, etc.)
-    allow_headers=["*"], # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
-# --- END OF CORS CONFIGURATION ---
 
 
+# --- Database Initialization on Startup ---
 @app.on_event("startup")
-async def startup_event():
-    print("Application starting up...")
-    initialize_db()
-    print("Database initialization complete.")
+async def startup_database_initialization():
+    # ... (Keep startup logic) ...
+    print("Application startup: Initializing database...")
+    if initialize_db:
+        try:
+            initialize_db()
+            print("Database initialization attempted successfully.")
+        except Exception as e:
+            print(f"ERROR DURING DATABASE INITIALIZATION: {e}")
+    else:
+        print("WARNING: Database initialization function not found or failed to import.")
+    print("Application startup sequence complete.")
 
-app.include_router(workflow.router)
 
+# --- Include ALL API Routers ONCE ---
+# It's cleaner if prefixes/tags are defined *within* the APIRouter()
+# initialization in each respective router file. Add them here ONLY
+# if they are NOT defined within the router files themselves.
+print("Including API routers...")
+try:
+    # Phase 0 Routers
+    app.include_router(auth.router)         # Assumes prefix="/api/v1/auth", tags=["Authentication"] defined inside
+    app.include_router(workflow.router)     # Assumes prefix="/api/v1", tags=["Lead Workflow & Data"] defined inside
+
+    # Your Distinct Lead Workflow Router
+    app.include_router(leadworkflow.router, prefix="/api/v1/leadworkflow", tags=["Lead Workflow Specific"]) # Example prefix/tag - ADJUST
+
+    # Your Existing Routers (Add consistent prefixes/tags, preferably inside the files)
+    app.include_router(icp.router, prefix="/api/v1/icp", tags=["ICP"])
+    app.include_router(offering.router, prefix="/api/v1/offering", tags=["Offering"])
+    app.include_router(crm.router, prefix="/api/v1/crm", tags=["CRM"])
+    app.include_router(agents.router, prefix="/api/v1/agents", tags=["Agents"])
+    app.include_router(emailcampaign.router, prefix="/api/v1/email", tags=["Email Campaign Manager"])
+    app.include_router(insidesales.router, prefix="/api/v1/sales", tags=["Inside Sales Agent"])
+    app.include_router(scheduler.router, prefix="/api/v1/campaigns", tags=["Email Scheduler Agent"])
+    app.include_router(leadenrichment.router, prefix="/api/v1/enrichment", tags=["Lead Enrichment Agent"])
+    app.include_router(icpmatch.router, prefix="/api/v1/icpmatch", tags=["ICP Match"])
+
+    print("Routers included successfully.")
+except Exception as e:
+    print(f"ERROR INCLUDING ROUTERS: {e}")
+
+
+# --- Root Endpoint ---
 @app.get("/", tags=["Root"])
 async def read_root():
+    """Provides a simple welcome message and links to docs."""
     return {
-        "message": "Welcome to the SalesTroopz Lead Workflow API",
-        "docs_url": "/docs",
-        "redoc_url": "/redoc"
+        "status": f"{settings.app_name} backend is live!",
+        "environment": settings.environment,
+        "docs": app.docs_url,
+        "redoc": app.redoc_url
     }
+
+print(f"{settings.app_name} FastAPI application configured.")
