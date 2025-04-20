@@ -11,7 +11,12 @@ class UserCreate(UserBase): # <--- IS THIS EXACTLY PRESENT?
     organization_name: str
 
 class UserPublic(UserBase):
-    # ... definition ...
+    id: int
+    organization_id: int
+    organization_name: str # Include org name for convenience
+
+    class Config:
+        orm_mode = True # Allow mapping from dict/db rows
 
 # --- Existing Schemas (from your image) ---
 
