@@ -18,7 +18,17 @@ class UserPublic(UserBase):
     class Config:
         orm_mode = True # Allow mapping from dict/db rows
 
-# --- Existing Schemas (from your image) ---
+class Token(BaseModel):
+    """Schema for the response when requesting a token."""
+    access_token: str
+    token_type: str
+
+class TokenData(BaseModel):
+    """Schema for the data encoded within the JWT payload."""
+    # Stores the identifier we put in the JWT payload ("sub" claim)
+    email: Optional[str] = None
+    # Add other claims like user_id, organization_id if needed later
+
 
 class ICPRequest(BaseModel):
     industry: str = Field(..., example="SaaS")
