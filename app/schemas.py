@@ -2,6 +2,17 @@ from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, List, Dict, Any, Literal # Added types we need
 from enum import Enum #
 
+# --- Authentication & User Schemas ---
+class UserBase(BaseModel):
+    email: EmailStr
+
+class UserCreate(UserBase): # <--- IS THIS EXACTLY PRESENT?
+    password: str
+    organization_name: str
+
+class UserPublic(UserBase):
+    # ... definition ...
+
 # --- Existing Schemas (from your image) ---
 
 class ICPRequest(BaseModel):
