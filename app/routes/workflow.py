@@ -45,7 +45,7 @@ def list_tenant_leads(current_user: UserPublic = Depends(get_current_user)): # R
     print(f"Received request for /leads for org: {current_user.organization_id}")
     try:
         # Use the get_all_leads function from the imported database module
-        leads = database.get_all_leads(organization_id=current_user.organization_id)
+        leads = database.get_leads_by_organization(organization_id=current_user.organization_id)
         return leads
     except Exception as e:
         # Add error handling in case database call fails
