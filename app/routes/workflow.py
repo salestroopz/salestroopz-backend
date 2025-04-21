@@ -256,7 +256,4 @@ def process_leads_background(organization_id: int, user_email: str, source_type:
 
         print(f"[BG Task Finish] Org ID: {organization_id}. Processed: {processed_count}, Errors: {len(errors)}")
         if errors: print(f"[BG Task Errors] Org ID {organization_id}:\n" + "\n".join([f" - {e}" for e in errors]))
-    except Exception as e:
-        # Add error handling in case database call fails
-        print(f"Error fetching leads for org {current_user.organization_id}: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to retrieve leads.")
+    
