@@ -1,7 +1,7 @@
 # app/agents/leadworkflow.py
 
 from typing import List, Dict, Any # Ensure Dict, Any are imported
-from app.schemas import LeadInput, LeadResponse # Assuming LeadResponse might be useful internally
+from app.schemas import ICPRequest, LeadInput, LeadResponse # Assuming LeadResponse might be useful internally
 from app.agents.leadenrichment import LeadEnrichmentAgent
 from app.agents.icp_matcher import ICPMatcherAgent
 # from app.agents.crmagent import CRMConnectorAgent # Let's assume CRM logic is separate or needs org_id too
