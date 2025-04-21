@@ -106,10 +106,21 @@ class ICPDefinition(BaseModel): # Used internally for chatbot flow
     company_size: Optional[str] = Field(None, description="Target company size range")
 
 class WorkflowInitiateRequest(BaseModel): # For the /initiate endpoint
+    # Correct Indent Level (e.g., 4 spaces)
     icp: ICPDefinition
+    # Correct Indent Level
     source_type: Literal["file_upload", "apollo", "crm", "manual_entry"]
-     source_details: Optional[Dict[str, Any]] = Field(default=None, # Explicitly name the default argument (or just Field(None))
-        description=""")
+
+    # Correct Indent Level (Align with icp and source_type)
+    source_details: Optional[Dict[str, Any]] = Field(
+        # Further Indent for arguments within Field()
+        default=None,
+        description="""
+        Additional details.
+        If source_type='file_upload', expected: {'filename': 'unique_uuid.ext'}.
+        If source_type='manual_entry', expected: {'manual_leads': List[ManualLeadData]}.
+        """ # Close the multi-line string properly
+    ) # Close the Field() parenthesis
 
 # --- Appointment Status Enum ---
 class AppointmentStatus(str, Enum):
