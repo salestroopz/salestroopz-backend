@@ -1,122 +1,152 @@
+# app/schemas.py
+
 from pydantic import BaseModel, Field, EmailStr
-from typing import Optional, List, Dict, Any, Literal # Added types we need
-from enum import Enum #
+from typing import Optional, List, Dict, Any, Literal
+from enum import Enum
+from datetime import datetime # <--- IMPORT datetime
 
 # --- Authentication & User Schemas ---
 class UserBase(BaseModel):
     email: EmailStr
 
-class UserCreate(UserBase): # <--- IS THIS EXACTLY PRESENT?
+class UserCreate(UserBase):
     password: str
     organization_name: str
 
 class UserPublic(UserBase):
     id: int
     organization_id: int
-    organization_name: str # Include org name for convenience
+    organization_name: str
 
     class Config:
-        orm_mode = True # Allow mapping from dict/db rows
+        # --- UPDATE: Use from_attributes for Pydantic v2 ---
+        from_attributes = True # Changed from orm_mode
 
 class Token(BaseModel):
-    """Schema for the response when requesting a token."""
     access_token: str
     token_type: str
 
 class TokenData(BaseModel):
-    """Schema for the data encoded within the JWT payload."""
-    # Stores the identifier we put in the JWT payload ("sub" claim)
     email: Optional[str] = None
-    # Add other claims like user_id, organization_id if needed later
 
-# --- Define structure for manual lead entry ---
+
+# --- Manual Lead Entry Schema ---
 class ManualLeadData(BaseModel):
     name: Optional[str] = None
-    email: EmailStr # Make email required for manual entry
+    email: EmailStr
     company: Optional[str] = None
     title: Optional[str] = None
 
-class ICPRequest(BaseModel):
+# --- Original ICP Request/Response (Keep if needed for /full-cycle) ---
+class OriginalICPRequest(BaseModel): # Renamed to avoid conflict
     industry: str = Field(..., example="SaaS")
     employee_range: str = Field(..., example="51-200")
     region: Optional[str] = Field(None, example="North America")
     pain_points: Optional[List[str]] = Field(default_factory=list)
 
-class ICPResponse(BaseModel):
+class OriginalICPResponse(BaseModel): # Renamed to avoid conflict
     message: str
     icp_summary: str
 
+
+# --- Lead Enrichment Schemas (Keep if used by enrichment agent) ---
 class LeadEnrichmentRequest(BaseModel):
     name: str
     company: str
     title: Optional[str] = None
-    email: Optional[str] = None # Consider changing to Optional[EmailStr] = None for validation
+    email: Optional[EmailStr] = None # Changed to EmailStr
 
 class LeadEnrichmentResponse(BaseModel):
     name: str
     company: str
     title: Optional[str] = None
-    email: Optional[str] = None # Consider changing to Optional[EmailStr] = None
+    email: Optional[EmailStr] = None # Changed to EmailStr
     linkedin_profile: Optional[str] = None
     company_size: Optional[str] = None
     industry: Optional[str] = None
     location: Optional[str] = None
 
 
-# --- Schemas for Core Lead Workflow & API (from our previous steps) ---
-
-# Model for data expected when CREATING/INPUTTING a lead via /workflow/start API
-class LeadInput(BaseModel):
+# --- Core Lead Workflow Schemas ---
+class LeadInput(BaseModel): # For direct lead input/processing trigger
     name: Optional[str] = None
-    email: EmailStr  # Use EmailStr for basic email validation
+    email: EmailStr
     company: Optional[str] = None
     title: Optional[str] = None
-    source: Optional[str] = "API Input" # Default source if not provided
+    source: Optional[str] = "API Input"
 
-# Model for data RETURNED when GETTING leads from the DB via /leads API
-class LeadResponse(BaseModel):
+class LeadResponse(BaseModel): # For returning leads from DB
     id: int
     name: Optional[str] = None
     email: EmailStr
     company: Optional[str] = None
     title: Optional[str] = None
     source: Optional[str] = None
-    matched: Optional[int] = None # Reflects DB column (INTEGER 0 or 1)
+    # Added enrichment fields to response
+    linkedin_profile: Optional[str] = None
+    company_size: Optional[str] = None
+    industry: Optional[str] = None
+    location: Optional[str] = None
+    # Workflow fields
+    matched: Optional[int] = None
     reason: Optional[str] = None
     crm_status: Optional[str] = None
-    appointment_confirmed: Optional[int] = None # Reflects DB column (INTEGER 0 or 1)
+    appointment_confirmed: Optional[int] = None
+    created_at: Optional[datetime] = None # Added created_at
 
-    # This config helps FastAPI convert DB objects/dicts to this model
     class Config:
-        orm_mode = True # Helps map ORM objects or dicts easily
+        # --- UPDATE: Use from_attributes for Pydantic v2 ---
+        from_attributes = True # Changed from orm_mode
 
 
-# --- Schemas for Chatbot Interaction (Phases 1 & 2) ---
-
-class ICPDefinition(BaseModel):
-    """Defines the Ideal Customer Profile details collected via chatbot."""
+# --- Chatbot Interaction Schemas ---
+class ICPDefinition(BaseModel): # Used internally for chatbot flow
     industry: Optional[str] = Field(None, description="Target industry")
     title: Optional[str] = Field(None, description="Target job title(s)")
-    company_size: Optional[str] = Field(None, description="Target company size range (e.g., '11-50', '51-200')")
-    # Add other fields collected via chat if necessary, e.g., region, pain_points
-    # region: Optional[str] = Field(None, ...)
-    # pain_points: Optional[List[str]] = Field(default_factory=list, ...)
+    company_size: Optional[str] = Field(None, description="Target company size range")
 
-class WorkflowInitiateRequest(BaseModel):
-    """Request body for the /workflow/initiate endpoint driven by chatbot."""
-    icp: ICPDefinition # Use the ICP details collected by the chatbot
-    source_type: Literal["file_upload", "apollo", "crm", "manual_entry"] # Define allowed source types
-    source_details: Optional[Dict[str, Any]] = Field(None, description="""
-        Additional details.
-        If source_type='file_upload', expected: {'filename': 'unique_uuid.ext'}.
-        If source_type='manual_entry', expected: {'manual_leads': List[ManualLeadData]}.
-    """)
+class WorkflowInitiateRequest(BaseModel): # For the /initiate endpoint
+    icp: ICPDefinition
+    source_type: Literal["file_upload", "apollo", "crm", "manual_entry"]
+    source_details: Optional[Dict[str, Any]] = Field(None, ...) # Description omitted for brevity
 
+
+# --- Appointment Status Enum ---
 class AppointmentStatus(str, Enum):
-    """Enumeration for possible appointment statuses."""
     PENDING = "pending"           # Initial state or waiting for confirmation
     CONFIRMED = "confirmed"       # Appointment details agreed upon
     SCHEDULED = "scheduled"       # Added to calendar / specific time set
     CANCELLED = "cancelled"       # Appointment cancelled
     COMPLETED = "completed"       # Appointment took place
     NO_SHOW = "no_show"           # Scheduled but attendee did not show up
+  
+
+# --- === NEW SCHEMAS FOR ICP MANAGEMENT API === ---
+
+class ICPInput(BaseModel):
+    """Schema for validating data when Creating/Updating an ICP via the API."""
+    name: Optional[str] = Field('Default ICP', description="A name for this ICP definition", examples=["Tech Startup ICP"])
+    title_keywords: List[str] = Field(default_factory=list, description="List of target job titles/keywords", examples=[["VP Engineering", "CTO"]])
+    industry_keywords: List[str] = Field(default_factory=list, description="List of target industries/keywords", examples=[["SaaS", "Cloud Computing"]])
+    company_size_rules: Dict[str, Any] = Field(default_factory=dict, description='Rules for company size (e.g., {"min": 50, "max": 500})', examples=[{"min": 51, "max": 200}])
+    location_keywords: List[str] = Field(default_factory=list, description="List of target locations/keywords", examples=[["London", "Remote"]])
+    # Add other fields corresponding to icps table columns (e.g., pain_points) if needed
+
+
+class ICPResponseAPI(BaseModel): # Renamed to avoid conflict with original ICPResponse
+    """Schema for returning an ICP definition from the API."""
+    id: int
+    organization_id: int
+    name: str
+    # Fields are parsed from JSON by the DB layer, so use Python types here
+    title_keywords: Optional[List[str]] = None
+    industry_keywords: Optional[List[str]] = None
+    company_size_rules: Optional[Dict[str, Any]] = None
+    location_keywords: Optional[List[str]] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True # Use this for Pydantic v2
+
+# --- === END OF NEW ICP SCHEMAS === ---
