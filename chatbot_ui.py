@@ -361,6 +361,3 @@ if prompt := st.chat_input("Your response...",
     # --- Rerun to display updates ---
     st.rerun()
 
-
-    # --- Rerun to display updates ---
-    st.rerun()
