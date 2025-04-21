@@ -29,6 +29,12 @@ class TokenData(BaseModel):
     email: Optional[str] = None
     # Add other claims like user_id, organization_id if needed later
 
+# --- Define structure for manual lead entry ---
+class ManualLeadData(BaseModel):
+    name: Optional[str] = None
+    email: EmailStr # Make email required for manual entry
+    company: Optional[str] = None
+    title: Optional[str] = None
 
 class ICPRequest(BaseModel):
     industry: str = Field(..., example="SaaS")
@@ -100,7 +106,11 @@ class WorkflowInitiateRequest(BaseModel):
     """Request body for the /workflow/initiate endpoint driven by chatbot."""
     icp: ICPDefinition # Use the ICP details collected by the chatbot
     source_type: Literal["file_upload", "apollo", "crm", "manual_entry"] # Define allowed source types
-    source_details: Optional[Dict[str, Any]] = Field(None, description="Additional details specific to the source type (e.g., filename, search ID)")
+    source_details: Optional[Dict[str, Any]] = Field(None, description="""
+        Additional details.
+        If source_type='file_upload', expected: {'filename': 'unique_uuid.ext'}.
+        If source_type='manual_entry', expected: {'manual_leads': List[ManualLeadData]}.
+    """)
 
 class AppointmentStatus(str, Enum):
     """Enumeration for possible appointment statuses."""
