@@ -108,14 +108,8 @@ class ICPDefinition(BaseModel): # Used internally for chatbot flow
 class WorkflowInitiateRequest(BaseModel): # For the /initiate endpoint
     icp: ICPDefinition
     source_type: Literal["file_upload", "apollo", "crm", "manual_entry"]
-     source_details: Optional[Dict[str, Any]] = Field(
-        default=None, # Explicitly name the default argument (or just Field(None))
-        description="""
-        Additional details.
-        If source_type='file_upload', expected: {'filename': 'unique_uuid.ext'}.
-        If source_type='manual_entry', expected: {'manual_leads': List[ManualLeadData]}.
-        """ # Pass description as a keyword argument
-    )
+     source_details: Optional[Dict[str, Any]] = Field(default=None, # Explicitly name the default argument (or just Field(None))
+        description=""")
 
 # --- Appointment Status Enum ---
 class AppointmentStatus(str, Enum):
