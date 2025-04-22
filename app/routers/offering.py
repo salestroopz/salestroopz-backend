@@ -77,8 +77,7 @@ def get_single_offering(
     Requires authentication.
     """
     print(f"API: Getting offering ID {Okay, thank you for showing your current `offering.py`. This version uses an in-memory list (`offerings: List[Offering] = []`) to store data, which means:
-
-1.  Data is **not persistent**. It will be lost every time your Render service restarts (which happens on deploys, scaling, or inactivity on free tieroffering_id} for Org ID: {current_user.organization_id}")
+   1.  Data is **not persistent**. It will be lost every time your Render service restarts (which happens on deploys, scaling, or inactivity on free tieroffering_id} for Org ID: {current_user.organization_id}")
     # Call database function, passing both IDs for authorization check
     offering = database.get_offering_by_id(offering_id, current_user.organization_id)
     # Handle case where offering doesn't exist or doesn't belong to the org
