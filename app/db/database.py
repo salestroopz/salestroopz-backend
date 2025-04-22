@@ -38,7 +38,7 @@ def get_connection():
 
 # --- Database Initialization (Multi-Tenant + ICPs) ---
 def initialize_db():
-    """Creates/updates tables: organizations, users, leads, icps."""
+    """Creates/updates tables: organizations, users, leads, icps, offerings."""
     # **IMPORTANT**: Running this after schema change might require deleting the old DB file.
     print("Initializing database schema...")
     conn = None
@@ -114,6 +114,24 @@ def initialize_db():
             FOREIGN KEY (organization_id) REFERENCES organizations (id) ON DELETE CASCADE
         )
         """)
+        # --- 5. NEW: Offerings Table ---
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS offerings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL,
+            name TEXT NOT NULL,                 -- e.g., "Cloud Migration Service"
+            description TEXT,                   -- Detailed explanation
+            key_features TEXT,                  -- Stores JSON list: '["Scalability", "Cost Savings"]'
+            target_pain_points TEXT,            -- Stores JSON list: '["High IT Costs", "Slow Deployments"]'
+            call_to_action TEXT,                -- e.g., "Book a free consultation"
+            is_active INTEGER DEFAULT 1,        -- Boolean flag (1=Active, 0=Inactive)
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- Consider trigger later
+            -- Allow multiple offerings per organization
+            FOREIGN KEY (organization_id) REFERENCES organizations (id) ON DELETE CASCADE
+        )
+        """)
+        
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_icp_organization ON icps (organization_id)")
         print(" -> ICPs table checked/created.")
         # --- End of New Table ---
@@ -293,3 +311,334 @@ def delete_icp(organization_id: int) -> bool:
     sql = "DELETE FROM icps WHERE organization_id = ?"
     # ... (rest of delete logic) ...
     pass
+
+ ==========================================
+# NEW: OFFERING CRUD OPERATIONS (Tenant-Aware)
+# ==========================================
+
+def _parse_offering_json_fields(offering_row: sqlite3.Row) -> Optional[Dict]:
+    """Helper to parse JSON fields from an Offering database row."""
+    if not offering_row:
+        return None
+    offering_data = dict(offering_row)
+    # List columns storing JSON strings
+    json_fields = ["key_features", "target_pain_points"]
+    for field in json_fields:
+        field_value = offering_data.get(field)
+        if field_value and isinstance(field_value, str):
+            try:
+                offering_data[field] = json.loads(field_value)
+            except json.JSONDecodeError:
+                print(f"Warning: Could not parse JSON for field '{field}' in Offering ID {offering_data.get('id')}")
+                offering_data[field] = [] # Default to empty list on parse error
+        elif not field_value:
+             offering_data[field] = [] # Default to empty list if NULL/empty
+    return offering_data
+
+def create_offering(organization_id: int, offering_data: Dict[str, Any]) -> Optional[Dict]:
+    """Creates a new offering for an organization."""
+    conn = None
+    saved_offering = None
+    columns = [
+        "organization_id", "name", "description", "key_features",
+        "target_pain_points", "call_to_action", "is_active"
+    ]
+    params = {
+        "organization_id": organization_id,
+        "name": offering_data.get("name", "Unnamed Offering"), # Require name ideally
+        "description": offering_data.get("description"),
+        "key_features": json.dumps(offering_data.get("key_features") or []),
+        "target_pain_points": json.dumps(offering_data.get("target_pain_points") or []),
+        "call_to_action": offering_data.get("call_to_action"),
+        "is_active": int(offering_data.get("is_active", 1)) # Default to active
+    }
+    sql = f"""
+        INSERT INTO offerings ({", ".join(columns)})
+        VALUES ({", ".join([f":{col}" for col in columns])})
+    """
+    try:
+        if not params["name"]: raise ValueError("Offering name cannot be empty") # Basic validation
+
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(sql, params)
+        offering_id = cursor.lastrowid
+        conn.commit()
+        print(f"Created offering '{params['name']}' (ID: {offering_id}) for Org ID: {organization_id}")
+        saved_offering = get_offering_by_id(offering_id, organization_id) # Fetch created offering
+    except sqlite3.Error as e:
+        print(f"Database error creating offering for Org ID {organization_id}: {e}")
+    except Exception as e:
+        print(f"Unexpected error creating offering for Org ID {organization_id}: {e}")
+    finally:
+        if conn: conn.close()
+    return saved_offering
+
+
+def update_offering(offering_id: int, organization_id: int, offering_data: Dict[str, Any]) -> Optional[Dict]:
+    """Updates an existing offering for an organization."""
+    conn = None
+    updated_offering = None
+    # Filter allowed update fields
+    allowed_columns = {
+        "name", "description", "key_features", "target_pain_points",
+        "call_to_action", "is_active"
+    }
+    update_fields = {k:v for k,v in offering_data.items() if k in allowed_columns}
+
+    if not update_fields:
+        print(f"No valid fields provided for updating offering ID {offering_id}")
+        return get_offering_by_id(offering_id, organization_id) # Return current if no changes
+
+    # Prepare params, converting lists to JSON
+    params = {}
+    set_parts = []
+    for key, value in update_fields.items():
+        param_name = f"p_{key}" # Use unique param names
+        if key in ["key_features", "target_pain_points"]:
+             params[param_name] = json.dumps(value or [])
+        elif key == "is_active":
+             params[param_name] = int(bool(value)) # Ensure 0 or 1
+        else:
+             params[param_name] = value
+        set_parts.append(f"{key} = :{param_name}")
+
+    # Add updated_at timestamp
+    set_parts.append("updated_at = CURRENT_TIMESTAMP")
+    set_clause = ", ".join(set_parts)
+
+    # Add WHERE clause params
+    params["offering_id"] = offering_id
+    params["organization_id"] = organization_id
+
+    sql = f"""
+        UPDATE offerings SET {set_clause}
+        WHERE id = :offering_id AND organization_id = :organization_id
+    """
+
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(sql, params)
+        conn.commit()
+        if cursor.rowcount > 0:
+            print(f"Updated offering ID {offering_id} for Org ID: {organization_id}")
+            updated_offering = get_offering_by_id(offering_id, organization_id)
+        else:
+             print(f"Offering ID {offering_id} not found or not owned by Org ID {organization_id} for update.")
+
+    except sqlite3.Error as e:
+        print(f"Database error updating offering ID {offering_id} for Org ID {organization_id}: {e}")
+    except Exception as e:
+        print(f"Unexpected error updating offering ID {offering_id} for Org ID {organization_id}: {e}")
+    finally:
+        if conn: conn.close()
+    return updated_offering
+
+
+def get_offering_by_id(offering_id: int, organization_id: int) -> Optional[Dict]:
+    """Fetches a single offering by ID, ensuring it belongs to the organization."""
+    sql = "SELECT * FROM offerings WHERE id = ? AND organization_id = ?"
+    conn = None
+    offering_data = None
+    try:
+        conn = get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(sql, (offering_id, organization_id))
+        result = cursor.fetchone()
+        if result: offering_data = _parse_offering_json_fields(result)
+    except sqlite3.Error as e:
+        print(f"Database error getting offering ID {offering_id} for Org ID {organization_id}: {e}")
+    finally:
+        if conn: conn.close()
+    return offering_data
+
+
+def get_offerings_by_organization_id(organization_id: int, active_only: bool = True) -> List[Dict]:
+    """
+    Fetches all offerings for a specific organization.
+    Returns a list of dictionaries with JSON fields parsed.
+    """
+    offerings = []
+    conn = None
+    sql = "SELECT * FROM offerings WHERE organization_id = ?"
+    params = [organization_id]
+    if active_only:
+        sql += " AND is_active = 1"
+    sql += " ORDER BY name" # Or order by created_at
+
+    try:
+        conn = get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(sql, params)
+        results = cursor.fetchall()
+        for row in results:
+            parsed = _parse_offering_json_fields(row)
+            if parsed: offerings.append(parsed)
+    except sqlite3.Error as e:
+        print(f"Database error getting offerings for Org ID {organization_id}: {e}")
+    finally:
+        if conn: conn.close()
+    return offerings
+
+
+def delete_offering(offering_id: int, organization_id: int) -> bool:
+    """Deletes an offering by ID, ensuring it belongs to the organization."""
+    sql = "DELETE FROM offerings WHERE id = ? AND organization_id = ?"
+    conn = None
+    success = False
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(sql, (offering_id, organization_id))
+        conn.commit()
+        if cursor.rowcount > 0:
+            print(f"Deleted offering ID {offering_id} for Org ID {organization_id}.")
+            success = True
+        else:
+            print(f"Offering ID {offering_id} not found for Org ID {organization_id}.")
+    except sqlite3.Error as e:
+        print(f"Database error deleting offering ID {offering_id} for Org ID {organization_id}: {e}")
+    finally:
+        if conn: conn.close()
+    return success
+Use code with caution.
+Python
+Step 2: Define Schemas (app/schemas.py)
+Add OfferingInput and OfferingResponse Pydantic models.
+# app/schemas.py
+# ... (keep existing imports: BaseModel, Field, EmailStr, Optional, List, Dict, Any, Literal, Enum, datetime) ...
+
+# ... (Keep existing schemas: User*, Token*, ManualLeadData, Lead*, ICPDefinition, WorkflowInitiateRequest, AppointmentStatus, ICPInput, ICPResponseAPI) ...
+
+
+# --- === NEW SCHEMAS FOR OFFERING MANAGEMENT API === ---
+
+class OfferingInput(BaseModel):
+    """Schema for validating data when Creating/Updating an Offering via API."""
+    name: str = Field(..., min_length=1, examples=["Cloud Migration Assessment"])
+    description: Optional[str] = Field(None, examples=["Detailed analysis of your current infrastructure..."])
+    key_features: List[str] = Field(default_factory=list, examples=[["Cost Projection", "Security Audit"]])
+    target_pain_points: List[str] = Field(default_factory=list, examples=[["High AWS Bills", "Compliance Concerns"]])
+    call_to_action: Optional[str] = Field(None, examples=["Schedule a 15-min discovery call"])
+    is_active: bool = Field(True, description="Whether this offering is currently active")
+
+class OfferingResponse(BaseModel):
+    """Schema for returning an Offering definition from the API."""
+    id: int
+    organization_id: int
+    name: str
+    description: Optional[str] = None
+    key_features: Optional[List[str]] = None # Parsed from JSON
+    target_pain_points: Optional[List[str]] = None # Parsed from JSON
+    call_to_action: Optional[str] = None
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True # Pydantic v2
+
+# --- === END OF NEW OFFERING SCHEMAS === ---
+Use code with caution.
+Python
+Step 3: Create API Router (app/routers/offering.py)
+Create the new file app/routers/offering.py.
+Add the endpoints using the schemas and DB functions.
+# app/routers/offering.py
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from typing import List, Optional
+
+# Import project modules
+from app.schemas import OfferingInput, OfferingResponse, UserPublic
+from app.db import database
+from app.auth.dependencies import get_current_user
+
+# Define Router
+router = APIRouter(
+    prefix="/api/v1/offerings", # Plural resource name
+    tags=["Offering Management"]
+)
+
+# --- POST Endpoint to create a NEW Offering ---
+@router.post("/", response_model=OfferingResponse, status_code=status.HTTP_201_CREATED)
+def create_new_offering(
+    offering_data: OfferingInput, # Use input schema
+    current_user: UserPublic = Depends(get_current_user) # Require auth
+):
+    """Creates a new offering for the organization."""
+    print(f"API: Creating offering '{offering_data.name}' for Org ID: {current_user.organization_id}")
+    # Convert Pydantic model to dict for DB function
+    offering_dict = offering_data.dict()
+    created_offering = database.create_offering(
+        organization_id=current_user.organization_id,
+        offering_data=offering_dict
+    )
+    if not created_offering:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create offering.")
+    return created_offering
+
+
+# --- GET Endpoint to list Offerings ---
+@router.get("/", response_model=List[OfferingResponse])
+def list_organization_offerings(
+    active_only: bool = True, # Optional query parameter to filter active
+    current_user: UserPublic = Depends(get_current_user) # Require auth
+):
+    """Lists all offerings for the current user's organization."""
+    print(f"API: Listing offerings for Org ID: {current_user.organization_id} (Active only: {active_only})")
+    offerings = database.get_offerings_by_organization_id(
+        organization_id=current_user.organization_id,
+        active_only=active_only
+        )
+    return offerings # FastAPI handles validation via response_model
+
+
+# --- GET Endpoint for a specific Offering ---
+@router.get("/{offering_id}", response_model=OfferingResponse)
+def get_single_offering(
+    offering_id: int,
+    current_user: UserPublic = Depends(get_current_user)
+):
+    """Gets a specific offering by ID, ensuring it belongs to the user's organization."""
+    print(f"API: Getting offering ID {offering_id} for Org ID: {current_user.organization_id}")
+    offering = database.get_offering_by_id(offering_id, current_user.organization_id)
+    if not offering:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Offering not found or not owned by organization.")
+    return offering
+
+
+# --- PUT Endpoint to update an Offering ---
+@router.put("/{offering_id}", response_model=OfferingResponse)
+def update_existing_offering(
+    offering_id: int,
+    offering_data: OfferingInput, # Use input schema for updates too
+    current_user: UserPublic = Depends(get_current_user)
+):
+    """Updates an existing offering by ID."""
+    print(f"API: Updating offering ID {offering_id} for Org ID: {current_user.organization_id}")
+    updated_offering = database.update_offering(
+        offering_id=offering_id,
+        organization_id=current_user.organization_id,
+        offering_data=offering_data.dict(exclude_unset=True) # Exclude unset fields for partial update feel
+    )
+    if not updated_offering:
+         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Offering not found or failed to update.")
+    return updated_offering
+
+
+# --- DELETE Endpoint for an Offering ---
+@router.delete("/{offering_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_single_offering(
+    offering_id: int,
+    current_user: UserPublic = Depends(get_current_user)
+):
+    """Deletes a specific offering by ID."""
+    print(f"API: Deleting offering ID {offering_id} for Org ID: {current_user.organization_id}")
+    deleted = database.delete_offering(offering_id, current_user.organization_id)
+    if not deleted:
+         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Offering not found.")
+    return None # No content on success
