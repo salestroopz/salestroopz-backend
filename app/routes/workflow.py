@@ -13,7 +13,7 @@ import pandas as pd # Keep if background task reads files here
 
 # Import schemas needed
 from app.schemas import (
-    OriginalICPRequest, LeadResponse, UserPublic, # Existing
+    LeadResponse, UserPublic, # Existing
     WorkflowInitiateRequest # Add schema for the new endpoint
 )
 # Import agents and dependencies
