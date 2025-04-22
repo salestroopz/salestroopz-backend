@@ -312,7 +312,7 @@ def delete_icp(organization_id: int) -> bool:
     # ... (rest of delete logic) ...
     pass
 
- ==========================================
+# ==========================================
 # NEW: OFFERING CRUD OPERATIONS (Tenant-Aware)
 # ==========================================
 
