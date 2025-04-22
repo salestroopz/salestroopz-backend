@@ -150,3 +150,32 @@ class ICPResponseAPI(BaseModel): # Renamed to avoid conflict with original ICPRe
         from_attributes = True # Use this for Pydantic v2
 
 # --- === END OF NEW ICP SCHEMAS === ---
+
+# --- === NEW SCHEMAS FOR OFFERING MANAGEMENT API === ---
+
+class OfferingInput(BaseModel):
+    """Schema for validating data when Creating/Updating an Offering via API."""
+    name: str = Field(..., min_length=1, examples=["Cloud Migration Assessment"])
+    description: Optional[str] = Field(None, examples=["Detailed analysis of your current infrastructure..."])
+    key_features: List[str] = Field(default_factory=list, examples=[["Cost Projection", "Security Audit"]])
+    target_pain_points: List[str] = Field(default_factory=list, examples=[["High AWS Bills", "Compliance Concerns"]])
+    call_to_action: Optional[str] = Field(None, examples=["Schedule a 15-min discovery call"])
+    is_active: bool = Field(True, description="Whether this offering is currently active")
+
+class OfferingResponse(BaseModel):
+    """Schema for returning an Offering definition from the API."""
+    id: int
+    organization_id: int
+    name: str
+    description: Optional[str] = None
+    key_features: Optional[List[str]] = None # Parsed from JSON
+    target_pain_points: Optional[List[str]] = None # Parsed from JSON
+    call_to_action: Optional[str] = None
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True # Pydantic v2
+
+# --- === END OF NEW OFFERING SCHEMAS === ---
