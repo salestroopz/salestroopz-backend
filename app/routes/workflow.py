@@ -117,9 +117,27 @@ def process_leads_background(organization_id: int, user_email: str, source_type:
     """
     # ... (Keep the full implementation of the background task as provided before) ...
     print(f"[BG Task Start] Org ID: {organization_id}, User: {user_email}, Source: {source_type}")
-    # ... try ... except ... finally ...
-    pass # Placeholder for the full function body
+   # ... try ... except ...
+    finally:
+        # Level 1 indent (inside finally)
+        print(f"DEBUG: Entering finally block for background task Org {organization_id}") # Add debug print
 
+        # Level 1 indent
+        if temp_file_to_delete and temp_file_to_delete.is_file():
+            try: # Level 2 indent (inside if)
+                temp_file_to_delete.unlink()
+                # Level 3 indent (inside try)
+                print(f"[BG Task] Deleted temp file: {temp_file_to_delete}")
+            except Exception as del_err: # Level 2 indent
+                 # Level 3 indent
+                print(f"[BG Task ERROR] Failed to delete temp file {temp_file_to_delete}: {del_err}")
+
+        # Level 1 indent (ALIGN WITH 'if temp_file_to_delete...')
         print(f"[BG Task Finish] Org ID: {organization_id}. Processed: {processed_count}, Errors: {len(errors)}")
-        if errors: print(f"[BG Task Errors] Org ID {organization_id}:\n" + "\n".join([f" - {e}" for e in errors]))
-    
+
+        # Level 1 indent
+        if errors:
+             # Level 2 indent
+            print(f"[BG Task Errors] Org ID {organization_id}:\n" + "\n".join([f" - {e}" for e in errors]))
+
+# End of function
