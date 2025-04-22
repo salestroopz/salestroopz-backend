@@ -114,13 +114,143 @@ def list_tenant_leads(current_user: UserPublic = Depends(get_current_user)):
 def process_leads_background(organization_id: int, user_email: str, source_type: str, source_details: dict, icp: dict):
     """
     Background task to fetch/read leads and process them for a specific organization.
+    (Includes file reading logic, calls agent.process with org_id)
     """
-    # ... (Keep the full implementation of the background task as provided before) ...
     print(f"[BG Task Start] Org ID: {organization_id}, User: {user_email}, Source: {source_type}")
-   # ... try ... except ...
+    # Initialize variables used throughout the function
+    leads_to_process = []
+    processed_count = 0
+    errors = []
+    temp_file_to_delete = None
+    agent = None # Initialize agent variable
+
+    # --- Main Try Block for the entire background task ---
+    try:
+        agent = LeadWorkflowAgent() # Instantiate agent for the task
+        if not agent: raise ValueError("LeadWorkflowAgent could not be instantiated.")
+
+        # === Lead Fetching/Reading Logic ===
+        if source_type == "file_upload":
+            filename = source_details.get("filename")
+            if not filename: raise ValueError("Filename missing for file upload")
+            file_path = UPLOAD_DIR / filename
+            temp_file_to_delete = file_path # Mark for potential deletion
+            if not file_path.is_file(): raise FileNotFoundError(f"BG Task: File not found {file_path}")
+
+            print(f"[BG Task] Processing file: {file_path}")
+            try: # Inner try specifically for file reading/parsing
+                if filename.lower().endswith(".csv"):
+                    df = pd.read_csv(file_path, on_bad_lines='warn')
+                elif filename.lower().endswith(".xlsx"):
+                    df = pd.read_excel(file_path, engine='openpyxl')
+                else: raise ValueError(f"Unsupported file extension: {filename}")
+
+                # --- Column Mapping ---
+                column_map = { # Adapt this map!
+                    'email': ['email', 'email address', 'e-mail', 'emailaddress'],
+                    'name': ['name', 'full name', 'contact name', 'contact'],
+                    'company': ['company', 'company name', 'organization', 'account name'],
+                    'title': ['title', 'job title', 'position'],
+                }
+                df.columns = df.columns.str.lower().str.strip().str.replace('[^A-Za-z0-9_]+', '', regex=True)
+
+                mapped_cols = {}
+                for target_key, possible_names in column_map.items():
+                    for name in possible_names:
+                        normalized_name = name.lower().strip().replace('[^A-Za-z0-9_]+', '', regex=True)
+                        if normalized_name in df.columns:
+                            mapped_cols[target_key] = normalized_name; break
+                    if target_key not in mapped_cols: print(f"[BG Task Warning] Target column '{target_key}' not found.")
+                    if target_key == 'email' and target_key not in mapped_cols: raise ValueError("Required 'email' column not found.")
+                if 'email' not in mapped_cols: raise ValueError("Could not map an 'email' column.")
+
+                # --- Convert DF to List of Dicts ---
+                for index, row in df.iterrows():
+                    lead_dict = {}
+                    has_essential = True
+                    for target_key, source_col in mapped_cols.items():
+                        value = row.get(source_col)
+                        lead_dict[target_key] = str(value).strip() if pd.notna(value) else None
+                        if target_key == 'email' and not lead_dict[target_key]:
+                            print(f"[BG Task Warning] Skipping row {index+2} due to missing email.")
+                            has_essential = False; break
+                    if not has_essential: continue
+                    lead_dict['source'] = f"file_upload:{filename}"
+                    leads_to_process.append(lead_dict)
+
+            except Exception as read_err:
+                 # Handle errors during file reading/parsing specifically
+                 error_detail = f"Error reading/parsing file {filename}: {read_err}"
+                 print(f"[BG Task ERROR] {error_detail}"); errors.append(error_detail)
+                 # Do not proceed further in the 'try' block if file reading failed
+                 raise # Re-raise to be caught by the outer except block
+
+        elif source_type == "manual_entry":
+            manual_leads_data = source_details.get("manual_leads", [])
+            if not isinstance(manual_leads_data, list):
+                errors.append("Invalid format for 'manual_leads' (expected list).")
+            elif not manual_leads_data:
+                 errors.append("No leads provided in 'manual_leads' data.")
+            else:
+                 print(f"[BG Task] Processing {len(manual_leads_data)} manually entered leads.")
+                 valid_manual_leads = []
+                 for lead_dict in manual_leads_data:
+                     if isinstance(lead_dict, dict) and lead_dict.get('email'):
+                         lead_dict.setdefault('source', 'manual_entry')
+                         valid_manual_leads.append(lead_dict)
+                     else: errors.append(f"Invalid manual lead format skipped: {lead_dict}")
+                 leads_to_process = valid_manual_leads
+
+        elif source_type in ["apollo", "crm"]:
+             msg = f"Source type '{source_type}' processing not yet implemented."
+             print(f"[BG Task] {msg}"); errors.append(msg)
+             # No leads added to leads_to_process
+        else:
+             msg = f"Unsupported source type: {source_type}"
+             print(f"[BG Task ERROR] {msg}"); errors.append(msg)
+             # No leads added
+
+        # === Process the extracted leads ===
+        if leads_to_process:
+            print(f"[BG Task] Submitting {len(leads_to_process)} leads to agent for Org ID: {organization_id}...")
+            # Loop through leads and process one by one
+            for lead_dict in leads_to_process:
+                try: # Inner try for processing a single lead by the agent
+                    # --- Pass organization_id to agent.process ---
+                    # Ensure agent.process exists and accepts organization_id
+                    agent.process_single_lead(lead_dict, organization_id=organization_id) # Using the refactored name
+                    processed_count += 1
+                except TypeError as te:
+                    # Handle specific error if agent method signature is wrong
+                    if "organization_id" in str(te) or "process_single_lead" in str(te):
+                        err_msg = f"Agent method needs update for multi-tenancy/signature. Error: {te}"
+                        print(f"[BG Task ERROR] {err_msg}"); errors.append(err_msg)
+                        # Consider if you should stop the whole task here
+                        break # Stop processing further leads in this batch if agent is broken
+                    else:
+                        # Handle other unexpected TypeErrors
+                        error_detail = f"Type error processing lead {lead_dict.get('email', 'N/A')}: {te}"
+                        print(f"[BG Task ERROR] {error_detail}"); errors.append(error_detail)
+                except Exception as agent_err:
+                    # Handle errors from the agent's processing logic
+                    error_detail = f"Agent failed processing lead {lead_dict.get('email', 'N/A')}: {agent_err}"
+                    print(f"[BG Task ERROR] {error_detail}"); errors.append(error_detail)
+                    # Continue to the next lead even if one fails
+        elif not errors: # Only log this if no leads AND no previous errors
+            msg = f"No valid leads found or extracted from source: {source_type}"
+            print(f"[BG Task] {msg}"); errors.append(msg)
+
+    # --- Outer Except Block (Catches errors from agent init, file finding, critical parsing errors) ---
+    except Exception as bg_err:
+         error_detail = f"Critical error during background task setup or processing for Org ID {organization_id}: {bg_err}"
+         print(f"[BG Task ERROR] {error_detail}")
+         # Ensure the error gets logged if 'errors' list was empty
+         if not errors: errors.append(error_detail)
+
+    # --- Finally Block (Executes regardless of errors in try block) ---
     finally:
         # Level 1 indent (inside finally)
-        print(f"DEBUG: Entering finally block for background task Org {organization_id}") # Add debug print
+        print(f"DEBUG: Entering finally block for background task Org {organization_id}")
 
         # Level 1 indent
         if temp_file_to_delete and temp_file_to_delete.is_file():
@@ -133,11 +263,11 @@ def process_leads_background(organization_id: int, user_email: str, source_type:
                 print(f"[BG Task ERROR] Failed to delete temp file {temp_file_to_delete}: {del_err}")
 
         # Level 1 indent (ALIGN WITH 'if temp_file_to_delete...')
-        print(f"[BG Task Finish] Org ID: {organization_id}. Processed: {processed_count}, Errors: {len(errors)}")
+        print(f"[BG Task Finish] Org ID: {organization_id}. Processed Count: {processed_count}, Leads Submitted: {len(leads_to_process)}, Errors Logged: {len(errors)}")
 
         # Level 1 indent
         if errors:
              # Level 2 indent
-            print(f"[BG Task Errors] Org ID {organization_id}:\n" + "\n".join([f" - {e}" for e in errors]))
+            print(f"[BG Task Errors Summary] Org ID {organization_id}:\n" + "\n".join([f" - {str(e)[:500]}..." for e in errors])) # Log first 500 chars of each error
 
-# End of function
+# --- End of the process_leads_background function definition --
