@@ -37,17 +37,6 @@ class ManualLeadData(BaseModel):
     company: Optional[str] = None
     title: Optional[str] = None
 
-# --- Original ICP Request/Response (Keep if needed for /full-cycle) ---
-class OriginalICPRequest(BaseModel): # Renamed to avoid conflict
-    industry: str = Field(..., example="SaaS")
-    employee_range: str = Field(..., example="51-200")
-    region: Optional[str] = Field(None, example="North America")
-    pain_points: Optional[List[str]] = Field(default_factory=list)
-
-class OriginalICPResponse(BaseModel): # Renamed to avoid conflict
-    message: str
-    icp_summary: str
-
 
 # --- Lead Enrichment Schemas (Keep if used by enrichment agent) ---
 class LeadEnrichmentRequest(BaseModel):
