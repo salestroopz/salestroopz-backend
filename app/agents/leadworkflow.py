@@ -118,9 +118,3 @@ class LeadWorkflowAgent:
                  results.append({"email": lead_data.get("email"), "status": "error", "detail": str(e)})
         logger.info(f"Pipeline finished for Org ID: {organization_id}. Results count: {len(results)}.")
         return results
-
-    # --- run_full_workflow method REMOVED ---
-        else:
-            logger.info(f"No initial leads fetched for full workflow (Org: {organization_id}).")
-            return {"status": "Full workflow run", "detail": "No initial leads fetched based on ICP.", "results": []}
-
