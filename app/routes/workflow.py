@@ -77,9 +77,16 @@ async def initiate_workflow_from_icp(
         source_details=request_data.source_details or {},
         icp=request_data.icp.dict()
         )
-    # ... (Keep return statement) ...
-    return { "message": "Workflow initiation request received...", ... }
-
+    # Return immediate acknowledgement
+    return {
+        "message": "Workflow initiation request received. Processing will start in the background.",
+        # You should include the details received as well for confirmation
+        "details_received": {
+             "icp": request_data.icp.dict(),
+             "source": request_data.source_type,
+             "source_details": request_data.source_details # Send back what was received
+             }
+        } # Close the main dictionary correctly
 
 # === /full-cycle endpoint REMOVED ===
 # @router.post("/full-cycle") ...
