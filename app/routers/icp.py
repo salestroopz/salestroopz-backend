@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.schemas import ICPRequest, ICPResponse
+from app.schemas import OriginalICPRequest, ICPResponse
 
 router = APIRouter()
 
