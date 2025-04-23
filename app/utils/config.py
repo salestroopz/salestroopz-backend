@@ -39,6 +39,13 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256" # Standard algorithm for HS256 JWTs
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 1 # Default: 1 day expiry
 
+    EMAIL_HOST: Optional[str] = os.getenv("EMAIL_HOST")
+    EMAIL_PORT: int = int(os.getenv("EMAIL_PORT", 587)) # Default to 587 if not set
+    EMAIL_USERNAME: Optional[str] = os.getenv("EMAIL_USERNAME")
+    EMAIL_PASSWORD: Optional[str] = os.getenv("EMAIL_PASSWORD") # Use App Password for Gmail
+    EMAIL_SENDER_ADDRESS: Optional[str] = os.getenv("EMAIL_SENDER_ADDRESS") # e.g., your sending address
+    EMAIL_SENDER_NAME: str = os.getenv("EMAIL_SENDER_NAME", "SalesTroopz Agent") # Default sender name
+
     # --- CORS Settings ---
     # Define allowed origins (frontend URL). Comma-separated string in env var.
     # ** UPDATE the default Render URL placeholder below **
@@ -47,6 +54,7 @@ class Settings(BaseSettings):
         "http://localhost:8501,https://your-streamlit-app-name.onrender.com"
     )
 
+   
     @property
     def allowed_origins_list(self) -> list[str]:
         """Parses the comma-separated ALLOWED_ORIGINS string into a list."""
