@@ -3,7 +3,8 @@
 import sqlite3
 from pathlib import Path
 from typing import Optional, List, Dict, Any
-import json # Needed for ICP JSON handling
+import json
+from datetime import datetime # Import datetime for timestamp comparisons later
 
 # --- Import Settings ---
 try:
@@ -33,12 +34,15 @@ def get_connection():
     """Establishes and returns a connection to the SQLite database."""
     if not DB_PATH:
          raise ValueError("Database path is not configured correctly for SQLite.")
-    return sqlite3.connect(DB_PATH, check_same_thread=False, timeout=10)
+    # Enable FOREIGN KEY constraint enforcement for SQLite
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=10)
+    conn.execute("PRAGMA foreign_keys = ON;")
+    return conn
 
 
-# --- Database Initialization (Multi-Tenant + ICPs) ---
+# --- Database Initialization (ALL Tables) ---
 def initialize_db():
-    """Creates/updates tables: organizations, users, leads, icps, offerings."""
+    """Creates/updates tables: organizations, users, leads, icps, offerings, email_campaigns, campaign_steps, lead_campaign_status."""
     # **IMPORTANT**: Running this after schema change might require deleting the old DB file.
     print("Initializing database schema...")
     conn = None
@@ -76,18 +80,9 @@ def initialize_db():
         CREATE TABLE IF NOT EXISTS leads (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             organization_id INTEGER NOT NULL,
-            name TEXT,
-            email TEXT NOT NULL COLLATE NOCASE,
-            company TEXT,
-            title TEXT,
-            source TEXT,
-            linkedin_profile TEXT,
-            company_size TEXT,
-            industry TEXT,
-            location TEXT,
-            matched INTEGER DEFAULT 0,
-            reason TEXT,
-            crm_status TEXT DEFAULT 'pending',
+            name TEXT, email TEXT NOT NULL COLLATE NOCASE, company TEXT, title TEXT, source TEXT,
+            linkedin_profile TEXT, company_size TEXT, industry TEXT, location TEXT,
+            matched INTEGER DEFAULT 0, reason TEXT, crm_status TEXT DEFAULT 'pending',
             appointment_confirmed INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE (organization_id, email),
@@ -98,43 +93,100 @@ def initialize_db():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_lead_org_email ON leads (organization_id, email)")
         print(" -> Leads table checked/created/modified.")
 
-        # --- 4. NEW: ICPs Table ---
+        # 4. ICPs Table
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS icps (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, organization_id INTEGER NOT NULL UNIQUE,
+            name TEXT DEFAULT 'Default ICP', title_keywords TEXT, industry_keywords TEXT,
+            company_size_rules TEXT, location_keywords TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (organization_id) REFERENCES organizations (id) ON DELETE CASCADE
+        )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_icp_organization ON icps (organization_id)")
+        print(" -> ICPs table checked/created.")
+
+        # 5. Offerings Table
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS offerings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, organization_id INTEGER NOT NULL, name TEXT NOT NULL,
+            description TEXT, key_features TEXT, target_pain_points TEXT, call_to_action TEXT,
+            is_active INTEGER DEFAULT 1, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (organization_id) REFERENCES organizations (id) ON DELETE CASCADE
+        )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_offering_organization ON offerings (organization_id)")
+        print(" -> Offerings table checked/created.")
+
+        # --- 6. NEW: Email Campaigns Table ---
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS email_campaigns (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            organization_id INTEGER NOT NULL UNIQUE, -- One ICP per org for now
-            name TEXT DEFAULT 'Default ICP',
-            title_keywords TEXT,      -- Stores JSON list: '["cto", "cio"]'
-            industry_keywords TEXT,   -- Stores JSON list: '["saas"]'
-            company_size_rules TEXT,  -- Stores JSON dict or list: '{"min": 50}' or '["51-200"]'
-            location_keywords TEXT,   -- Stores JSON list: '["london"]'
-            # Add other criteria fields as needed (e.g., pain_points TEXT)
+            organization_id INTEGER NOT NULL,
+            name TEXT NOT NULL,             -- e.g., "Default Outreach Q2", "Feature X Launch"
+            description TEXT,
+            is_active INTEGER DEFAULT 1,    -- Campaign is usable (1) or archived (0)
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (organization_id) REFERENCES organizations (id) ON DELETE CASCADE
         )
         """)
-        # --- 5. NEW: Offerings Table ---
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_campaign_organization ON email_campaigns (organization_id)")
+        print(" -> Email Campaigns table checked/created.")
+
+        # --- 7. NEW: Campaign Steps Table ---
         cursor.execute("""
-        CREATE TABLE IF NOT EXISTS offerings (
+        CREATE TABLE IF NOT EXISTS campaign_steps (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            organization_id INTEGER NOT NULL,
-            name TEXT NOT NULL,                 -- e.g., "Cloud Migration Service"
-            description TEXT,                   -- Detailed explanation
-            key_features TEXT,                  -- Stores JSON list: '["Scalability", "Cost Savings"]'
-            target_pain_points TEXT,            -- Stores JSON list: '["High IT Costs", "Slow Deployments"]'
-            call_to_action TEXT,                -- e.g., "Book a free consultation"
-            is_active INTEGER DEFAULT 1,        -- Boolean flag (1=Active, 0=Inactive)
+            campaign_id INTEGER NOT NULL,
+            organization_id INTEGER NOT NULL,      -- Denormalized for easier filtering
+            step_number INTEGER NOT NULL,         -- Order of the email (1, 2, 3...)
+            delay_days INTEGER DEFAULT 1,         -- Days after previous step/enrollment
+            subject_template TEXT,                -- Subject line (can include {{placeholders}})
+            body_template TEXT,                   -- Email body (can include {{placeholders}})
+            is_ai_crafted INTEGER DEFAULT 0,      -- 0=Use template, 1=Call AI crafter
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- Consider trigger later
-            -- Allow multiple offerings per organization
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (campaign_id, step_number),    -- Step order unique per campaign
+            FOREIGN KEY (campaign_id) REFERENCES email_campaigns (id) ON DELETE CASCADE,
             FOREIGN KEY (organization_id) REFERENCES organizations (id) ON DELETE CASCADE
         )
         """)
-        
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_icp_organization ON icps (organization_id)")
-        print(" -> ICPs table checked/created.")
-        # --- End of New Table ---
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_step_campaign ON campaign_steps (campaign_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_step_organization ON campaign_steps (organization_id)")
+        print(" -> Campaign Steps table checked/created.")
+
+        # --- 8. NEW: Lead Campaign Status Table ---
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS lead_campaign_status (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            lead_id INTEGER NOT NULL,
+            campaign_id INTEGER NOT NULL,
+            organization_id INTEGER NOT NULL,      -- Denormalized
+            current_step_number INTEGER DEFAULT 0, -- Last step COMPLETED (0=not started)
+            status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'active', 'paused', 'completed', 'replied', 'bounced', 'unsubscribed', 'awaiting_scheduling', 'scheduled'
+            last_email_sent_at TIMESTAMP,         -- When last step email was sent
+            next_email_due_at TIMESTAMP,          -- OPTIONAL pre-calculated time for next send (can help scheduler query)
+            last_response_type TEXT,              -- 'positive', 'negative', 'neutral', 'oof', 'none'
+            last_response_at TIMESTAMP,
+            error_message TEXT,                   -- Store bounce/error details
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (lead_id),                     -- Lead can only be in one status record at a time
+            FOREIGN KEY (lead_id) REFERENCES leads (id) ON DELETE CASCADE,
+            FOREIGN KEY (campaign_id) REFERENCES email_campaigns (id) ON DELETE CASCADE,
+            FOREIGN KEY (organization_id) REFERENCES organizations (id) ON DELETE CASCADE
+        )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_status_lead ON lead_campaign_status (lead_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_status_campaign ON lead_campaign_status (campaign_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_status_organization ON lead_campaign_status (organization_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_status_status ON lead_campaign_status (status)") # For finding 'active' leads etc.
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_status_due ON lead_campaign_status (next_email_due_at)") # If using this field
+        print(" -> Lead Campaign Status table checked/created.")
+        # --- End of New Tables ---
+
 
         conn.commit()
         print("Database initialization sequence complete.")
@@ -142,6 +194,8 @@ def initialize_db():
         print(f"DATABASE ERROR during initialization: {e}")
     finally:
         if conn: conn.close()
+
+
 
 
 # ==========================================
@@ -504,3 +558,207 @@ def delete_offering(offering_id: int, organization_id: int) -> bool:
     finally:
         if conn: conn.close()
     return success
+
+# --- Campaign CRUD ---
+def create_campaign(organization_id: int, name: str, description: Optional[str] = None, is_active: bool = True) -> Optional[Dict]:
+    """Creates a new email campaign for an organization."""
+    sql = "INSERT INTO email_campaigns (organization_id, name, description, is_active) VALUES (?, ?, ?, ?)"
+    params = (organization_id, name, description, int(is_active))
+    conn = None; new_id = None
+    try:
+        conn = get_connection(); cursor = conn.cursor()
+        cursor.execute(sql, params); new_id = cursor.lastrowid
+        conn.commit(); print(f"Created campaign '{name}' (ID: {new_id}) for Org {organization_id}")
+    except sqlite3.Error as e: print(f"DB Error creating campaign for Org {organization_id}: {e}")
+    finally:
+        if conn: conn.close()
+    # Fetch the created campaign to return full data
+    return get_campaign_by_id(new_id, organization_id) if new_id else None
+
+def get_campaign_by_id(campaign_id: int, organization_id: int) -> Optional[Dict]:
+    """Gets a specific campaign ensuring it belongs to the organization."""
+    sql = "SELECT * FROM email_campaigns WHERE id = ? AND organization_id = ?"
+    conn = None; campaign = None
+    try:
+        conn = get_connection(); conn.row_factory = sqlite3.Row; cursor = conn.cursor()
+        cursor.execute(sql, (campaign_id, organization_id)); result = cursor.fetchone()
+        if result: campaign = dict(result)
+    except sqlite3.Error as e: print(f"DB Error getting campaign ID {campaign_id} for Org {organization_id}: {e}")
+    finally:
+        if conn: conn.close()
+    return campaign
+
+def get_campaigns_by_organization(organization_id: int, active_only: bool = True) -> List[Dict]:
+    """Fetches all campaigns for a specific organization."""
+    sql = "SELECT * FROM email_campaigns WHERE organization_id = ?"
+    params = [organization_id]
+    if active_only: sql += " AND is_active = 1"
+    sql += " ORDER BY name"
+    conn = None; campaigns = []
+    try:
+        conn = get_connection(); conn.row_factory = sqlite3.Row; cursor = conn.cursor()
+        cursor.execute(sql, params); results = cursor.fetchall()
+        for row in results: campaigns.append(dict(row))
+    except sqlite3.Error as e: print(f"DB Error getting campaigns for Org {organization_id}: {e}")
+    finally:
+        if conn: conn.close()
+    return campaigns
+
+# --- Step CRUD ---
+def create_campaign_step(campaign_id: int, organization_id: int, step_number: int, delay_days: int, subject: Optional[str], body: Optional[str], is_ai: bool = False) -> Optional[Dict]:
+    """Creates a step within a campaign."""
+    sql = """
+        INSERT INTO campaign_steps
+        (campaign_id, organization_id, step_number, delay_days, subject_template, body_template, is_ai_crafted)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """
+    params = (campaign_id, organization_id, step_number, delay_days, subject, body, int(is_ai))
+    conn = None; new_id = None
+    try:
+        conn = get_connection(); cursor = conn.cursor()
+        cursor.execute(sql, params); new_id = cursor.lastrowid
+        conn.commit(); print(f"Created step {step_number} (ID: {new_id}) for Campaign {campaign_id}, Org {organization_id}")
+    except sqlite3.IntegrityError as ie: print(f"DB Integrity Error creating step {step_number} for Camp {campaign_id}: {ie}") # e.g., step exists, FK fail
+    except sqlite3.Error as e: print(f"DB Error creating step {step_number} for Camp {campaign_id}: {e}")
+    finally:
+        if conn: conn.close()
+    # Fetch created step if needed, or just return ID/success? Returning ID for now.
+    return {"id": new_id} if new_id else None # Basic return
+
+def get_steps_for_campaign(campaign_id: int, organization_id: int) -> List[Dict]:
+    """Fetches all steps for a campaign, ordered by step number."""
+    sql = "SELECT * FROM campaign_steps WHERE campaign_id = ? AND organization_id = ? ORDER BY step_number"
+    conn = None; steps = []
+    try:
+        conn = get_connection(); conn.row_factory = sqlite3.Row; cursor = conn.cursor()
+        cursor.execute(sql, (campaign_id, organization_id)); results = cursor.fetchall()
+        for row in results: steps.append(dict(row))
+    except sqlite3.Error as e: print(f"DB Error getting steps for Camp {campaign_id}, Org {organization_id}: {e}")
+    finally:
+        if conn: conn.close()
+    return steps
+
+def get_next_campaign_step(campaign_id: int, organization_id: int, current_step_number: int) -> Optional[Dict]:
+    """Fetches the details of the step AFTER the current_step_number."""
+    sql = """
+        SELECT * FROM campaign_steps
+        WHERE campaign_id = ? AND organization_id = ? AND step_number = ?
+        ORDER BY step_number
+        LIMIT 1
+    """
+    next_step_number = current_step_number + 1
+    conn = None; step_data = None
+    try:
+        conn = get_connection(); conn.row_factory = sqlite3.Row; cursor = conn.cursor()
+        cursor.execute(sql, (campaign_id, organization_id, next_step_number))
+        result = cursor.fetchone()
+        if result: step_data = dict(result)
+    except sqlite3.Error as e: print(f"DB Error getting next step ({next_step_number}) for Camp {campaign_id}, Org {organization_id}: {e}")
+    finally:
+        if conn: conn.close()
+    return step_data
+
+# --- Lead Status CRUD ---
+def enroll_lead_in_campaign(lead_id: int, campaign_id: int, organization_id: int) -> Optional[Dict]:
+    """Creates the initial 'active' status record for a lead entering a campaign."""
+    # Potentially calculate first due date here based on step 1 delay? Or handle in scheduler.
+    # next_due = datetime.now() + timedelta(days=step1_delay) # Example
+    sql = """
+        INSERT INTO lead_campaign_status (lead_id, campaign_id, organization_id, status, current_step_number)
+        VALUES (?, ?, ?, 'active', 0)
+    """
+    params = (lead_id, campaign_id, organization_id)
+    conn = None; status_data = None
+    try:
+        conn = get_connection(); cursor = conn.cursor()
+        cursor.execute(sql, params); status_id = cursor.lastrowid
+        conn.commit(); print(f"Enrolled Lead ID {lead_id} in Campaign ID {campaign_id} (Status ID: {status_id})")
+        status_data = get_lead_campaign_status_by_id(status_id, organization_id) # Fetch created record
+    except sqlite3.IntegrityError as ie: print(f"DB Integrity Error enrolling lead {lead_id} in camp {campaign_id}: {ie}") # Lead already enrolled? FK fail?
+    except sqlite3.Error as e: print(f"DB Error enrolling lead {lead_id} in camp {campaign_id}: {e}")
+    finally:
+        if conn: conn.close()
+    return status_data
+
+def update_lead_campaign_status(status_id: int, organization_id: int, updates: Dict[str, Any]) -> Optional[Dict]:
+    """Updates specific fields (like status, step, timestamps) for a lead's campaign status."""
+    # Ensure only allowed fields are updated
+    allowed_fields = {"current_step_number", "status", "last_email_sent_at", "next_email_due_at", "last_response_type", "last_response_at", "error_message"}
+    valid_updates = {k:v for k,v in updates.items() if k in allowed_fields}
+    if not valid_updates: return get_lead_campaign_status_by_id(status_id, organization_id) # No changes
+
+    set_parts = [f"{key} = :{key}" for key in valid_updates.keys()]
+    set_parts.append("updated_at = CURRENT_TIMESTAMP")
+    set_clause = ", ".join(set_parts)
+    params = valid_updates
+    params["status_id"] = status_id
+    params["organization_id"] = organization_id
+
+    sql = f"UPDATE lead_campaign_status SET {set_clause} WHERE id = :status_id AND organization_id = :organization_id"
+    conn = None; success = False
+    try:
+        conn = get_connection(); cursor = conn.cursor()
+        cursor.execute(sql, params); conn.commit()
+        if cursor.rowcount > 0: success = True; print(f"Updated lead campaign status ID {status_id}")
+        else: print(f"Lead campaign status ID {status_id} not found for Org {organization_id}")
+    except sqlite3.Error as e: print(f"DB Error updating lead status ID {status_id}: {e}")
+    finally:
+        if conn: conn.close()
+    return get_lead_campaign_status_by_id(status_id, organization_id) if success else None
+
+
+def get_active_leads_due_for_step(organization_id: int) -> List[Dict]:
+    """
+    Finds leads in 'active' status potentially due for their next email.
+    Requires JOINING to get next step delay and comparing timestamps.
+    NOTE: This is a complex query, simplified here. May need optimization or rely on pre-calculated 'next_email_due_at'.
+    """
+    print(f"DB: Querying for active leads due for Org {organization_id}...") # Add log
+    leads_due = []
+    conn = None
+    # This simplified query assumes you will calculate due date in the scheduler based on last_sent + delay
+    # It just gets active leads and their current state.
+    # A better query would pre-calculate or filter on next_email_due_at <= current_time
+    sql = """
+        SELECT lcs.*, c.name as campaign_name -- Select all status fields, maybe campaign name
+        FROM lead_campaign_status lcs
+        JOIN email_campaigns c ON lcs.campaign_id = c.id
+        WHERE lcs.organization_id = ? AND lcs.status = 'active'
+        ORDER BY lcs.last_email_sent_at ASC -- Process oldest first potentially
+    """
+    params = (organization_id,)
+    try:
+        conn = get_connection(); conn.row_factory = sqlite3.Row; cursor = conn.cursor()
+        cursor.execute(sql, params); results = cursor.fetchall()
+        for row in results: leads_due.append(dict(row))
+        print(f"DB: Found {len(leads_due)} potentially active leads for Org {organization_id}.") # Add log
+    except sqlite3.Error as e: print(f"DB Error getting active due leads for Org {organization_id}: {e}")
+    finally:
+        if conn: conn.close()
+    return leads_due
+
+def get_lead_campaign_status_by_id(status_id: int, organization_id: int) -> Optional[Dict]:
+    """Gets a specific lead campaign status record by its ID, ensuring org match."""
+    sql = "SELECT * FROM lead_campaign_status WHERE id = ? AND organization_id = ?"
+    conn = None; status_data = None
+    try:
+        conn = get_connection(); conn.row_factory = sqlite3.Row; cursor = conn.cursor()
+        cursor.execute(sql, (status_id, organization_id)); result = cursor.fetchone()
+        if result: status_data = dict(result)
+    except sqlite3.Error as e: print(f"DB Error getting lead status ID {status_id} for Org {organization_id}: {e}")
+    finally:
+        if conn: conn.close()
+    return status_data
+
+def get_lead_campaign_status(lead_id: int, organization_id: int) -> Optional[Dict]:
+    """Gets the current campaign status for a specific lead."""
+    sql = "SELECT * FROM lead_campaign_status WHERE lead_id = ? AND organization_id = ?"
+    conn = None; status_data = None
+    try:
+        conn = get_connection(); conn.row_factory = sqlite3.Row; cursor = conn.cursor()
+        cursor.execute(sql, (lead_id, organization_id)); result = cursor.fetchone()
+        if result: status_data = dict(result)
+    except sqlite3.Error as e: print(f"DB Error getting campaign status for lead {lead_id}, Org {organization_id}: {e}")
+    finally:
+        if conn: conn.close()
+    return status_data
