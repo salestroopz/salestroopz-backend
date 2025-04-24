@@ -11,8 +11,9 @@ from app.db import database
 # Import Email Crafter if using AI steps
 from app.agents.emailcampaign import EmailCraftingAgent
 # Import Email Sender utility
-from app.utils.email_sender import send_email, get_org_email_settings
+from app.utils.email_sender import send_email_ses, get_org_email_settings
 
+# Use the new function name
 class EmailSchedulerAgent:
     """
     Agent responsible for periodically checking lead campaign statuses,
@@ -178,7 +179,7 @@ class EmailSchedulerAgent:
                  continue # Skip to next lead
 
             # Proceed with sending only if content and config are ready
-            send_success = send_email(
+           send_success = send_email_ses(
                 recipient_email=lead_data['email'], subject=subject, html_body=body.replace('\n', '<br/>'),
                 sender_address=email_config["sender_address"], sender_name=email_config["sender_name"],
                 smtp_host=email_config["smtp_host"], smtp_port=email_config["smtp_port"],
