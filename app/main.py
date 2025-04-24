@@ -125,7 +125,6 @@ try:
     app.include_router(offering.router)
     app.include_router(crm.router)
     app.include_router(agents.router)
-    app.include_router(emailcampaign.router)
     app.include_router(insidesales.router)
     app.include_router(scheduler.router)
     app.include_router(leadenrichment.router)
