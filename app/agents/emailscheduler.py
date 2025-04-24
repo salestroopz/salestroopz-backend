@@ -179,12 +179,15 @@ class EmailSchedulerAgent:
                  continue # Skip to next lead
 
             # Proceed with sending only if content and config are ready
-           send_success = send_email_ses(
-                recipient_email=lead_data['email'], subject=subject, html_body=body.replace('\n', '<br/>'),
-                sender_address=email_config["sender_address"], sender_name=email_config["sender_name"],
-                smtp_host=email_config["smtp_host"], smtp_port=email_config["smtp_port"],
-                smtp_username=email_config["smtp_username"], smtp_password=email_config["smtp_password"]
-            )
+           send_success = send_email_ses( # <--- Use correct function name
+        recipient_email=lead_data['email'],
+        subject=subject,
+        html_body=body.replace('\n', '<br/>'),
+        # Pass org-specific settings fetched earlier
+        sender_address=email_config["sender_address"],
+        sender_name=email_config["sender_name"]
+        # aws_region is handled by boto3 client internally using env vars/config
+    )
 
             # --- Update Lead Status Based on Send Result ---
             update_payload = {}
