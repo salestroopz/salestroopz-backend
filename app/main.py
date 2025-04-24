@@ -44,7 +44,7 @@ except ImportError as e:
 # API Routers
 try:
     # Import all router modules
-    from app.routes import auth, workflow, leadworkflow, crm, agents, emailcampaign, insidesales, scheduler, leadenrichment, icpmatch
+    from app.routes import auth, workflow, leadworkflow, crm, agents, insidesales, scheduler, leadenrichment, icpmatch
     from app.routers import icp, offering
 except ImportError as e:
     print(f"ERROR: Could not import one or more routers: {e}")
