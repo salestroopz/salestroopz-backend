@@ -187,6 +187,64 @@ def initialize_db():
         print(" -> Lead Campaign Status table checked/created.")
         # --- End of New Tables ---
 
+          # --- 9. NEW: Organization Email Settings Table ---
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS organization_email_settings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL UNIQUE, -- One settings record per org
+            provider_type TEXT,                      -- 'smtp', 'google_oauth', 'm365_oauth', 'sendgrid_api', etc.
+            -- SMTP Specific (Store securely - **NEEDS ENCRYPTION IMPLEMENTATION**)
+            smtp_host TEXT,
+            smtp_port INTEGER,
+            smtp_username TEXT,
+            encrypted_smtp_password TEXT,            -- Store encrypted password/app password
+            -- API Key Specific (Store securely - **NEEDS ENCRYPTION IMPLEMENTATION**)
+            encrypted_api_key TEXT,                  -- e.g., for SendGrid
+            -- OAuth Specific (Store securely - **NEEDS ENCRYPTION IMPLEMENTATION**)
+            encrypted_access_token TEXT,
+            encrypted_refresh_token TEXT,
+            token_expiry TIMESTAMP,
+            -- Common Fields
+            verified_sender_email TEXT NOT NULL,     -- The validated email address they send from
+            sender_name TEXT,                        -- Default display name
+            is_configured INTEGER DEFAULT 0,         -- Flag: 0=Not setup, 1=Setup complete/validated
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (organization_id) REFERENCES organizations (id) ON DELETE CASCADE
+        )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_email_settings_organization ON organization_email_settings (organization_id)")
+        print(" -> Organization Email Settings table checked/created.")
+       
+         # --- 9. NEW: Organization Email Settings Table ---
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS organization_email_settings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            organization_id INTEGER NOT NULL UNIQUE, -- One settings record per org
+            provider_type TEXT,                      -- 'smtp', 'google_oauth', 'm365_oauth', 'sendgrid_api', etc.
+            -- SMTP Specific (Store securely - **NEEDS ENCRYPTION IMPLEMENTATION**)
+            smtp_host TEXT,
+            smtp_port INTEGER,
+            smtp_username TEXT,
+            encrypted_smtp_password TEXT,            -- Store encrypted password/app password
+            -- API Key Specific (Store securely - **NEEDS ENCRYPTION IMPLEMENTATION**)
+            encrypted_api_key TEXT,                  -- e.g., for SendGrid
+            -- OAuth Specific (Store securely - **NEEDS ENCRYPTION IMPLEMENTATION**)
+            encrypted_access_token TEXT,
+            encrypted_refresh_token TEXT,
+            token_expiry TIMESTAMP,
+            -- Common Fields
+            verified_sender_email TEXT NOT NULL,     -- The validated email address they send from
+            sender_name TEXT,                        -- Default display name
+            is_configured INTEGER DEFAULT 0,         -- Flag: 0=Not setup, 1=Setup complete/validated
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (organization_id) REFERENCES organizations (id) ON DELETE CASCADE
+        )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_email_settings_organization ON organization_email_settings (organization_id)")
+        print(" -> Organization Email Settings table checked/created.")
+        # --- End New Table ---
 
         conn.commit()
         print("Database initialization sequence complete.")
@@ -762,3 +820,104 @@ def get_lead_campaign_status(lead_id: int, organization_id: int) -> Optional[Dic
     finally:
         if conn: conn.close()
     return status_data
+
+# ==========================================
+# NEW: ORGANIZATION EMAIL SETTINGS CRUD
+# ==========================================
+
+# --- === IMPORTANT: Encryption/Decryption === ---
+# You MUST implement functions to encrypt/decrypt sensitive fields
+# before saving to/after reading from the DB. Use a strong library like 'cryptography'.
+# Store the main encryption key SECURELY (e.g., Render Secret File or KMS).
+# These are placeholders!
+def _encrypt_data(plain_text: Optional[str]) -> Optional[str]:
+    if plain_text is None: return None
+    logger.warning("ENCRYPTION NOT IMPLEMENTED. Storing sensitive data as plain text!") # Add logger import if not present
+    # Replace with actual encryption using cryptography library and your secret key
+    return plain_text # Placeholder only
+
+def _decrypt_data(encrypted_text: Optional[str]) -> Optional[str]:
+    if encrypted_text is None: return None
+    logger.warning("DECRYPTION NOT IMPLEMENTED. Returning plain text (assuming not encrypted).")
+    # Replace with actual decryption using cryptography library and your secret key
+    return encrypted_text # Placeholder only
+# --- ====================================== ---
+
+
+def save_org_email_settings(organization_id: int, settings_data: Dict[str, Any]) -> Optional[Dict]:
+    """Creates or updates the email settings for an organization."""
+    conn = None
+    saved_settings = None
+    # Encrypt sensitive fields before saving
+    encrypted_password = _encrypt_data(settings_data.get("smtp_password")) # Get raw password from input dict
+    encrypted_api_key = _encrypt_data(settings_data.get("api_key"))
+    encrypted_access_token = _encrypt_data(settings_data.get("access_token"))
+    encrypted_refresh_token = _encrypt_data(settings_data.get("refresh_token"))
+
+    columns = [
+        "organization_id", "provider_type", "smtp_host", "smtp_port", "smtp_username",
+        "encrypted_smtp_password", "encrypted_api_key", "encrypted_access_token",
+        "encrypted_refresh_token", "token_expiry", "verified_sender_email",
+        "sender_name", "is_configured"
+    ]
+    params = {
+        "organization_id": organization_id,
+        "provider_type": settings_data.get("provider_type"),
+        "smtp_host": settings_data.get("smtp_host"),
+        "smtp_port": settings_data.get("smtp_port"),
+        "smtp_username": settings_data.get("smtp_username"),
+        "encrypted_smtp_password": encrypted_password,
+        "encrypted_api_key": encrypted_api_key,
+        "encrypted_access_token": encrypted_access_token,
+        "encrypted_refresh_token": encrypted_refresh_token,
+        "token_expiry": settings_data.get("token_expiry"), # Store expiry if using OAuth
+        "verified_sender_email": settings_data.get("verified_sender_email"), # This MUST be validated elsewhere
+        "sender_name": settings_data.get("sender_name"),
+        "is_configured": int(settings_data.get("is_configured", 0))
+    }
+
+    set_clause_parts = [f"{col} = excluded.{col}" for col in columns if col != 'organization_id']
+    set_clause_parts.append("updated_at = CURRENT_TIMESTAMP")
+    set_clause = ", ".join(set_clause_parts)
+
+    sql = f"""
+        INSERT INTO organization_email_settings ({", ".join(columns)})
+        VALUES ({", ".join([f":{col}" for col in columns])})
+        ON CONFLICT(organization_id) DO UPDATE SET {set_clause};
+    """
+    try:
+        # Basic validation
+        if not params["verified_sender_email"]: raise ValueError("Verified sender email is required.")
+        if not params["provider_type"]: raise ValueError("Provider type is required.")
+
+        conn = get_connection(); cursor = conn.cursor()
+        cursor.execute(sql, params); conn.commit()
+        print(f"Saved/Updated Email Settings for Org ID: {organization_id}")
+        saved_settings = get_org_email_settings_from_db(organization_id) # Fetch to return decrypted data
+    except sqlite3.Error as e: print(f"DB Error saving email settings for Org {organization_id}: {e}")
+    except ValueError as ve: print(f"Validation Error saving email settings for Org {organization_id}: {ve}")
+    except Exception as e: print(f"Unexpected error saving email settings for Org {organization_id}: {e}")
+    finally:
+        if conn: conn.close()
+    return saved_settings
+
+
+def get_org_email_settings_from_db(organization_id: int) -> Optional[Dict]:
+    """Fetches email settings for an organization and decrypts sensitive fields."""
+    sql = "SELECT * FROM organization_email_settings WHERE organization_id = ?"
+    conn = None
+    settings_data = None
+    try:
+        conn = get_connection(); conn.row_factory = sqlite3.Row; cursor = conn.cursor()
+        cursor.execute(sql, (organization_id,)); result = cursor.fetchone()
+        if result:
+            settings_data = dict(result)
+            # Decrypt sensitive fields after fetching
+            settings_data["smtp_password"] = _decrypt_data(settings_data.pop("encrypted_smtp_password", None))
+            settings_data["api_key"] = _decrypt_data(settings_data.pop("encrypted_api_key", None))
+            settings_data["access_token"] = _decrypt_data(settings_data.pop("encrypted_access_token", None))
+            settings_data["refresh_token"] = _decrypt_data(settings_data.pop("encrypted_refresh_token", None))
+    except sqlite3.Error as e: print(f"DB Error getting email settings for Org {organization_id}: {e}")
+    finally:
+        if conn: conn.close()
+    return settings_data
