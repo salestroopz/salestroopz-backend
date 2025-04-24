@@ -1,159 +1,171 @@
 # app/utils/email_sender.py
 
-import boto3 # Use AWS SDK
-from botocore.exceptions import ClientError, NoCredentialsError # Specific AWS errors
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from typing import Dict, Optional
 
-# Import utilities and settings
-try:
-    from app.utils.config import settings
-    CONFIG_LOADED = True
-    # Get AWS Region from settings, provide a default
-    AWS_REGION = getattr(settings, "AWS_REGION", "us-east-1")
-except ImportError:
-    print("Warning: Could not import settings for email_sender. AWS region/sender fallback.")
-    settings = None
-    CONFIG_LOADED = False
-    AWS_REGION = "us-east-1" # Default region if settings fail
-
+# Import logger
 from app.utils.logger import logger
-# Import DB function ONLY when ready to fetch org-specific senders
-# from app.db import database
+# --- Import the DB function to get settings ---
+try:
+    from app.db.database import get_org_email_settings_from_db
+except ImportError:
+    logger.critical("FATAL: Could not import database function 'get_org_email_settings_from_db'. Email sending will fail.")
+    # Define a dummy function to prevent NameErrors later, but log critical failure
+    def get_org_email_settings_from_db(org_id: int) -> Optional[Dict]:
+        logger.error("Dummy get_org_email_settings_from_db called - DB module import failed!")
+        return None
 
-# --- Function to get Organization-Specific Email Settings ---
-# --- TODO: Replace this with actual DB lookup for verified sender per org ---
-def get_org_email_settings(organization_id: int) -> Dict[str, Optional[str]]:
-    """
-    [NEEDS DB IMPLEMENTATION FOR MULTI-TENANCY]
-    Fetches the VERIFIED SENDER email address and desired sender name for an organization.
-    Currently falls back to global settings defined in config/environment.
-    """
-    sender_address = None
-    sender_name = f"Sales Team Org {organization_id}" # Default name
-
-    if CONFIG_LOADED:
-        # In future, fetch specific verified sender for the org from DB:
-        # db_settings = database.get_email_config_for_org(organization_id)
-        # if db_settings and db_settings.get('verified_sender_email'):
-        #     sender_address = db_settings['verified_sender_email']
-        #     sender_name = db_settings.get('sender_name', sender_name) # Use specific name if set
-        # else: # Fallback if no specific setting found for org
-        #     logger.warning(f"No specific sender email found for Org {organization_id}, using default.")
-        #     sender_address = getattr(settings, "DEFAULT_SENDER_EMAIL", None)
-        #     sender_name = getattr(settings, "DEFAULT_SENDER_NAME", sender_name)
-
-        # --- CURRENT IMPLEMENTATION: Fallback to global default ---
-        logger.warning(f"Fetching email settings for Org {organization_id}. Using GLOBAL default sender from config/environment. Implement DB lookup.")
-        sender_address = getattr(settings, "DEFAULT_SENDER_EMAIL", None)
-        sender_name = getattr(settings, "DEFAULT_SENDER_NAME", sender_name)
-    else:
-         logger.error(f"Cannot get email settings for Org {organization_id}: Config not loaded.")
-
-    if not sender_address:
-         logger.error(f"Configuration Error: No sender email address available (checked Org {organization_id} specific and default). Cannot send email.")
-         # Return None for sender_address to indicate failure clearly
-         return {"sender_address": None, "sender_name": None}
-
-    # Return only the necessary sender info for SES API call structure
-    return {
-        "sender_address": sender_address, # This MUST be an address/domain verified in your SES account
-        "sender_name": sender_name,
-    }
-
-
-# --- Core Email Sending Function (Using AWS SES API) ---
-def send_email_ses(
+# --- Main Sending Function ---
+def send_email(
     recipient_email: str,
     subject: str,
     html_body: str,
-    sender_address: str, # The verified sender email address
-    sender_name: str,
-    aws_region: str = AWS_REGION # Use region from config/default
+    organization_id: int # Required to fetch settings
     ) -> bool:
     """
-    Sends an email using AWS SES API (boto3).
-
-    Args:
-        recipient_email: The recipient's email address.
-        subject: The email subject line.
-        html_body: The HTML content of the email body.
-        sender_address: The SES-verified email address to send from.
-        sender_name: The desired display name for the sender.
-        aws_region: The AWS region where SES is configured.
-
-    Returns:
-        bool: True if the email was successfully accepted by SES API, False otherwise.
+    Fetches organization-specific email settings from the database
+    and sends the email via the configured provider type.
     """
-    # Basic validation
-    if not all([recipient_email, subject, html_body, sender_address, sender_name, aws_region]):
-        logger.error("SES Email sending failed: Missing required parameters.")
+    logger.info(f"Initiating email send for Org {organization_id} to {recipient_email}")
+
+    # 1. Get Organization's specific email settings from DB
+    # This function should return decrypted credentials
+    email_config = get_org_email_settings_from_db(organization_id)
+
+    # 2. Validate Configuration
+    if not email_config:
+        logger.error(f"Email sending failed: Settings not found in DB for Org {organization_id}.")
+        return False
+    if not email_config.get("is_configured"):
+        logger.error(f"Email sending failed: Settings not marked as configured for Org {organization_id}.")
+        return False
+
+    provider = email_config.get("provider_type")
+    sender_address = email_config.get("verified_sender_email")
+    sender_name = email_config.get("sender_name", f"Org {organization_id} Team") # Default name
+
+    if not sender_address:
+         logger.error(f"Email sending failed: Verified sender address missing in settings for Org {organization_id}.")
+         return False
+    if not provider:
+         logger.error(f"Email sending failed: Provider type missing in settings for Org {organization_id}.")
+         return False
+
+    # Basic validation of core inputs
+    if not all([recipient_email, subject, html_body]):
+        logger.error(f"Email sending failed for Org {organization_id}: Missing recipient, subject, or body.")
         return False
     if '@' not in recipient_email:
-         logger.error(f"Invalid recipient email address provided: {recipient_email}")
+         logger.error(f"Invalid recipient email address: {recipient_email}")
          return False
     if '@' not in sender_address:
-         logger.error(f"Invalid sender email address provided: {sender_address}")
+         logger.error(f"Invalid sender email address from org settings: {sender_address}")
          return False
 
-    # Format sender address required by SES API: "Sender Name <email@example.com>"
-    source = f"{sender_name} <{sender_address}>"
-    charset = "UTF-8" # Standard charset
 
-    # Create SES client
-    # Boto3 automatically looks for credentials in standard locations:
-    # 1. Environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY) - **RECOMMENDED ON RENDER**
-    # 2. Shared credential file (~/.aws/credentials)
-    # 3. AWS config file (~/.aws/config)
-    # 4. IAM role attached to the instance (if running on EC2/ECS)
-    try:
-        ses_client = boto3.client('ses', region_name=aws_region)
-        logger.debug(f"AWS SES client created for region {aws_region}.")
-    except NoCredentialsError:
-         logger.error("AWS credentials not found. Ensure AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables are set correctly.")
-         return False
-    except Exception as e:
-         logger.error(f"Failed to create AWS SES client in region {aws_region}: {e}", exc_info=True)
-         return False
-
-    # Try sending the email via SES API
-    try:
-        logger.info(f"Attempting to send email via SES from '{source}' to '{recipient_email}'")
-        # Use the send_email operation
-        response = ses_client.send_email(
-            Destination={'ToAddresses': [recipient_email]},
-            Message={
-                'Body': {
-                    'Html': {'Charset': charset, 'Data': html_body},
-                    # 'Text': {'Charset': charset, 'Data': "Plain text version here"} # Optional plain text
-                },
-                'Subject': {'Charset': charset, 'Data': subject},
-            },
-            Source=source,
-            # Optional: Add Reply-To Addresses if different from Source
-            # ReplyToAddresses=[ 'reply-to@example.com' ],
-            # Optional: Use Configuration Set for event tracking (bounces, complaints, clicks)
-            # ConfigurationSetName='YourSESConfigurationSetName',
+    # 3. Route to Provider-Specific Sending Function
+    logger.info(f"Routing email for Org {organization_id} via provider: {provider}")
+    if provider == 'smtp':
+        # Pass only the necessary parts of the config to the SMTP function
+        return _send_with_smtp(
+            recipient_email=recipient_email,
+            subject=subject,
+            html_body=html_body,
+            sender_address=sender_address,
+            sender_name=sender_name,
+            smtp_config=email_config # Contains host, port, user, decrypted pass
         )
-        # Log the SES Message ID on success
-        message_id = response.get('MessageId')
-        logger.info(f"Email successfully sent via SES to {recipient_email}. Message ID: {message_id}")
-        return True # Indicate successful sending call
+    elif provider == 'ses_api': # Example if you add AWS SES API later
+        return _send_with_ses_api(
+            recipient_email=recipient_email,
+            subject=subject,
+            html_body=html_body,
+            sender_address=sender_address,
+            sender_name=sender_name,
+            # SES API might use IAM keys from env vars, not stored per-org initially
+            # aws_config=email_config # Pass if needed
+        )
+    # Add elif for 'google_oauth', 'm365_oauth', 'sendgrid_api', etc.
+    else:
+        logger.error(f"Unsupported email provider type '{provider}' configured for Org {organization_id}.")
+        return False
 
-    except ClientError as e:
-        # Handle specific AWS SES errors
-        error_code = e.response.get('Error', {}).get('Code')
-        error_message = e.response.get('Error', {}).get('Message', str(e))
-        logger.error(f"AWS SES ClientError sending to {recipient_email}: [{error_code}] {error_message}")
-        # Specific handling for common issues
-        if error_code == 'MessageRejected':
-            logger.error("SES Message Rejected. Possible reasons: Email address not verified (if in Sandbox), sending limits exceeded, blacklisted recipient.")
-        elif error_code == 'InvalidParameterValue':
-             logger.error(f"SES Invalid Parameter. Check formatting of email addresses, source, etc.")
-        elif error_code == 'AccessDeniedException':
-             logger.error(f"SES Access Denied. Check IAM permissions for the configured AWS credentials.")
-        # Add more specific error code handling if needed
-        return False # Indicate failure
+
+# --- SMTP Sending Logic ---
+def _send_with_smtp(recipient_email: str, subject: str, html_body: str, sender_address: str, sender_name: str, smtp_config: dict) -> bool:
+    """Handles sending via standard SMTP using decrypted credentials from smtp_config."""
+
+    host = smtp_config.get("smtp_host")
+    port = smtp_config.get("smtp_port") # Should be int
+    username = smtp_config.get("smtp_username")
+    password = smtp_config.get("smtp_password") # This is the DECRYPTED password/app password
+
+    if not all([host, port, username, password]):
+         logger.error(f"SMTP configuration incomplete for sender {sender_address} via {host}. Required: host, port, username, password.")
+         return False
+
+    logger.info(f"Attempting SMTP send via {host}:{port} from {sender_address} to {recipient_email}")
+
+    # Construct message
+    message = MIMEMultipart("alternative")
+    message["Subject"] = subject
+    message["From"] = f"{sender_name} <{sender_address}>"
+    message["To"] = recipient_email
+    try:
+        part = MIMEText(html_body, "html", "utf-8")
+        message.attach(part)
     except Exception as e:
-        # Catch any other unexpected errors during the API call
-        logger.error(f"Unexpected error sending email via SES to {recipient_email}: {e}", exc_info=True)
-        return False # Indicate failure
+        logger.error(f"Failed to create SMTP email body MIMEText part: {e}")
+        return False
+
+    # Send via SMTP
+    server = None
+    try:
+        # Handle potential non-integer port from DB retrieval if not validated earlier
+        smtp_port_int = int(port)
+        if smtp_port_int == 465:
+            server = smtplib.SMTP_SSL(host, smtp_port_int, timeout=20)
+        else: # Assume STARTTLS for 587 or others
+            server = smtplib.SMTP(host, smtp_port_int, timeout=20)
+            server.starttls()
+        server.login(username, password)
+        server.sendmail(sender_address, recipient_email, message.as_string())
+        logger.info(f"Email successfully sent via SMTP to: {recipient_email}")
+        return True
+    except smtplib.SMTPAuthenticationError as e: logger.error(f"SMTP Auth Error for {username} on {host}: {e}", exc_info=False) # Don't log password details
+    except smtplib.SMTPConnectError as e: logger.error(f"SMTP Connection Error to {host}:{port}: {e}", exc_info=True)
+    except smtplib.SMTPSenderRefused as e: logger.error(f"SMTP Sender Refused: {sender_address}. Error: {e}", exc_info=True)
+    except smtplib.SMTPRecipientsRefused as e: logger.error(f"SMTP Recipient Refused: {recipient_email}. Error: {e.recipients}", exc_info=True)
+    except smtplib.SMTPException as e: logger.error(f"SMTP Error sending to {recipient_email}: {e}", exc_info=True)
+    except ValueError as e: logger.error(f"SMTP Config Error (invalid port? {port}): {e}", exc_info=True)
+    except OSError as e: logger.error(f"Network/OS Error during SMTP connection: {e}", exc_info=True)
+    except Exception as e: logger.error(f"Unexpected SMTP error sending to {recipient_email}: {e}", exc_info=True)
+    finally:
+        if server:
+             try: server.quit()
+             except: pass
+    return False
+
+
+# --- Placeholder for AWS SES API Sending Logic ---
+def _send_with_ses_api(recipient_email: str, subject: str, html_body: str, sender_address: str, sender_name: str, **kwargs) -> bool:
+    """[Placeholder] Handles sending via AWS SES API using Boto3."""
+    logger.warning("SES API sending (_send_with_ses_api) not fully implemented yet.")
+    # Add Boto3 imports and logic here if/when needed
+    # import boto3
+    # from botocore.exceptions import ClientError, NoCredentialsError
+    # try:
+    #    ses_client = boto3.client('ses', region_name=...) # Get region
+    #    source = f"{sender_name} <{sender_address}>"
+    #    response = ses_client.send_email(...)
+    #    return True
+    # except NoCredentialsError: logger.error("AWS Credentials not found for SES.")
+    # except ClientError as e: logger.error(f"AWS SES ClientError: {e}")
+    # except Exception as e: logger.error(f"Unexpected SES error: {e}")
+    return False # Return False until implemented
+
+# --- Add placeholders for other providers as needed ---
+# def _send_with_google_oauth(...) -> bool: ...
+# def _send_with_sendgrid(...) -> bool: ...
