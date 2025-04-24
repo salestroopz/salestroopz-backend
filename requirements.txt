@@ -11,3 +11,4 @@ openpyxl>=3.0.0
 # Add these for Authentication & JWT
 python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4
+boto3>=1.28.0
