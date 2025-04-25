@@ -178,4 +178,72 @@ class OfferingResponse(BaseModel):
     class Config:
         from_attributes = True # Pydantic v2
 
-# --- === END OF NEW OFFERING SCHEMAS === ---
+# app/schemas.py
+# ... (keep all existing imports and schemas) ...
+from datetime import datetime
+
+# --- === NEW SCHEMAS FOR CAMPAIGN/STEP MANAGEMENT === ---
+
+# --- Campaign Schemas ---
+class CampaignStepInput(BaseModel):
+    """Input for creating a single campaign step."""
+    step_number: int = Field(..., gt=0, description="Order of the step (1, 2, ...)")
+    delay_days: int = Field(..., ge=0, description="Days to wait after previous step/enrollment")
+    subject_template: Optional[str] = Field(None, description="Subject line template (use {{placeholders}})")
+    body_template: Optional[str] = Field(None, description="Email body template (use {{placeholders}})")
+    is_ai_crafted: bool = Field(False, description="Set true if AI should generate content for this step")
+
+class CampaignStepResponse(CampaignStepInput):
+    """Response model for a campaign step, includes DB ID."""
+    id: int
+    campaign_id: int
+    organization_id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class CampaignInput(BaseModel):
+    """Input for creating or updating a campaign definition."""
+    name: str = Field(..., min_length=1, examples=["Q3 Fintech Outreach"])
+    description: Optional[str] = Field(None, examples=["Campaign targeting Fintech CTOs..."])
+    is_active: bool = Field(True)
+    # Optionally allow creating steps along with campaign
+    steps: Optional[List[CampaignStepInput]] = Field(None, description="Optionally define steps during campaign creation")
+
+class CampaignResponse(BaseModel):
+    """Response model for a campaign definition."""
+    id: int
+    organization_id: int
+    name: str
+    description: Optional[str] = None
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+    # Optionally include steps in the response
+    steps: Optional[List[CampaignStepResponse]] = None # Loaded separately if needed
+
+    class Config:
+        from_attributes = True
+
+# --- Lead Status Schema (Optional - for API responses if needed) ---
+class LeadCampaignStatusResponse(BaseModel):
+    id: int
+    lead_id: int
+    campaign_id: int
+    organization_id: int
+    current_step_number: int
+    status: str
+    last_email_sent_at: Optional[datetime] = None
+    next_email_due_at: Optional[datetime] = None
+    last_response_type: Optional[str] = None
+    last_response_at: Optional[datetime] = None
+    error_message: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# --- === END OF NEW CAMPAIGN/STEP SCHEMAS === ---
