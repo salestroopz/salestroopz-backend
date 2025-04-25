@@ -921,3 +921,237 @@ def get_org_email_settings_from_db(organization_id: int) -> Optional[Dict]:
     finally:
         if conn: conn.close()
     return settings_data
+
+# --- Campaign CRUD ---
+def create_campaign(organization_id: int, name: str, description: Optional[str] = None, is_active: bool = True) -> Optional[Dict]:
+    """Creates a new email campaign for an organization."""
+    sql = "INSERT INTO email_campaigns (organization_id, name, description, is_active) VALUES (?, ?, ?, ?)"
+    params = (organization_id, name, description, int(is_active))
+    conn = None; new_id = None; campaign_data = None
+    try:
+        conn = get_connection(); cursor = conn.cursor()
+        cursor.execute(sql, params); new_id = cursor.lastrowid
+        conn.commit(); print(f"Created campaign '{name}' (ID: {new_id}) for Org {organization_id}")
+        if new_id: campaign_data = get_campaign_by_id(new_id, organization_id) # Fetch created data
+    except sqlite3.Error as e: print(f"DB Error creating campaign for Org {organization_id}: {e}")
+    finally:
+        if conn: conn.close()
+    return campaign_data
+
+def get_campaign_by_id(campaign_id: int, organization_id: int) -> Optional[Dict]:
+    """Gets a specific campaign ensuring it belongs to the organization."""
+    sql = "SELECT * FROM email_campaigns WHERE id = ? AND organization_id = ?"
+    conn = None; campaign = None
+    try:
+        conn = get_connection(); conn.row_factory = sqlite3.Row; cursor = conn.cursor()
+        cursor.execute(sql, (campaign_id, organization_id)); result = cursor.fetchone()
+        if result: campaign = dict(result)
+    except sqlite3.Error as e: print(f"DB Error getting campaign ID {campaign_id} for Org {organization_id}: {e}")
+    finally:
+        if conn: conn.close()
+    return campaign
+
+def get_campaigns_by_organization(organization_id: int, active_only: bool = True) -> List[Dict]:
+    """Fetches all campaigns for a specific organization."""
+    sql = "SELECT * FROM email_campaigns WHERE organization_id = ?"
+    params = [organization_id]
+    if active_only: sql += " AND is_active = 1"
+    sql += " ORDER BY name"
+    conn = None; campaigns = []
+    try:
+        conn = get_connection(); conn.row_factory = sqlite3.Row; cursor = conn.cursor()
+        cursor.execute(sql, params); results = cursor.fetchall()
+        for row in results: campaigns.append(dict(row))
+    except sqlite3.Error as e: print(f"DB Error getting campaigns for Org {organization_id}: {e}")
+    finally:
+        if conn: conn.close()
+    return campaigns
+
+# --- Step CRUD ---
+def create_campaign_step(campaign_id: int, organization_id: int, step_number: int, delay_days: int, subject: Optional[str], body: Optional[str], is_ai: bool = False) -> Optional[Dict]:
+    """Creates a step within a campaign."""
+    sql = """
+        INSERT INTO campaign_steps
+        (campaign_id, organization_id, step_number, delay_days, subject_template, body_template, is_ai_crafted)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """
+    params = (campaign_id, organization_id, step_number, delay_days, subject, body, int(is_ai))
+    conn = None; new_id = None; step_data = None
+    try:
+        conn = get_connection(); cursor = conn.cursor()
+        cursor.execute(sql, params); new_id = cursor.lastrowid
+        conn.commit(); print(f"Created step {step_number} (ID: {new_id}) for Campaign {campaign_id}, Org {organization_id}")
+        if new_id: step_data = get_campaign_step_by_id(new_id, organization_id) # Fetch created step
+    except sqlite3.IntegrityError as ie: print(f"DB Integrity Error creating step {step_number} for Camp {campaign_id}: {ie}") # e.g., step exists, FK fail
+    except sqlite3.Error as e: print(f"DB Error creating step {step_number} for Camp {campaign_id}: {e}")
+    finally:
+        if conn: conn.close()
+    return step_data # Return full step data dict
+
+def get_campaign_step_by_id(step_id: int, organization_id: int) -> Optional[Dict]:
+    """Gets a specific campaign step ensuring it belongs to the organization."""
+    # Added organization_id check for security/multi-tenancy
+    sql = "SELECT * FROM campaign_steps WHERE id = ? AND organization_id = ?"
+    conn = None; step = None
+    try:
+        conn = get_connection(); conn.row_factory = sqlite3.Row; cursor = conn.cursor()
+        cursor.execute(sql, (step_id, organization_id)); result = cursor.fetchone()
+        if result: step = dict(result)
+    except sqlite3.Error as e: print(f"DB Error getting step ID {step_id} for Org {organization_id}: {e}")
+    finally:
+        if conn: conn.close()
+    return step
+
+def get_steps_for_campaign(campaign_id: int, organization_id: int) -> List[Dict]:
+    """Fetches all steps for a campaign, ordered by step number."""
+    sql = "SELECT * FROM campaign_steps WHERE campaign_id = ? AND organization_id = ? ORDER BY step_number"
+    conn = None; steps = []
+    try:
+        conn = get_connection(); conn.row_factory = sqlite3.Row; cursor = conn.cursor()
+        cursor.execute(sql, (campaign_id, organization_id)); results = cursor.fetchall()
+        for row in results: steps.append(dict(row))
+    except sqlite3.Error as e: print(f"DB Error getting steps for Camp {campaign_id}, Org {organization_id}: {e}")
+    finally:
+        if conn: conn.close()
+    return steps
+
+def get_next_campaign_step(campaign_id: int, organization_id: int, current_step_number: int) -> Optional[Dict]:
+    """Fetches the details of the step AFTER the current_step_number."""
+    sql = "SELECT * FROM campaign_steps WHERE campaign_id = ? AND organization_id = ? AND step_number = ? LIMIT 1"
+    next_step_number = current_step_number + 1
+    conn = None; step_data = None
+    try:
+        conn = get_connection(); conn.row_factory = sqlite3.Row; cursor = conn.cursor()
+        cursor.execute(sql, (campaign_id, organization_id, next_step_number))
+        result = cursor.fetchone()
+        if result: step_data = dict(result)
+    except sqlite3.Error as e: print(f"DB Error getting next step ({next_step_number}) for Camp {campaign_id}, Org {organization_id}: {e}")
+    finally:
+        if conn: conn.close()
+    return step_data
+
+# --- Lead Status CRUD ---
+def enroll_lead_in_campaign(lead_id: int, campaign_id: int, organization_id: int) -> Optional[Dict]:
+    """Creates the initial 'active' status record for a lead entering a campaign."""
+    sql = """
+        INSERT INTO lead_campaign_status (lead_id, campaign_id, organization_id, status, current_step_number)
+        VALUES (?, ?, ?, 'active', 0)
+        """
+    params = (lead_id, campaign_id, organization_id)
+    conn = None; status_data = None
+    try:
+        conn = get_connection(); cursor = conn.cursor()
+        cursor.execute(sql, params); status_id = cursor.lastrowid
+        conn.commit(); print(f"Enrolled Lead ID {lead_id} in Campaign ID {campaign_id} (Status ID: {status_id})")
+        status_data = get_lead_campaign_status_by_id(status_id, organization_id)
+    except sqlite3.IntegrityError as ie: print(f"DB Integrity Error enrolling lead {lead_id} in camp {campaign_id}: {ie}") # Likely already enrolled
+    except sqlite3.Error as e: print(f"DB Error enrolling lead {lead_id} in camp {campaign_id}: {e}")
+    finally:
+        if conn: conn.close()
+    return status_data
+
+def update_lead_campaign_status(status_id: int, organization_id: int, updates: Dict[str, Any]) -> Optional[Dict]:
+    """Updates specific fields (like status, step, timestamps) for a lead's campaign status."""
+    allowed_fields = {"current_step_number", "status", "last_email_sent_at", "next_email_due_at", "last_response_type", "last_response_at", "error_message"}
+    valid_updates = {k:v for k,v in updates.items() if k in allowed_fields}
+    if not valid_updates: return get_lead_campaign_status_by_id(status_id, organization_id)
+
+    set_parts = [f"{key} = :{key}" for key in valid_updates.keys()]
+    set_parts.append("updated_at = CURRENT_TIMESTAMP")
+    set_clause = ", ".join(set_parts)
+    params = valid_updates
+    params["status_id"] = status_id
+    params["organization_id"] = organization_id
+
+    sql = f"UPDATE lead_campaign_status SET {set_clause} WHERE id = :status_id AND organization_id = :organization_id"
+    conn = None; success = False
+    try:
+        conn = get_connection(); cursor = conn.cursor()
+        cursor.execute(sql, params); conn.commit()
+        if cursor.rowcount > 0: success = True; print(f"Updated lead campaign status ID {status_id}")
+        else: print(f"Lead campaign status ID {status_id} not found for Org {organization_id}")
+    except sqlite3.Error as e: print(f"DB Error updating lead status ID {status_id}: {e}")
+    finally:
+        if conn: conn.close()
+    return get_lead_campaign_status_by_id(status_id, organization_id) if success else None
+
+
+def get_active_leads_due_for_step(organization_id: Optional[int] = None) -> List[Dict]:
+    """
+    Finds leads in 'active' status potentially due for their next email.
+    Currently fetches ALL active leads across all orgs if organization_id is None.
+    Needs enhancement to properly calculate due time based on last_sent + next_step_delay.
+    """
+    # WARNING: This simplified query fetches ALL active leads.
+    # The scheduler logic currently recalculates due time in Python.
+    # A production query should filter based on calculated next_email_due_at <= now()
+    logger.warning("DB get_active_leads_due_for_step query is simplified. Filtering happens in scheduler agent.")
+    leads_due = []
+    conn = None
+    sql = """
+        SELECT lcs.*, c.name as campaign_name
+        FROM lead_campaign_status lcs
+        JOIN email_campaigns c ON lcs.campaign_id = c.id
+        WHERE lcs.status = 'active'
+    """
+    params = []
+    if organization_id is not None:
+        sql += " AND lcs.organization_id = ?"
+        params.append(organization_id)
+    sql += " ORDER BY lcs.organization_id, lcs.last_email_sent_at ASC NULLS FIRST" # Process uncontacted first
+
+    try:
+        conn = get_connection(); conn.row_factory = sqlite3.Row; cursor = conn.cursor()
+        cursor.execute(sql, params); results = cursor.fetchall()
+        for row in results: leads_due.append(dict(row))
+        logger.debug(f"DB: Found {len(leads_due)} total active leads {f'for Org {organization_id}' if organization_id else 'across all orgs'}.")
+    except sqlite3.Error as e: print(f"DB Error getting active leads{f' for Org {organization_id}' if organization_id else ''}: {e}")
+    finally:
+        if conn: conn.close()
+    return leads_due
+
+def get_lead_campaign_status_by_id(status_id: int, organization_id: int) -> Optional[Dict]:
+    """Gets a specific lead campaign status record by its ID, ensuring org match."""
+    sql = "SELECT * FROM lead_campaign_status WHERE id = ? AND organization_id = ?"
+    conn = None; status_data = None
+    try:
+        conn = get_connection(); conn.row_factory = sqlite3.Row; cursor = conn.cursor()
+        cursor.execute(sql, (status_id, organization_id)); result = cursor.fetchone()
+        if result: status_data = dict(result)
+    except sqlite3.Error as e: print(f"DB Error getting lead status ID {status_id} for Org {organization_id}: {e}")
+    finally:
+        if conn: conn.close()
+    return status_data
+
+def get_lead_campaign_status(lead_id: int, organization_id: int) -> Optional[Dict]:
+    """Gets the current campaign status for a specific lead."""
+    sql = "SELECT * FROM lead_campaign_status WHERE lead_id = ? AND organization_id = ?"
+    conn = None; status_data = None
+    try:
+        conn = get_connection(); conn.row_factory = sqlite3.Row; cursor = conn.cursor()
+        cursor.execute(sql, (lead_id, organization_id)); result = cursor.fetchone()
+        if result: status_data = dict(result)
+    except sqlite3.Error as e: print(f"DB Error getting campaign status for lead {lead_id}, Org {organization_id}: {e}")
+    finally:
+        if conn: conn.close()
+    return status_data
+
+# Ensure logger is available if used in _encrypt_data/_decrypt_data
+try:
+    from app.utils.logger import logger
+except ImportError:
+    import logging
+    logger = logging.getLogger(__name__)
+
+# --- === Placeholder Encryption Functions === ---
+# Replace with actual implementation using 'cryptography' library
+def _encrypt_data(plain_text: Optional[str]) -> Optional[str]:
+    if plain_text is None: return None
+    logger.warning("ENCRYPTION NOT IMPLEMENTED. Storing sensitive data as plain text!")
+    return plain_text # Placeholder only
+
+def _decrypt_data(encrypted_text: Optional[str]) -> Optional[str]:
+    if encrypted_text is None: return None
+    # logger.warning("DECRYPTION NOT IMPLEMENTED.") # Reduce log noise
+    return encrypted_text # Placeholder only
+# --- ======================================= ---
