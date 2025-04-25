@@ -45,7 +45,7 @@ except ImportError as e:
 try:
     # Import all router modules
     from app.routes import auth, workflow, leadworkflow, crm, agents, insidesales, scheduler, leadenrichment, icpmatch
-    from app.routers import icp, offering
+    from app.routers import icp, offering, campaigns
 except ImportError as e:
     print(f"ERROR: Could not import one or more routers: {e}")
     raise SystemExit(f"Failed to import routers: {e}") from e
@@ -129,6 +129,7 @@ try:
     app.include_router(scheduler.router)
     app.include_router(leadenrichment.router)
     app.include_router(icpmatch.router)
+    app.include_router(campaigns.router)
     print("Routers included successfully.")
 except Exception as e:
     print(f"ERROR INCLUDING ROUTERS: {e}")
