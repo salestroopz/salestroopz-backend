@@ -1,0 +1,7 @@
+[theme]
+# Professional Blue Palette
+primaryColor="#2563EB" # Action Blue
+backgroundColor="#F9FAFB" # Light Cool Grey Background
+secondaryBackgroundColor="#FFFFFF" # White for containers/cards
+textColor="#1F2937" # Dark Slate Grey Text
+font="sans serif" # Standard sans-serif font
