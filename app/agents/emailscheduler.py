@@ -75,17 +75,65 @@ class EmailSchedulerAgent:
                 error_count += 1; continue
 
             # --- Prepare Email Content (Keep this logic as is) ---
-            subject = None; body = None; content_prep_error = None
+           subject = None; body = None
             is_ai = next_step_data.get('is_ai_crafted', 0)
-            if is_ai == 1:
-                # ... (Keep logic to call AI Crafter - fetches offering/icp data) ...
-                pass
-            else: # Use template
-                # ... (Keep logic to get template and replace placeholders) ...
-                pass
+            content_prep_error = None
 
+            if is_ai == 1: # Needs AI Generation
+                logger.debug(f"Using AI crafter for Step {next_step_number}...")
+                if not self.email_crafter:
+                     content_prep_error = "AI Email Crafter not initialized."
+                     logger.error(content_prep_error) # Log it here
+                else: # Fetch context data needed for ANY AI crafting step
+                    offerings = database.get_offerings_by_organization_id(organization_id, active_only=True)
+                    icp = database.get_icp_by_organization_id(organization_id)
+                    org = database.get_organization_by_id(organization_id)
+                    org_name = org['name'] if org else f"Org {organization_id}"
+                    offering_to_use = offerings[0] if offerings else None
+
+                    if offering_to_use:
+                        email_content = None
+                        # --- Decide which crafting method to call ---
+                        if current_step == 0: # This means we are about to send Step 1 (the initial)
+                            logger.debug(f"Calling craft_initial_email for Lead {lead_id}")
+                            email_content = self.email_crafter.craft_initial_email(
+                                lead_data=lead_data, offering_data=offering_to_use,
+                                icp_data=icp, organization_name=org_name
+                            )
+                        else: # This is a follow-up step (current_step >= 1)
+                            logger.debug(f"Calling craft_follow_up_email for Lead {lead_id}, previous step was {current_step}")
+                            # Fetch data about the previous step that was sent
+                            previous_step_data = database.get_campaign_step_by_number( # Use the function we added
+                                campaign_id, organization_id, current_step # Get details of the step JUST completed
+                            )
+                            if not previous_step_data:
+                                 logger.warning(f"Could not fetch previous step ({current_step}) data for follow-up context for lead {lead_id}.")
+                            email_content = self.email_crafter.craft_follow_up_email(
+                                lead_data=lead_data, offering_data=offering_to_use,
+                                icp_data=icp, organization_name=org_name,
+                                previous_step_data=previous_step_data, # Pass previous step info
+                                current_step_data=next_step_data # Pass details of the step we ARE sending
+                            )
+                        # --- End method choice ---
+
+                        # Process the result
+                        if email_content: subject = email_content.get('subject'); body = email_content.get('body')
+                        else: content_prep_error = f"AI email crafting returned no content for Step {next_step_number}."
+                    else: content_prep_error = f"Cannot use AI crafter: No active offering found for Org {organization_id}."
+
+            else: # Use Template
+                logger.debug(f"Using template for Step {next_step_number}...")
+                subject_template = next_step_data.get('subject_template')
+                body_template = next_step_data.get('body_template')
+                if subject_template and body_template:
+                     subject = self._replace_placeholders(subject_template, lead_data)
+                     body = self._replace_placeholders(body_template, lead_data)
+                else: content_prep_error = f"Template subject or body missing for Step {next_step_number}."
+
+            # --- Keep error handling and Email Sending logic ---
             if content_prep_error:
-                 # ... (Keep logic to log error and update status) ...
+                 logger.error(f"Content preparation failed for Lead {lead_id}, Step {next_step_number}: {content_prep_error}")
+                 database.update_lead_campaign_status(status_id, organization_id, {"status": "error", "error_message": content_prep_error})
                  error_count += 1; continue
 
             # --- === Send Email using the main 'send_email' function === ---
