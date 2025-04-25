@@ -1,6 +1,6 @@
 import streamlit as st
 import requests
-from typing import Dict, Any # For type hinting
+from typing import Dict, Any, Optional # For type hinting
 
 # --- Configuration ---
 # Ensure this points to your deployed backend API
