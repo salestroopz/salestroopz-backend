@@ -75,7 +75,7 @@ class EmailSchedulerAgent:
                 error_count += 1; continue
 
             # --- Prepare Email Content (Keep this logic as is) ---
-           subject = None; body = None
+            subject = None; body = None
             is_ai = next_step_data.get('is_ai_crafted', 0)
             content_prep_error = None
 
