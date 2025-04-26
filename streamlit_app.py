@@ -43,12 +43,20 @@ if not st.session_state["authenticated"]:
     # --- Login View ---
     if st.session_state["view"] == "Login":
         st.title("SalesTroopz Login")
+        st.markdown("Please log in to access the platform.")
         # ... (Keep login form and logic) ...
         with st.form("login_form"):
              email = st.text_input("Email", key="login_email_input")
              password = st.text_input("Password", type="password", key="login_password_input")
              submitted = st.form_submit_button("Login")
              if submitted:
+             if not email or not password:
+                st.warning("Please enter both email and password.")
+            else:
+                # --- THIS IS WHERE LOGIN HAPPENS ---
+                with st.spinner("Attempting login..."):
+                    token = login_user(email, password)
+                if token:
                  # ... login call logic ...
                  pass # Placeholder
         # Switch to Sign Up
