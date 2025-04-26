@@ -261,7 +261,7 @@ def get_authenticated_request(endpoint: str, token: str, params: Optional[Dict] 
              logout_user() # Force logout on 401
         else:
             error_detail = f"Error fetching data: HTTP {http_err.response.status_code}"
-            try: error_detail += f" - {http_err.response.json().get('detail', '')view"] = "Login" # Ensure view is reset
+            try: error_detail += f" - {http_err.response.json().get('detail', '')view") = "Login" # Ensure view is reset
                         st.session_state['icp_data'] = None # Clear ICP cache on new login
                         st.success("Login Successful!")
                         time.sleep(1) # Brief pause
