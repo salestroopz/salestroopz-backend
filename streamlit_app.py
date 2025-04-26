@@ -65,7 +65,6 @@ def logout_user():
         if key in st.session_state: del st.session_state[key]
     st.success("Logged out successfully."); time.sleep(0.5); st.rerun()
 
-```python
 # streamlit_app.py
 
 import streamlit as st
