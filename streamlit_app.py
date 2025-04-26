@@ -65,8 +65,6 @@ def logout_user():
         if key in st.session_state: del st.session_state[key]
     st.success("Logged out successfully."); time.sleep(0.5); st.rerun()
 
-Okay, here is the complete `streamlit_app.py` code with the corrected indentation within the login form, the debug print added, and the actual state update logic restored on successful login.
-
 ```python
 # streamlit_app.py
 
