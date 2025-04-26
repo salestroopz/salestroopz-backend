@@ -174,7 +174,7 @@ if not st.session_state["authenticated"]:
                         st.session_state["authenticated"] = True
                         st.session_state["auth_token"] = token
                         st.session_state["user_email"] = email
-                        st.session_state[", password) -> Optional[str]:
+                        
     """Attempts to log in user via API, returns token string or None."""
     try:
         response = requests.post(
