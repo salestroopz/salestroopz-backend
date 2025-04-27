@@ -40,7 +40,7 @@ python-dotenv>=1.0.0
 
 # Database Driver (Only if NOT using default SQLite)
 # Example for PostgreSQL:
-# psycopg2-binary>=2.9.0
+psycopg2-binary>=2.9.0
 # Example for Async SQLite support with SQLAlchemy (if you switch later):
 # aiosqlite>=0.17.0
 # sqlalchemy>=2.0.0
