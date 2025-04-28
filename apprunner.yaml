@@ -1,22 +1,15 @@
 version: 1.0
-runtime: python311 # IMPORTANT: Match the Python version you use (e.g., 3.11, 3.10)
+runtime: python3
 build:
   commands:
     pre-build:
-      - echo "Starting pre-build..."
-      # Add any system dependencies if needed (e.g., apt-get update && apt-get install -y some-lib)
-    build:
       - echo "Installing dependencies..."
-      - pip install --upgrade pip # Ensure pip is up-to-date
+    build:
       - pip install -r requirements.txt
-      - echo "Dependencies installed."
 run:
-  command: uvicorn app.main:app --host 0.0.0.0 --port 8080 # Use port 8080 for App Runner
+  runtime-version: 3.9
+  command: python streamlit_app.py
   network:
-    port: 8080 # App Runner expects the app to listen on this port
-healthcheck: # Recommended
-    path: / # Check your root endpoint
-    interval: 20
-    timeout: 10
-    healthy_threshold: 2
-    unhealthy_threshold: 3
+    port: 8080
+  environment:
+    APPRUNNER: "TRUE"
