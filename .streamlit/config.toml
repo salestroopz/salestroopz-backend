@@ -9,7 +9,7 @@ font="sans serif" # Standard sans-serif font
 port = 8080
 address = "0.0.0.0"
 headless = true
-enableCORS = true  # Required when enableXsrfProtection=true
+enableCORS = false
 enableXsrfProtection = true
 [browser]
 serverAddress = "0.0.0.0"
