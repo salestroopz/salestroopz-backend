@@ -6,6 +6,8 @@ import requests
 from typing import Dict, Any, Optional, List # Ensure List is imported if needed elsewhere
 import time
 import json # Import json for ICP form
+from streamlit.web import cli as stcli
+
 
 # AppRunner-specific configuration
 if os.environ.get('APPRUNNER') == 'TRUE':
@@ -25,6 +27,7 @@ if os.environ.get('APPRUNNER') == 'TRUE':
             "--server.port=8080",
             "--server.address=0.0.0.0",
             "--server.headless=true"
+            "--server.enableXsrfProtection=true"
         ]
         sys.exit(stcli.main())
 
