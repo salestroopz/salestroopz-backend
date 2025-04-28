@@ -1,10 +1,42 @@
 # streamlit_app.py
 
+import os
 import streamlit as st
 import requests
 from typing import Dict, Any, Optional, List # Ensure List is imported if needed elsewhere
 import time
 import json # Import json for ICP form
+
+# AppRunner-specific configuration
+if os.environ.get('APPRUNNER') == 'TRUE':
+    st.set_page_config(
+        page_title="salestroopz",
+        layout="wide"
+    )
+    
+    # Force Streamlit to use proper port and address
+    from streamlit.web import cli as stcli
+    import sys
+    
+    def main():
+        sys.argv = [
+            "streamlit", "run",
+            os.path.abspath(__file__),
+            "--server.port=8080",
+            "--server.address=0.0.0.0",
+            "--server.headless=true"
+        ]
+        sys.exit(stcli.main())
+
+    if __name__ == "__main__":
+        main()
+else:
+    # Local development configuration
+    st.set_page_config(
+        page_title="Your App - Dev",
+        layout="centered"
+    )
+
 
 # --- Configuration ---
 # Ensure this points to your deployed backend API
