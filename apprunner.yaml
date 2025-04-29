@@ -1,15 +1,11 @@
+# apprunner.yaml
 version: 1.0
 runtime: python3
 build:
   commands:
-    pre-build:
-      - echo "Installing dependencies..."
-    build:
-      - pip install -r requirements.txt
+    - apt-get update && apt-get install -y gcc python3-dev libpq-dev
+    - pip install -r requirements.txt
 run:
-  runtime-version: 3.9
-  command: python streamlit_app.py
+  command: streamlit run streamlit_app.py
   network:
     port: 8080
-  environment:
-    APPRUNNER: "TRUE"
