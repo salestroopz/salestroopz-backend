@@ -7,7 +7,7 @@ from streamlit.web import cli as stcli
 # SSL Context for RDS
 ssl_context = ssl.create_default_context()
 ssl_context.verify_mode = ssl.CERT_REQUIRED
-ssl_context.load_verify_locations(cafile='global-bundle.pem')  # Download from AWS RDS
+# ssl_context.load_verify_locations(cafile='global-bundle.pem')  # Download from AWS RDS
 
 def create_db_connection():
     return psycopg2.connect(
