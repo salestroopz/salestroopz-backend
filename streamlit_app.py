@@ -248,76 +248,188 @@ else:
     if page == "Dashboard":
         st.header("Dashboard")
         st.write("Welcome to SalesTroopz!")
+        # Example button - replace with actual dashboard content
         if st.button("Fetch My Leads (Test)"):
-            with st.spinner("Fetching leads..."): leads_data = get_authenticated_request(LEADS_ENDPOINT, auth_token)
-            if leads_data is not None: st.success(f"Fetched {len(leads_data)} leads."); st.dataframe(leads_data)
+            with st.spinner("Fetching leads..."):
+                leads_data = get_authenticated_request(LEADS_ENDPOINT, auth_token)
+            if leads_data is not None:
+                st.success(f"Fetched {len(leads_data)} leads.")
+                st.dataframe(leads_data)
+            # Handle case where leads_data is None (error occurred) if needed
 
     elif page == "Leads":
-        st.header("Leads Management"); st.info("Lead table coming soon.")
+        st.header("Leads Management")
+        st.info("Lead table and management features coming soon.") # Placeholder
     elif page == "Campaigns":
-        st.header("Campaign Management"); st.info("Campaign/Step definition coming soon.")
+        st.header("Campaign Management")
+        st.info("Campaign creation, step definition, and monitoring coming soon.") # Placeholder
     elif page == "Setup Assistant":
-        st.header("Setup Assistant (Chatbot)"); st.info("Chatbot integration coming soon.")
+        st.header("Setup Assistant (Chatbot)")
+        st.info("Chatbot integration for guided setup coming soon.") # Placeholder
     elif page == "Configuration":
         st.header("⚙️ Configuration")
         tab1, tab2, tab3 = st.tabs(["🎯 ICP Definition", "💡 Offerings", "📧 Email Sending"])
 
-        with tab1: # ICP Definition Tab
+        # --- ICP Definition Tab ---
+        with tab1:
             st.subheader("Ideal Customer Profile (ICP)")
+            st.caption("Define the characteristics of the companies and contacts you want to target.")
+
             # Load data only if not already in state
-            if st.session_state.get('icp_data') is None:
+            if st.session_state.get('icp_data_loaded', False) is False: # Use a specific flag
                  with st.spinner("Loading ICP data..."):
                      fetched_icp = get_icp_data(auth_token)
-                     # Store fetched data or empty dict if None
-                     st.session_state['icp_data'] = fetched_icp if fetched_icp else {}
+                     st.session_state['icp_data'] = fetched_icp if fetched_icp is not None else {}
+                     st.session_state['icp_data_loaded'] = True # Mark as loaded
 
-            current_icp = st.session_state.get('icp_data', {}) # Default to empty dict
+            # Get current data from session state
+            current_icp = st.session_state.get('icp_data', {})
 
+            # --- ICP Form ---
             with st.form("icp_form"):
-                st.text_input("ICP Name:", value=current_icp.get("name", "Default ICP"), key="icp_name")
-                st.text_area("Titles/Keywords (one per line):", value="\n".join(current_icp.get("title_keywords", [])), key="icp_titles", height=100)
-                st.text_area("Industries/Keywords (one per line):", value="\n".join(current_icp.get("industry_keywords", [])), key="icp_industries", height=100)
-                st.text_area("Locations/Keywords (one per line):", value="\n".join(current_icp.get("location_keywords", [])), key="icp_locations", height=100)
-                # Handle company size rules display more carefully
-                company_size_display = ""
-                cs_rules = current_icp.get("company_size_rules")
-                if isinstance(cs_rules, dict) or isinstance(cs_rules, list):
-                    try: company_size_display = json.dumps(cs_rules)
-                    except TypeError: company_size_display = str(cs_rules) # Fallback
-                elif cs_rules: company_size_display = str(cs_rules) # Fallback for non-dict/list
-                st.text_input("Company Size Rules (JSON Text):", value=company_size_display, key="icp_size_rules_text")
+                st.text_input(
+                    "ICP Name:",
+                    value=current_icp.get("name", "Default ICP"),
+                    key="icp_name",
+                    help="Give your ICP a recognizable name."
+                )
+                st.text_area(
+                    "Titles/Keywords (one per line):",
+                    value="\n".join(current_icp.get("title_keywords", [])),
+                    key="icp_titles", height=100,
+                    help="Enter job titles or role keywords (e.g., VP of Sales, Marketing Manager, Founder)."
+                )
+                st.text_area(
+                    "Industries/Keywords (one per line):",
+                    value="\n".join(current_icp.get("industry_keywords", [])),
+                    key="icp_industries", height=100,
+                    help="Enter target industries (e.g., SaaS, E-commerce, Financial Services)."
+                )
+                st.text_area(
+                    "Locations/Keywords (one per line):",
+                    value="\n".join(current_icp.get("location_keywords", [])),
+                    key="icp_locations", height=100,
+                    help="Enter target geographic locations (e.g., California, London, United States)."
+                )
 
-                submitted = st.form_submit_button("Save ICP Definition")
+                st.divider()
+                st.markdown("**Company Size**")
+
+                # --- Improved Company Size Input ---
+                # Extract current min/max from the loaded data
+                current_size_rules = current_icp.get("company_size_rules", {}) # Default to dict
+                current_min_size = None
+                current_max_size = None
+                if isinstance(current_size_rules, dict):
+                    current_min_size = current_size_rules.get("min")
+                    current_max_size = current_size_rules.get("max")
+                elif isinstance(current_size_rules, list) and len(current_size_rules) > 0:
+                    # Optional: Handle simple list format if needed, e.g., ["51-200"]
+                    # This example defaults to ignoring list format for min/max inputs
+                    st.caption("Note: Existing list-based size rules ignored by Min/Max fields.")
+                # Convert potentially numeric strings from older saves if necessary
+                try:
+                    current_min_size = int(current_min_size) if current_min_size is not None else None
+                except (ValueError, TypeError):
+                    current_min_size = None
+                try:
+                    current_max_size = int(current_max_size) if current_max_size is not None else None
+                except (ValueError, TypeError):
+                    current_max_size = None
+
+
+                col_min, col_max = st.columns(2)
+                with col_min:
+                    min_size = st.number_input(
+                        "Min Employees:",
+                        min_value=1,
+                        value=current_min_size, # Use extracted value
+                        step=1,
+                        format="%d",
+                        key="icp_min_size",
+                        help="Minimum number of employees (inclusive). Leave blank if no minimum."
+                    )
+                with col_max:
+                    max_size = st.number_input(
+                        "Max Employees:",
+                        min_value=1,
+                        value=current_max_size, # Use extracted value
+                        step=1,
+                        format="%d",
+                        key="icp_max_size",
+                        help="Maximum number of employees (inclusive). Leave blank if no maximum."
+                    )
+
+                # Display warning directly in form if min > max
+                if min_size is not None and max_size is not None and min_size > max_size:
+                    st.warning("Minimum size cannot be greater than maximum size.", icon="⚠️")
+
+                st.divider()
+
+                # Form submission button
+                submitted = st.form_submit_button("💾 Save ICP Definition")
+
                 if submitted:
-                    # st.write("DEBUG: ICP Form Submitted!") # Optional Debug
+                    can_save = True # Flag to control saving
+
+                    # --- Basic Validation ---
+                    icp_name = st.session_state.icp_name.strip()
+                    if not icp_name:
+                        st.error("ICP Name cannot be empty.")
+                        can_save = False
+
+                    # --- Data Processing on Submission ---
                     title_kws = [kw.strip() for kw in st.session_state.icp_titles.split('\n') if kw.strip()]
                     industry_kws = [kw.strip() for kw in st.session_state.icp_industries.split('\n') if kw.strip()]
                     location_kws = [kw.strip() for kw in st.session_state.icp_locations.split('\n') if kw.strip()]
-                    size_rules_dict = {}; error_parsing_json = False
-                    size_input_text = st.session_state.icp_size_rules_text.strip()
-                    if size_input_text: # Only parse if not empty
-                        try:
-                            parsed = json.loads(size_input_text)
-                            # Expecting a dict, but could allow list for simple ranges?
-                            if isinstance(parsed, dict) or isinstance(parsed, list):
-                                size_rules_dict = parsed
-                            else:
-                                st.warning("Company Size Rules must be valid JSON (like {\"min\": 50}) or list (like [\"51-200\"]). Saving as empty.")
-                                error_parsing_json = True
-                        except json.JSONDecodeError:
-                            st.warning("Invalid JSON format for Company Size Rules. Saving as empty.")
-                            error_parsing_json = True
-                    # else: size_rules_dict remains empty {}
 
-                    if not error_parsing_json: # Only proceed if JSON was valid or empty
-                        icp_payload = { "name": st.session_state.icp_name, "title_keywords": title_kws, "industry_keywords": industry_kws, "location_keywords": location_kws, "company_size_rules": size_rules_dict }
-                        with st.spinner("Saving ICP..."): success = save_icp_data(icp_payload, auth_token)
-                        if success: st.session_state['icp_data'] = None; st.rerun() # Clear cache & rerun
+                    # Process Company Size Inputs
+                    size_rules_payload = {} # Store as dict {"min": X, "max": Y}
+                    min_val = st.session_state.icp_min_size # This is float or None from number_input
+                    max_val = st.session_state.icp_max_size # This is float or None
 
-        with tab2: # Offerings Tab
-            st.subheader("Offerings"); st.info("Offering management UI coming soon.")
-        with tab3: # Email Sending Tab
-            st.subheader("Email Sending Configuration"); st.info("Email setup UI coming soon.")
+                    min_int = int(min_val) if min_val is not None else None
+                    max_int = int(max_val) if max_val is not None else None
+
+                    # Validate min/max logic
+                    if min_int is not None and max_int is not None and min_int > max_int:
+                         st.error("Minimum company size cannot be greater than maximum size. Please correct.")
+                         can_save = False # Prevent saving
+                    else:
+                         if min_int is not None:
+                             size_rules_payload["min"] = min_int
+                         if max_int is not None:
+                             size_rules_payload["max"] = max_int
+                         # size_rules_payload is now {}, {"min": X}, {"max": Y}, or {"min": X, "max": Y}
+
+                    # --- API Call ---
+                    if can_save:
+                        # Create payload for the API
+                        icp_payload = {
+                            "name": icp_name,
+                            "title_keywords": title_kws,
+                            "industry_keywords": industry_kws,
+                            "location_keywords": location_kws,
+                            "company_size_rules": size_rules_payload if size_rules_payload else None # Send dict or None
+                        }
+                        # Call the API helper function to save data
+                        with st.spinner("Saving ICP definition..."):
+                            success = save_icp_data(icp_payload, auth_token) # Assumes auth_token is valid
+                        if success:
+                            # Clear local cache flag and rerun to fetch fresh data and show success message outside form
+                            st.session_state['icp_data_loaded'] = False
+                            st.rerun()
+                        # Error messages (e.g., 500 from backend, connection error) handled within save_icp_data/put_authenticated_request
+
+        # --- Offerings Tab ---
+        with tab2:
+            st.subheader("💡 Offerings")
+            st.info("Offering management UI coming soon.") # Placeholder
+
+        # --- Email Sending Tab ---
+        with tab3:
+            st.subheader("📧 Email Sending Configuration")
+            st.info("Email setup UI coming soon.") # Placeholder
 
     else:
         st.error("Page not found.")
