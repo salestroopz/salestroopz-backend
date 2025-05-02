@@ -275,6 +275,11 @@ else:
             st.subheader("Ideal Customer Profile (ICP)")
             st.caption("Define the characteristics of the companies and contacts you want to target.")
 
+            if st.session_state.get('icp_save_success', False):
+                st.success("✅ ICP Definition saved successfully!")
+                # Clear the flag so message doesn't reappear
+                del st.session_state['icp_save_success']
+
             # Load data only if not already in state
             if st.session_state.get('icp_data_loaded', False) is False: # Use a specific flag
                  with st.spinner("Loading ICP data..."):
