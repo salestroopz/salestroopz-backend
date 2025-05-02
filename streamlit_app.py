@@ -271,7 +271,7 @@ else:
         tab1, tab2, tab3 = st.tabs(["🎯 ICP Definition", "💡 Offerings", "📧 Email Sending"])
 
         # --- ICP Definition Tab ---
-      with tab1:
+        with tab1:
             st.subheader("Ideal Customer Profile (ICP)")
 
             # --- Display Success Message (if applicable) ---
