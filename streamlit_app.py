@@ -271,27 +271,83 @@ else:
         tab1, tab2, tab3 = st.tabs(["🎯 ICP Definition", "💡 Offerings", "📧 Email Sending"])
 
         # --- ICP Definition Tab ---
-        with tab1:
+      with tab1:
             st.subheader("Ideal Customer Profile (ICP)")
-            st.caption("Define the characteristics of the companies and contacts you want to target.")
 
+            # --- Display Success Message (if applicable) ---
             if st.session_state.get('icp_save_success', False):
                 st.success("✅ ICP Definition saved successfully!")
-                # Clear the flag so message doesn't reappear
-                del st.session_state['icp_save_success']
+                del st.session_state['icp_save_success'] # Clear the flag
 
             # Load data only if not already in state
-            if st.session_state.get('icp_data_loaded', False) is False: # Use a specific flag
+            if st.session_state.get('icp_data_loaded', False) is False:
                  with st.spinner("Loading ICP data..."):
                      fetched_icp = get_icp_data(auth_token)
                      st.session_state['icp_data'] = fetched_icp if fetched_icp is not None else {}
-                     st.session_state['icp_data_loaded'] = True # Mark as loaded
+                     st.session_state['icp_data_loaded'] = True
 
             # Get current data from session state
             current_icp = st.session_state.get('icp_data', {})
 
-            # --- ICP Form ---
+   # ==========================================
+            # NEW: Display Current ICP Definition
+            # ==========================================
+            if current_icp and current_icp.get("name"): # Only display if data exists and has a name
+                st.markdown("---") # Divider
+                st.markdown("#### Currently Saved ICP:")
+                with st.container(border=True):
+                    st.markdown(f"**Name:** {current_icp.get('name', 'N/A')}")
+
+                    # Display Keywords nicely
+                    st.markdown("##### Titles/Keywords:")
+                    title_kws = current_icp.get('title_keywords', [])
+                    if title_kws:
+                        st.markdown("\n".join([f"- `{kw}`" for kw in title_kws]))
+                    else:
+                        st.caption("None specified.")
+
+                    st.markdown("##### Industries/Keywords:")
+                    industry_kws = current_icp.get('industry_keywords', [])
+                    if industry_kws:
+                         st.markdown("\n".join([f"- `{kw}`" for kw in industry_kws]))
+                    else:
+                        st.caption("None specified.")
+
+                    st.markdown("##### Locations/Keywords:")
+                    location_kws = current_icp.get('location_keywords', [])
+                    if location_kws:
+                         st.markdown("\n".join([f"- `{kw}`" for kw in location_kws]))
+                    else:
+                        st.caption("None specified.")
+
+                    # Display Company Size nicely
+                    st.markdown("##### Company Size:")
+                    size_rules = current_icp.get('company_size_rules', {})
+                    min_size = size_rules.get('min') if isinstance(size_rules, dict) else None
+                    max_size = size_rules.get('max') if isinstance(size_rules, dict) else None
+
+                    if min_size is not None and max_size is not None:
+                        st.markdown(f"- Min Employees: `{min_size}`")
+                        st.markdown(f"- Max Employees: `{max_size}`")
+                    elif min_size is not None:
+                        st.markdown(f"- Min Employees: `{min_size}`")
+                        st.markdown(f"- Max Employees: Not specified")
+                    elif max_size is not None:
+                        st.markdown(f"- Min Employees: Not specified")
+                        st.markdown(f"- Max Employees: `{max_size}`")
+                    else:
+                        st.caption("Any size.")
+
+            else: # Handle case where no ICP is saved yet
+                 if st.session_state.get('icp_data_loaded'): # Only show if loading finished
+                      st.info("No ICP definition found. Please create one using the form below.")
+
+            st.markdown("---") # Divider
+            st.markdown("#### Edit ICP Definition:")
+          
+                # --- ICP Form ---
             with st.form("icp_form"):
+                # Input fields populated from current_icp data
                 st.text_input(
                     "ICP Name:",
                     value=current_icp.get("name", "Default ICP"),
@@ -320,45 +376,35 @@ else:
                 st.divider()
                 st.markdown("**Company Size**")
 
-                # --- Improved Company Size Input ---
-                # Extract current min/max from the loaded data
-                current_size_rules = current_icp.get("company_size_rules", {}) # Default to dict
-                current_min_size = None
-                current_max_size = None
-                if isinstance(current_size_rules, dict):
-                    current_min_size = current_size_rules.get("min")
-                    current_max_size = current_size_rules.get("max")
-                elif isinstance(current_size_rules, list) and len(current_size_rules) > 0:
-                    # Optional: Handle simple list format if needed, e.g., ["51-200"]
-                    # This example defaults to ignoring list format for min/max inputs
-                    st.caption("Note: Existing list-based size rules ignored by Min/Max fields.")
-                # Convert potentially numeric strings from older saves if necessary
-                try:
-                    current_min_size = int(current_min_size) if current_min_size is not None else None
-                except (ValueError, TypeError):
-                    current_min_size = None
-                try:
-                    current_max_size = int(current_max_size) if current_max_size is not None else None
-                except (ValueError, TypeError):
-                    current_max_size = None
+                # Extract current min/max from the loaded data for the form
+                current_size_rules_for_form = current_icp.get("company_size_rules", {})
+                current_min_size_form = None
+                current_max_size_form = None
+                if isinstance(current_size_rules_for_form, dict):
+                    current_min_size_form = current_size_rules_for_form.get("min")
+                    current_max_size_form = current_size_rules_for_form.get("max")
+                try: current_min_size_form = int(current_min_size_form) if current_min_size_form is not None else None
+                except (ValueError, TypeError): current_min_size_form = None
+                try: current_max_size_form = int(current_max_size_form) if current_max_size_form is not None else None
+                except (ValueError, TypeError): current_max_size_form = None
 
 
                 col_min, col_max = st.columns(2)
                 with col_min:
-                    min_size = st.number_input(
+                    min_size_input = st.number_input( # Renamed variable to avoid conflict
                         "Min Employees:",
                         min_value=1,
-                        value=current_min_size, # Use extracted value
+                        value=current_min_size_form,
                         step=1,
                         format="%d",
                         key="icp_min_size",
                         help="Minimum number of employees (inclusive). Leave blank if no minimum."
                     )
                 with col_max:
-                    max_size = st.number_input(
+                    max_size_input = st.number_input( # Renamed variable to avoid conflict
                         "Max Employees:",
                         min_value=1,
-                        value=current_max_size, # Use extracted value
+                        value=current_max_size_form,
                         step=1,
                         format="%d",
                         key="icp_max_size",
@@ -366,7 +412,11 @@ else:
                     )
 
                 # Display warning directly in form if min > max
-                if min_size is not None and max_size is not None and min_size > max_size:
+                min_val_check = st.session_state.icp_min_size
+                max_val_check = st.session_state.icp_max_size
+                min_int_check = int(min_val_check) if min_val_check is not None else None
+                max_int_check = int(max_val_check) if max_val_check is not None else None
+                if min_int_check is not None and max_int_check is not None and min_int_check > max_int_check:
                     st.warning("Minimum size cannot be greater than maximum size.", icon="⚠️")
 
                 st.divider()
@@ -377,55 +427,42 @@ else:
                 if submitted:
                     can_save = True # Flag to control saving
 
-                    # --- Basic Validation ---
+                    # Basic Validation
                     icp_name = st.session_state.icp_name.strip()
                     if not icp_name:
                         st.error("ICP Name cannot be empty.")
                         can_save = False
 
-                    # --- Data Processing on Submission ---
+                    # Data Processing
                     title_kws = [kw.strip() for kw in st.session_state.icp_titles.split('\n') if kw.strip()]
                     industry_kws = [kw.strip() for kw in st.session_state.icp_industries.split('\n') if kw.strip()]
                     location_kws = [kw.strip() for kw in st.session_state.icp_locations.split('\n') if kw.strip()]
 
                     # Process Company Size Inputs
-                    size_rules_payload = {} # Store as dict {"min": X, "max": Y}
-                    min_val = st.session_state.icp_min_size # This is float or None from number_input
-                    max_val = st.session_state.icp_max_size # This is float or None
-
-                    min_int = int(min_val) if min_val is not None else None
-                    max_int = int(max_val) if max_val is not None else None
-
-                    # Validate min/max logic
-                    if min_int is not None and max_int is not None and min_int > max_int:
+                    size_rules_payload = {}
+                    # Use the check variables calculated above for validation display
+                    if min_int_check is not None and max_int_check is not None and min_int_check > max_int_check:
                          st.error("Minimum company size cannot be greater than maximum size. Please correct.")
-                         can_save = False # Prevent saving
+                         can_save = False
                     else:
-                         if min_int is not None:
-                             size_rules_payload["min"] = min_int
-                         if max_int is not None:
-                             size_rules_payload["max"] = max_int
-                         # size_rules_payload is now {}, {"min": X}, {"max": Y}, or {"min": X, "max": Y}
+                         if min_int_check is not None: size_rules_payload["min"] = min_int_check
+                         if max_int_check is not None: size_rules_payload["max"] = max_int_check
 
-                    # --- API Call ---
+                    # API Call
                     if can_save:
-                        # Create payload for the API
                         icp_payload = {
-                            "name": icp_name,
-                            "title_keywords": title_kws,
-                            "industry_keywords": industry_kws,
-                            "location_keywords": location_kws,
-                            "company_size_rules": size_rules_payload if size_rules_payload else None # Send dict or None
+                            "name": icp_name, "title_keywords": title_kws, "industry_keywords": industry_kws,
+                            "location_keywords": location_kws, "company_size_rules": size_rules_payload if size_rules_payload else None
                         }
-                        # Call the API helper function to save data
                         with st.spinner("Saving ICP definition..."):
-                            success = save_icp_data(icp_payload, auth_token) # Assumes auth_token is valid
+                            success = save_icp_data(icp_payload, auth_token)
                         if success:
-                            # Clear local cache flag and rerun to fetch fresh data and show success message outside form
+                            st.session_state['icp_save_success'] = True
                             st.session_state['icp_data_loaded'] = False
                             st.rerun()
-                        # Error messages (e.g., 500 from backend, connection error) handled within save_icp_data/put_authenticated_request
+                        # Errors handled in save_icp_data
 
+                   
         # --- Offerings Tab ---
         with tab2:
             st.subheader("💡 Offerings")
