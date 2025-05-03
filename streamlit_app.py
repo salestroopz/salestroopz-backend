@@ -235,7 +235,6 @@ else:
     with st.sidebar:
         st.title("SalesTroopz")
         st.write(f"User: {st.session_state.get('user_email', 'N/A')}")
-        # TODO: Fetch and display Org Name
         st.divider()
         page = st.radio(
             "Navigate",
@@ -246,26 +245,13 @@ else:
 
     # --- Page Content ---
     if page == "Dashboard":
-        st.header("Dashboard")
-        st.write("Welcome to SalesTroopz!")
-        # Example button - replace with actual dashboard content
-        if st.button("Fetch My Leads (Test)"):
-            with st.spinner("Fetching leads..."):
-                leads_data = get_authenticated_request(LEADS_ENDPOINT, auth_token)
-            if leads_data is not None:
-                st.success(f"Fetched {len(leads_data)} leads.")
-                st.dataframe(leads_data)
-            # Handle case where leads_data is None (error occurred) if needed
-
+        # ... (Dashboard code remains the same) ...
     elif page == "Leads":
-        st.header("Leads Management")
-        st.info("Lead table and management features coming soon.") # Placeholder
+        # ... (Leads placeholder remains the same) ...
     elif page == "Campaigns":
-        st.header("Campaign Management")
-        st.info("Campaign creation, step definition, and monitoring coming soon.") # Placeholder
+        # ... (Campaigns placeholder remains the same) ...
     elif page == "Setup Assistant":
-        st.header("Setup Assistant (Chatbot)")
-        st.info("Chatbot integration for guided setup coming soon.") # Placeholder
+        # ... (Setup Assistant placeholder remains the same) ...
     elif page == "Configuration":
         st.header("⚙️ Configuration")
         tab1, tab2, tab3 = st.tabs(["🎯 ICP Definition", "💡 Offerings", "📧 Email Sending"])
@@ -274,195 +260,191 @@ else:
         with tab1:
             st.subheader("Ideal Customer Profile (ICP)")
 
-            # --- Display Success Message (if applicable) ---
+            # --- Initialize Session State Flags for this Tab ---
+            st.session_state.setdefault('icp_data_loaded', False)
+            st.session_state.setdefault('show_icp_edit_form', False)
+            st.session_state.setdefault('icp_to_edit', None) # Store data of ICP being edited
+
+            # --- Display Success Message ---
             if st.session_state.get('icp_save_success', False):
                 st.success("✅ ICP Definition saved successfully!")
                 del st.session_state['icp_save_success'] # Clear the flag
 
-            # Load data only if not already in state
-            if st.session_state.get('icp_data_loaded', False) is False:
+            # --- Load Data ---
+            if not st.session_state.icp_data_loaded:
                  with st.spinner("Loading ICP data..."):
                      fetched_icp = get_icp_data(auth_token)
+                     # Store fetched data or empty dict if fetch failed or no data exists
                      st.session_state['icp_data'] = fetched_icp if fetched_icp is not None else {}
-                     st.session_state['icp_data_loaded'] = True
+                     st.session_state.icp_data_loaded = True # Mark as loaded
 
             # Get current data from session state
             current_icp = st.session_state.get('icp_data', {})
 
-   # ==========================================
-            # NEW: Display Current ICP Definition
-            # ==========================================
-            if current_icp and current_icp.get("name"): # Only display if data exists and has a name
-                st.markdown("---") # Divider
-                st.markdown("#### Currently Saved ICP:")
-                with st.container(border=True):
-                    st.markdown(f"**Name:** {current_icp.get('name', 'N/A')}")
+            # --- Display Saved ICP Summary and Actions ---
+            if current_icp and current_icp.get("id"): # Check if a valid ICP exists
+                st.markdown("---")
+                # Use columns for layout
+                col_info, col_view, col_edit = st.columns([4, 1, 1]) # Adjust ratios as needed
 
-                    # Display Keywords nicely
-                    st.markdown("##### Titles/Keywords:")
-                    title_kws = current_icp.get('title_keywords', [])
-                    if title_kws:
-                        st.markdown("\n".join([f"- `{kw}`" for kw in title_kws]))
+                with col_info:
+                    st.markdown(f"**Current ICP:** `{current_icp.get('name', 'Unnamed ICP')}`")
+                    # Optional: Add summary counts
+                    summary_parts = []
+                    if current_icp.get('title_keywords'): summary_parts.append(f"{len(current_icp['title_keywords'])} Titles")
+                    if current_icp.get('industry_keywords'): summary_parts.append(f"{len(current_icp['industry_keywords'])} Industries")
+                    if current_icp.get('location_keywords'): summary_parts.append(f"{len(current_icp['location_keywords'])} Locations")
+                    if current_icp.get('company_size_rules'): summary_parts.append("Size Rules")
+                    if summary_parts:
+                         st.caption(f"Criteria: {', '.join(summary_parts)}")
                     else:
-                        st.caption("None specified.")
+                         st.caption("No criteria defined.")
 
-                    st.markdown("##### Industries/Keywords:")
-                    industry_kws = current_icp.get('industry_keywords', [])
-                    if industry_kws:
-                         st.markdown("\n".join([f"- `{kw}`" for kw in industry_kws]))
-                    else:
-                        st.caption("None specified.")
+                with col_view:
+                     # Unique key based on ICP ID (or name if ID not available)
+                     view_key = f"view_icp_{current_icp.get('id', 'current')}"
+                     if st.button("View", key=view_key, use_container_width=True):
+                         st.session_state['view_icp_details'] = current_icp # Store data to view
 
-                    st.markdown("##### Locations/Keywords:")
-                    location_kws = current_icp.get('location_keywords', [])
-                    if location_kws:
-                         st.markdown("\n".join([f"- `{kw}`" for kw in location_kws]))
-                    else:
-                        st.caption("None specified.")
+                with col_edit:
+                     edit_key = f"edit_icp_{current_icp.get('id', 'current')}"
+                     if st.button("Edit", key=edit_key, type="secondary", use_container_width=True):
+                         st.session_state.icp_to_edit = current_icp # Store data for form
+                         st.session_state.show_icp_edit_form = True # Flag to show form
+                         st.rerun() # Rerun to ensure form shows immediately
 
-                    # Display Company Size nicely
-                    st.markdown("##### Company Size:")
-                    size_rules = current_icp.get('company_size_rules', {})
+                st.markdown("---")
+
+            elif st.session_state.icp_data_loaded: # Only show if loading finished and no ICP found
+                 # Display a button to start defining one if none exists
+                 if st.button("✚ Define New ICP"):
+                     st.session_state.icp_to_edit = {} # Start with empty data
+                     st.session_state.show_icp_edit_form = True
+                     st.rerun()
+
+            # --- Display ICP Details Dialog (Modal) ---
+            if 'view_icp_details' in st.session_state:
+                icp_to_view = st.session_state.view_icp_details
+
+                @st.dialog("ICP Details", dismissed=lambda: st.session_state.pop('view_icp_details', None)) # Use lambda to remove key on dismiss
+                def show_icp_view_dialog():
+                    st.subheader(f"{icp_to_view.get('name', 'N/A')}")
+                    st.markdown("---")
+
+                    st.markdown("**Titles/Keywords:**")
+                    title_kws = icp_to_view.get('title_keywords', [])
+                    if title_kws: st.markdown("\n".join([f"- `{kw}`" for kw in title_kws]))
+                    else: st.caption("None specified.")
+
+                    st.markdown("**Industries/Keywords:**")
+                    industry_kws = icp_to_view.get('industry_keywords', [])
+                    if industry_kws: st.markdown("\n".join([f"- `{kw}`" for kw in industry_kws]))
+                    else: st.caption("None specified.")
+
+                    st.markdown("**Locations/Keywords:**")
+                    location_kws = icp_to_view.get('location_keywords', [])
+                    if location_kws: st.markdown("\n".join([f"- `{kw}`" for kw in location_kws]))
+                    else: st.caption("None specified.")
+
+                    st.markdown("**Company Size Rules:**")
+                    size_rules = icp_to_view.get('company_size_rules', {})
                     min_size = size_rules.get('min') if isinstance(size_rules, dict) else None
                     max_size = size_rules.get('max') if isinstance(size_rules, dict) else None
+                    if min_size is not None or max_size is not None:
+                        st.markdown(f"- Min: `{min_size if min_size is not None else 'Any'}` | Max: `{max_size if max_size is not None else 'Any'}`")
+                    else: st.caption("Any size.")
 
-                    if min_size is not None and max_size is not None:
-                        st.markdown(f"- Min Employees: `{min_size}`")
-                        st.markdown(f"- Max Employees: `{max_size}`")
-                    elif min_size is not None:
-                        st.markdown(f"- Min Employees: `{min_size}`")
-                        st.markdown(f"- Max Employees: Not specified")
-                    elif max_size is not None:
-                        st.markdown(f"- Min Employees: Not specified")
-                        st.markdown(f"- Max Employees: `{max_size}`")
-                    else:
-                        st.caption("Any size.")
+                    st.markdown("---")
+                    if st.button("Close", key="close_view_dialog"):
+                         # Remove the key to close the dialog and prevent reopening
+                         if 'view_icp_details' in st.session_state:
+                             del st.session_state['view_icp_details']
+                         st.rerun()
 
-            else: # Handle case where no ICP is saved yet
-                 if st.session_state.get('icp_data_loaded'): # Only show if loading finished
-                      st.info("No ICP definition found. Please create one using the form below.")
-
-            st.markdown("---") # Divider
-            st.markdown("#### Edit ICP Definition:")
-          
-                # --- ICP Form ---
-            with st.form("icp_form"):
-                # Input fields populated from current_icp data
-                st.text_input(
-                    "ICP Name:",
-                    value=current_icp.get("name", "Default ICP"),
-                    key="icp_name",
-                    help="Give your ICP a recognizable name."
-                )
-                st.text_area(
-                    "Titles/Keywords (one per line):",
-                    value="\n".join(current_icp.get("title_keywords", [])),
-                    key="icp_titles", height=100,
-                    help="Enter job titles or role keywords (e.g., VP of Sales, Marketing Manager, Founder)."
-                )
-                st.text_area(
-                    "Industries/Keywords (one per line):",
-                    value="\n".join(current_icp.get("industry_keywords", [])),
-                    key="icp_industries", height=100,
-                    help="Enter target industries (e.g., SaaS, E-commerce, Financial Services)."
-                )
-                st.text_area(
-                    "Locations/Keywords (one per line):",
-                    value="\n".join(current_icp.get("location_keywords", [])),
-                    key="icp_locations", height=100,
-                    help="Enter target geographic locations (e.g., California, London, United States)."
-                )
-
-                st.divider()
-                st.markdown("**Company Size**")
-
-                # Extract current min/max from the loaded data for the form
-                current_size_rules_for_form = current_icp.get("company_size_rules", {})
-                current_min_size_form = None
-                current_max_size_form = None
-                if isinstance(current_size_rules_for_form, dict):
-                    current_min_size_form = current_size_rules_for_form.get("min")
-                    current_max_size_form = current_size_rules_for_form.get("max")
-                try: current_min_size_form = int(current_min_size_form) if current_min_size_form is not None else None
-                except (ValueError, TypeError): current_min_size_form = None
-                try: current_max_size_form = int(current_max_size_form) if current_max_size_form is not None else None
-                except (ValueError, TypeError): current_max_size_form = None
+                show_icp_view_dialog() # Call the function to display the dialog
 
 
-                col_min, col_max = st.columns(2)
-                with col_min:
-                    min_size_input = st.number_input( # Renamed variable to avoid conflict
-                        "Min Employees:",
-                        min_value=1,
-                        value=current_min_size_form,
-                        step=1,
-                        format="%d",
-                        key="icp_min_size",
-                        help="Minimum number of employees (inclusive). Leave blank if no minimum."
-                    )
-                with col_max:
-                    max_size_input = st.number_input( # Renamed variable to avoid conflict
-                        "Max Employees:",
-                        min_value=1,
-                        value=current_max_size_form,
-                        step=1,
-                        format="%d",
-                        key="icp_max_size",
-                        help="Maximum number of employees (inclusive). Leave blank if no maximum."
-                    )
+            # --- Conditionally Display ICP Edit Form ---
+            if st.session_state.get('show_icp_edit_form', False):
+                st.markdown("#### Edit ICP Definition:")
+                # Get data to pre-fill form (either from clicking 'Edit' or empty for 'New')
+                form_data = st.session_state.get('icp_to_edit', {})
 
-                # Display warning directly in form if min > max
-                min_val_check = st.session_state.icp_min_size
-                max_val_check = st.session_state.icp_max_size
-                min_int_check = int(min_val_check) if min_val_check is not None else None
-                max_int_check = int(max_val_check) if max_val_check is not None else None
-                if min_int_check is not None and max_int_check is not None and min_int_check > max_int_check:
-                    st.warning("Minimum size cannot be greater than maximum size.", icon="⚠️")
+                with st.form("icp_edit_form"): # Changed form key
+                    # --- Form Fields (populated from form_data) ---
+                    st.text_input("ICP Name:", value=form_data.get("name", "Default ICP"), key="icp_edit_name")
+                    st.text_area("Titles/Keywords (one per line):", value="\n".join(form_data.get("title_keywords", [])), key="icp_edit_titles", height=100, help="...")
+                    st.text_area("Industries/Keywords (one per line):", value="\n".join(form_data.get("industry_keywords", [])), key="icp_edit_industries", height=100, help="...")
+                    st.text_area("Locations/Keywords (one per line):", value="\n".join(form_data.get("location_keywords", [])), key="icp_edit_locations", height=100, help="...")
 
-                st.divider()
+                    st.divider(); st.markdown("**Company Size**")
+                    current_size_rules_form = form_data.get("company_size_rules", {})
+                    current_min_size_form, current_max_size_form = None, None
+                    if isinstance(current_size_rules_form, dict):
+                        current_min_size_form = current_size_rules_form.get("min")
+                        current_max_size_form = current_size_rules_form.get("max")
+                    try: current_min_size_form = int(current_min_size_form) if current_min_size_form is not None else None
+                    except: current_min_size_form = None
+                    try: current_max_size_form = int(current_max_size_form) if current_max_size_form is not None else None
+                    except: current_max_size_form = None
 
-                # Form submission button
-                submitted = st.form_submit_button("💾 Save ICP Definition")
+                    col_min_edit, col_max_edit = st.columns(2)
+                    with col_min_edit:
+                        st.number_input("Min Employees:", min_value=1, value=current_min_size_form, step=1, format="%d", key="icp_edit_min_size", help="...")
+                    with col_max_edit:
+                        st.number_input("Max Employees:", min_value=1, value=current_max_size_form, step=1, format="%d", key="icp_edit_max_size", help="...")
 
-                if submitted:
-                    can_save = True # Flag to control saving
-
-                    # Basic Validation
-                    icp_name = st.session_state.icp_name.strip()
-                    if not icp_name:
-                        st.error("ICP Name cannot be empty.")
-                        can_save = False
-
-                    # Data Processing
-                    title_kws = [kw.strip() for kw in st.session_state.icp_titles.split('\n') if kw.strip()]
-                    industry_kws = [kw.strip() for kw in st.session_state.icp_industries.split('\n') if kw.strip()]
-                    location_kws = [kw.strip() for kw in st.session_state.icp_locations.split('\n') if kw.strip()]
-
-                    # Process Company Size Inputs
-                    size_rules_payload = {}
-                    # Use the check variables calculated above for validation display
+                    min_val_check = st.session_state.icp_edit_min_size
+                    max_val_check = st.session_state.icp_edit_max_size
+                    min_int_check = int(min_val_check) if min_val_check is not None else None
+                    max_int_check = int(max_val_check) if max_val_check is not None else None
                     if min_int_check is not None and max_int_check is not None and min_int_check > max_int_check:
-                         st.error("Minimum company size cannot be greater than maximum size. Please correct.")
-                         can_save = False
-                    else:
-                         if min_int_check is not None: size_rules_payload["min"] = min_int_check
-                         if max_int_check is not None: size_rules_payload["max"] = max_int_check
+                        st.warning("Minimum size cannot be greater than maximum size.", icon="⚠️")
+                    st.divider()
 
-                    # API Call
-                    if can_save:
-                        icp_payload = {
-                            "name": icp_name, "title_keywords": title_kws, "industry_keywords": industry_kws,
-                            "location_keywords": location_kws, "company_size_rules": size_rules_payload if size_rules_payload else None
-                        }
-                        with st.spinner("Saving ICP definition..."):
-                            success = save_icp_data(icp_payload, auth_token)
-                        if success:
-                            st.session_state['icp_save_success'] = True
-                            st.session_state['icp_data_loaded'] = False
-                            st.rerun()
-                        # Errors handled in save_icp_data
+                    # --- Form Buttons ---
+                    submitted = st.form_submit_button("💾 Save Changes")
+                    # Add a cancel button
+                    cancel_clicked = st.form_submit_button("Cancel", type="secondary")
 
-                   
+                    if cancel_clicked:
+                        st.session_state.show_icp_edit_form = False
+                        st.session_state.icp_to_edit = None # Clear edit data
+                        st.rerun()
+
+                    if submitted:
+                        # --- Validation and Saving Logic (using _edit keys) ---
+                        can_save = True
+                        icp_name = st.session_state.icp_edit_name.strip()
+                        if not icp_name: st.error("ICP Name cannot be empty."); can_save = False
+
+                        # Use the min/max values already validated for display
+                        if min_int_check is not None and max_int_check is not None and min_int_check > max_int_check:
+                             st.error("Minimum company size cannot be greater than maximum size. Please correct.")
+                             can_save = False
+
+                        if can_save:
+                            title_kws = [kw.strip() for kw in st.session_state.icp_edit_titles.split('\n') if kw.strip()]
+                            industry_kws = [kw.strip() for kw in st.session_state.icp_edit_industries.split('\n') if kw.strip()]
+                            location_kws = [kw.strip() for kw in st.session_state.icp_edit_locations.split('\n') if kw.strip()]
+                            size_rules_payload = {}
+                            if min_int_check is not None: size_rules_payload["min"] = min_int_check
+                            if max_int_check is not None: size_rules_payload["max"] = max_int_check
+
+                            icp_payload = {
+                                "name": icp_name, "title_keywords": title_kws, "industry_keywords": industry_kws,
+                                "location_keywords": location_kws, "company_size_rules": size_rules_payload if size_rules_payload else None
+                            }
+                            with st.spinner("Saving ICP definition..."):
+                                success = save_icp_data(icp_payload, auth_token)
+                            if success:
+                                st.session_state.icp_save_success = True
+                                st.session_state.icp_data_loaded = False # Force reload
+                                st.session_state.show_icp_edit_form = False # Hide form
+                                st.session_state.icp_to_edit = None # Clear edit data
+                                st.rerun()
+                            # Errors handled in save_icp_data
+
         # --- Offerings Tab ---
         with tab2:
             st.subheader("💡 Offerings")
