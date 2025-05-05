@@ -152,15 +152,108 @@ def put_authenticated_request(endpoint: str, token: str, data: Dict[str, Any]) -
         st.error(f"Failed to save data ({endpoint}): An unexpected error occurred - {e}")
         return False
 
-# --- ICP Specific Helpers ---
-def get_icp_data(token: str) -> Optional[Dict[str, Any]]:
-    """Fetches the ICP definition for the authenticated user's org."""
-    return get_authenticated_request(ICP_ENDPOINT, token)
+# --- ICP Specific Helpers (NEW - for Multiple ICPs) --
 
-def save_icp_data(icp_input_dict: Dict[str, Any], token: str) -> bool:
-    """Saves (Creates/Updates) the ICP definition via PUT request."""
-    # Calling function will handle success message based on return value
-    return put_authenticated_request(ICP_ENDPOINT, token, icp_input_dict)
+def list_icps(token: str) -> Optional[List[Dict]]:
+    """Fetches a list of all ICPs for the organization."""
+    endpoint = f"{BACKEND_URL}/api/v1/icps/" # Plural endpoint
+    # Reuse the existing GET helper function
+    response_data = get_authenticated_request(endpoint, token)
+    # Ensure it returns a list, handling potential None from error
+    if isinstance(response_data, list):
+        return response_data
+    else:
+        # get_authenticated_request should have already shown an error in the UI
+        return None # Return None to indicate failure to load list
+
+def create_new_icp(icp_payload: Dict[str, Any], token: str) -> Optional[Dict]:
+    """Creates a new ICP via POST request."""
+    endpoint = f"{BACKEND_URL}/api/v1/icps/" # Plural endpoint
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    try:
+        response = requests.post(endpoint, headers=headers, json=icp_payload, timeout=20)
+        response.raise_for_status()
+        return response.json() # Return the created ICP data
+    except requests.exceptions.HTTPError as http_err:
+        if http_err.response.status_code == 401:
+             st.error("Authentication failed or session expired. Please log in again."); logout_user()
+        # Add specific handling for 422 Validation Error if backend provides details
+        elif http_err.response.status_code == 422:
+             error_detail = f"Failed to create ICP: Validation Error (HTTP {http_err.response.status_code})"
+             try: error_detail += f" - {http_err.response.json().get('detail', '')}"
+             except: pass
+             st.error(error_detail)
+        else:
+             error_detail = f"Failed to create ICP: HTTP {http_err.response.status_code}"
+             try: error_detail += f" - {http_err.response.json().get('detail', '')}"
+             except: pass
+             st.error(error_detail)
+        return None
+    except requests.exceptions.RequestException as req_err:
+        st.error(f"Failed to create ICP: Connection error - {req_err}")
+        return None
+    except Exception as e:
+        st.error(f"Failed to create ICP: An unexpected error occurred - {e}")
+        return None
+
+def update_existing_icp(icp_id: int, icp_payload: Dict[str, Any], token: str) -> Optional[Dict]:
+    """Updates an existing ICP via PUT request."""
+    endpoint = f"{BACKEND_URL}/api/v1/icps/{icp_id}" # Specific ICP ID endpoint
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    try:
+        # Use requests.put directly to get response data easily
+        response = requests.put(endpoint, headers=headers, json=icp_payload, timeout=20)
+        response.raise_for_status()
+        return response.json() # Return updated ICP data from backend
+    except requests.exceptions.HTTPError as http_err:
+        if http_err.response.status_code == 401:
+             st.error("Authentication failed or session expired. Please log in again."); logout_user()
+        elif http_err.response.status_code == 404:
+             st.error(f"Failed to update ICP: Not found (ID: {icp_id}).")
+        elif http_err.response.status_code == 422:
+             error_detail = f"Failed to update ICP: Validation Error (HTTP {http_err.response.status_code})"
+             try: error_detail += f" - {http_err.response.json().get('detail', '')}"
+             except: pass
+             st.error(error_detail)
+        else:
+             error_detail = f"Failed to update ICP: HTTP {http_err.response.status_code}"
+             try: error_detail += f" - {http_err.response.json().get('detail', '')}"
+             except: pass
+             st.error(error_detail)
+        return None
+    except requests.exceptions.RequestException as req_err:
+        st.error(f"Failed to update ICP: Connection error - {req_err}")
+        return None
+    except Exception as e:
+        st.error(f"Failed to update ICP: An unexpected error occurred - {e}")
+        return None
+
+def delete_existing_icp(icp_id: int, token: str) -> bool:
+    """Deletes an existing ICP via DELETE request."""
+    endpoint = f"{BACKEND_URL}/api/v1/icps/{icp_id}" # Specific ICP ID endpoint
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        response = requests.delete(endpoint, headers=headers, timeout=15)
+        response.raise_for_status() # Raises error for 4xx/5xx
+        # Status code 204 means success for DELETE with no content
+        return response.status_code == 204
+    except requests.exceptions.HTTPError as http_err:
+        if http_err.response.status_code == 401:
+             st.error("Authentication failed or session expired. Please log in again."); logout_user()
+        elif http_err.response.status_code == 404:
+             st.error(f"Failed to delete ICP: Not found (ID: {icp_id}).")
+        else:
+             error_detail = f"Failed to delete ICP: HTTP {http_err.response.status_code}"
+             try: error_detail += f" - {http_err.response.json().get('detail', '')}"
+             except: pass
+             st.error(error_detail)
+        return False
+    except requests.exceptions.RequestException as req_err:
+        st.error(f"Failed to delete ICP: Connection error - {req_err}")
+        return False
+    except Exception as e:
+        st.error(f"Failed to delete ICP: An unexpected error occurred - {e}")
+        return False
 
 # --- Main App Logic ---
 
