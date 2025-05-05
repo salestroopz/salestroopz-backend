@@ -789,20 +789,116 @@ def get_lead_campaign_status(lead_id: int, organization_id: int) -> Optional[Dic
     return status_data
 
 # ==========================================
-# ORGANIZATION EMAIL SETTINGS CRUD (Keep as is)
+# ORGANIZATION EMAIL SETTINGS CRUD (Psycopg2)
 # ==========================================
 def save_org_email_settings(organization_id: int, settings_data: Dict[str, Any]) -> Optional[Dict]:
-    # ... (keep existing implementation) ...
-def get_org_email_settings_from_db(organization_id: int) -> Optional[Dict]:
-    # ... (keep existing implementation) ...
+    """Saves or updates email settings for an organization, 'encrypting' sensitive fields."""
+    # Use the placeholder encryption - replace with real implementation!
+    encrypted_password = _encrypt_data(settings_data.get("smtp_password"))
+    encrypted_api_key = _encrypt_data(settings_data.get("api_key"))
+    encrypted_access_token = _encrypt_data(settings_data.get("access_token"))
+    encrypted_refresh_token = _encrypt_data(settings_data.get("refresh_token"))
 
-# ==========================================
-# Run initialization if script is executed directly (Keep as is)
-# ==========================================
-if __name__ == "__main__":
-    logger.info("Running database.py directly, attempting initialization...")
-    if settings:
-        initialize_db()
-        logger.info("Direct execution initialization attempt finished.")
-    else:
-        logger.error("Cannot initialize database directly because settings (DATABASE_URL) are not configured.")
+    columns = [ "organization_id", "provider_type", "smtp_host", "smtp_port", "smtp_username", "encrypted_smtp_password", "encrypted_api_key", "encrypted_access_token", "encrypted_refresh_token", "token_expiry", "verified_sender_email", "sender_name", "is_configured" ]
+
+    # Prepare params dict matching column order for %s placeholders if not using named execution
+    params = {
+        "organization_id": organization_id,
+        "provider_type": settings_data.get("provider_type"),
+        "smtp_host": settings_data.get("smtp_host"),
+        "smtp_port": settings_data.get("smtp_port"), # Ensure it's int or None
+        "smtp_username": settings_data.get("smtp_username"),
+        "encrypted_smtp_password": encrypted_password,
+        "encrypted_api_key": encrypted_api_key,
+        "encrypted_access_token": encrypted_access_token,
+        "encrypted_refresh_token": encrypted_refresh_token,
+        "token_expiry": settings_data.get("token_expiry"), # Ensure it's datetime or None
+        "verified_sender_email": settings_data.get("verified_sender_email"),
+        "sender_name": settings_data.get("sender_name"),
+        "is_configured": bool(settings_data.get("is_configured", False)), # Ensure boolean
+        "updated_at": datetime.now(timezone.utc) # Add updated_at timestamp
+    }
+
+    # Validate required fields
+    if not params["verified_sender_email"]: raise ValueError("Verified sender email is required.")
+    if not params["provider_type"]: raise ValueError("Provider type is required.")
+    # Convert port to int if present, else None
+    if params["smtp_port"] is not None:
+        try: params["smtp_port"] = int(params["smtp_port"])
+        except (ValueError, TypeError): raise ValueError("SMTP port must be a valid integer.")
+
+    insert_cols_str = ", ".join(columns)
+    values_placeholders = ", ".join([f"%({col})s" for col in columns])
+    # Exclude unique key from update, include updated_at
+    update_cols = [f"{col} = EXCLUDED.{col}" for col in columns if col != 'organization_id']
+    update_cols.append("updated_at = %(updated_at)s")
+    update_clause = ", ".join(update_cols)
+
+    # Use ON CONFLICT for PostgreSQL UPSERT
+    sql = f"""
+        INSERT INTO organization_email_settings ({insert_cols_str})
+        VALUES ({values_placeholders})
+        ON CONFLICT (organization_id) DO UPDATE SET {update_clause}
+        RETURNING id;
+    """
+
+    conn = None; saved_settings = None; returned_id = None
+    try:
+        conn = get_connection()
+        if not conn: return None
+        with conn: # Auto commit/rollback
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(sql, params) # Pass dictionary for named placeholders
+                returned_id_row = cursor.fetchone()
+                if returned_id_row and 'id' in returned_id_row:
+                    returned_id = returned_id_row['id']
+                    logger.info(f"Saved/Updated Email Settings for Org ID: {organization_id}")
+                else:
+                     logger.warning(f"Email settings upsert for Org {organization_id} did not return ID.")
+
+
+        # Fetch updated settings outside transaction block
+        # Fetch by org ID as it's unique
+        saved_settings = get_org_email_settings_from_db(organization_id)
+
+    except ValueError as ve: # Catch specific validation errors
+        logger.error(f"Validation Error saving email settings for Org {organization_id}: {ve}")
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error saving email settings for Org {organization_id}: {e}", exc_info=True)
+    finally:
+        if conn and not getattr(conn, 'closed', True): conn.close()
+
+    return saved_settings
+
+
+def get_org_email_settings_from_db(organization_id: int) -> Optional[Dict]:
+    """Fetches email settings for an organization, 'decrypting' sensitive fields."""
+    sql = "SELECT * FROM organization_email_settings WHERE organization_id = %s" # Use %s
+
+    conn = None
+    settings_data = None
+    try:
+        conn = get_connection()
+        if not conn: return None
+        with conn: # Use context manager
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor: # Use RealDictCursor
+                cursor.execute(sql, (organization_id,)) # Pass parameters as tuple
+                result = cursor.fetchone()
+
+                if result:
+                    settings_data = dict(result)
+                    # Use placeholder decryption - replace with real implementation!
+                    settings_data["smtp_password"] = _decrypt_data(settings_data.pop("encrypted_smtp_password", None))
+                    settings_data["api_key"] = _decrypt_data(settings_data.pop("encrypted_api_key", None))
+                    settings_data["access_token"] = _decrypt_data(settings_data.pop("encrypted_access_token", None))
+                    settings_data["refresh_token"] = _decrypt_data(settings_data.pop("encrypted_refresh_token", None))
+
+    except (Exception, psycopg2.Error) as e: # Catch specific psycopg2 errors
+        logger.error(f"DB Error getting email settings for Org {organization_id}: {e}", exc_info=True)
+    finally:
+        if conn and not getattr(conn, 'closed', True):
+            conn.close()
+
+    return settings_data
+
+# Ensure the next block (like `if __name__ == "__main__":`) starts at column 0
