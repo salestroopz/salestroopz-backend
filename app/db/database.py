@@ -156,32 +156,95 @@ def _parse_json_fields(data_row: Optional[Dict], json_fields: List[str], default
     return data_row
 
 # ==========================================
-# ORGANIZATION CRUD (Keep as is)
+# ORGANIZATION CRUD (Psycopg2)
 # ==========================================
 def create_organization(name: str) -> Optional[Dict]:
+    # PASTE YOUR ACTUAL IMPLEMENTATION HERE (indented)
+    sql = "INSERT INTO organizations (name) VALUES (%s) RETURNING id;"
+    # ... (rest of implementation from previous correct version) ...
+    pass # Remove pass once implementation is pasted
+
 def get_organization_by_id(organization_id: int) -> Optional[Dict]:
+    # PASTE YOUR ACTUAL IMPLEMENTATION HERE (indented)
+    sql = "SELECT * FROM organizations WHERE id = %s;"
+    # ... (rest of implementation from previous correct version) ...
+    pass # Remove pass once implementation is pasted
+
 def get_organization_by_name(name: str) -> Optional[Dict]:
+    """Fetches organization by name."""
+    logger.warning("Function 'get_organization_by_name' is not implemented.")
+    # Add placeholder implementation or 'pass'
+    pass # <-- ADD INDENTED PASS
+
 def get_all_organizations() -> List[Dict]:
-   
+    """Fetches all organizations."""
+    logger.warning("Function 'get_all_organizations' is not implemented.")
+    # Add placeholder implementation or 'pass'
+    pass # <-- ADD INDENTED PASS
+
 
 # ==========================================
-# USER CRUD (Keep as is)
+# USER CRUD (Psycopg2)
 # ==========================================
 def create_user(email: str, hashed_password: str, organization_id: int) -> Optional[Dict]:
+    # PASTE YOUR ACTUAL IMPLEMENTATION HERE (indented)
+    sql = "INSERT INTO users (email, hashed_password, organization_id) VALUES (%s, %s, %s) RETURNING id;"
+    # ... (rest of implementation from previous correct version) ...
+    pass # Remove pass once implementation is pasted
+
 def get_user_by_id(user_id: int) -> Optional[Dict]:
+    # PASTE YOUR ACTUAL IMPLEMENTATION HERE (indented)
+    sql = """ SELECT u.id, u.email, ... """
+    # ... (rest of implementation from previous correct version) ...
+    pass # Remove pass once implementation is pasted
+
 def get_user_by_email(email: str) -> Optional[Dict]:
+    # PASTE YOUR ACTUAL IMPLEMENTATION HERE (indented)
+    sql = """ SELECT u.id, u.email, ... """
+    # ... (rest of implementation from previous correct version) ...
+    pass # Remove pass once implementation is pasted
+
 def get_users_by_organization(organization_id: int) -> List[Dict]:
-   
+    """Fetches all users for a given organization."""
+    logger.warning("Function 'get_users_by_organization' is not implemented.")
+    # Add placeholder implementation or 'pass'
+    pass # <-- ADD INDENTED PASS
+    
 # ==========================================
-# LEAD CRUD (Keep as is, ensure correct boolean handling)
+# LEAD CRUD OPERATIONS (Psycopg2) - NEEDS REVIEW for logic consistency
 # ==========================================
 def save_lead(lead_data: Dict, organization_id: int) -> Optional[Dict]:
+    """Creates or updates a lead based on organization_id and email."""
+    # PASTE YOUR FULL save_lead IMPLEMENTATION HERE (indented)
+    # columns = [ "organization_id", ... ]
+    # ... (rest of save_lead logic) ...
+    pass # Remove pass once implementation is pasted
+
 def get_lead_by_id(lead_id: int, organization_id: int) -> Optional[Dict]:
+    """Fetches a lead by its ID and organization ID."""
+    logger.warning("Function 'get_lead_by_id' is not implemented.")
+    pass # <-- ADD INDENTED PASS
+
 def get_lead_by_email(email: str, organization_id: int) -> Optional[Dict]:
+    """Fetches a lead by its email and organization ID."""
+    logger.warning("Function 'get_lead_by_email' is not implemented.")
+    pass # <-- ADD INDENTED PASS
+
 def get_leads_by_organization(organization_id: int, offset: int = 0, limit: int = 100) -> List[Dict]:
+    """Fetches leads for an organization with pagination."""
+    logger.warning("Function 'get_leads_by_organization' is not implemented.")
+    pass # <-- ADD INDENTED PASS
+
 def update_lead_partial(lead_id: int, organization_id: int, updates: Dict[str, Any]) -> Optional[Dict]:
+    """Updates specific fields for a lead."""
+    logger.warning("Function 'update_lead_partial' is not implemented.")
+    pass # <-- ADD INDENTED PASS
+
 def delete_lead(lead_id: int, organization_id: int) -> bool:
- 
+    """Deletes a lead."""
+    logger.warning("Function 'delete_lead' is not implemented.")
+    pass # <-- ADD INDENTED PASS (Return False if keeping placeholder)
+    # return False
 
 # ==========================================
 # REFACTORED ICP CRUD OPERATIONS
