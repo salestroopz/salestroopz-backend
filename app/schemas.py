@@ -192,6 +192,7 @@ class CampaignStepInput(BaseModel):
     subject_template: Optional[str] = Field(None, description="Subject line template (use {{placeholders}})")
     body_template: Optional[str] = Field(None, description="Email body template (use {{placeholders}})")
     is_ai_crafted: bool = Field(False, description="Set true if AI should generate content for this step")
+    follow_up_angle: Optional[str] = Field(None, description="Hint for AI personalization") # Added field
 
 class CampaignStepResponse(CampaignStepInput):
     """Response model for a campaign step, includes DB ID."""
@@ -204,11 +205,13 @@ class CampaignStepResponse(CampaignStepInput):
     class Config:
         from_attributes = True
 
+# --- Campaign Schemas ---
 class CampaignInput(BaseModel):
     """Input for creating or updating a campaign definition."""
     name: str = Field(..., min_length=1, examples=["Q3 Fintech Outreach"])
     description: Optional[str] = Field(None, examples=["Campaign targeting Fintech CTOs..."])
     is_active: bool = Field(True)
+    icp_id: Optional[int] = Field(None, description="Optional ID of the ICP to associate with this campaign") # *** ADDED THIS LINE ***
     # Optionally allow creating steps along with campaign
     steps: Optional[List[CampaignStepInput]] = Field(None, description="Optionally define steps during campaign creation")
 
@@ -219,6 +222,8 @@ class CampaignResponse(BaseModel):
     name: str
     description: Optional[str] = None
     is_active: bool
+    icp_id: Optional[int] = None # *** ADDED THIS LINE ***
+    icp_name: Optional[str] = None # *** ADDED THIS LINE (populated by DB JOIN) ***
     created_at: datetime
     updated_at: datetime
     # Optionally include steps in the response
@@ -226,6 +231,7 @@ class CampaignResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
 
 # --- Lead Status Schema (Optional - for API responses if needed) ---
 class LeadCampaignStatusResponse(BaseModel):
