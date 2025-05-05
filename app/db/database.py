@@ -416,20 +416,48 @@ def delete_icp(icp_id: int, organization_id: int) -> bool:
 
 
 # ==========================================
-# OFFERING CRUD OPERATIONS (Keep as is, ensure _parse works)
+# OFFERING CRUD OPERATIONS (Psycopg2)
 # ==========================================
-def _parse_offering_json_fields(offering_row: Dict) -> Optional[Dict]:
-    # ... (keep existing implementation) ...
+def _parse_offering_json_fields(offering_row: Dict) -> Optional[Dict]: # Input is already dict
+    """Helper to parse JSON fields from an Offering dictionary row."""
+    # PASTE YOUR FULL _parse_offering_json_fields IMPLEMENTATION HERE (indented)
+    # if not offering_row: return None
+    # ... (rest of parsing logic) ...
+    pass # Remove pass once implementation is pasted
+
 def create_offering(organization_id: int, offering_data: Dict[str, Any]) -> Optional[Dict]:
-    # ... (keep existing implementation) ...
+    """Creates a new offering for an organization."""
+    # PASTE YOUR FULL create_offering IMPLEMENTATION HERE (indented)
+    # columns = ["organization_id", ... ]
+    # ... (rest of create logic) ...
+    pass # Remove pass once implementation is pasted
+
 def get_offering_by_id(offering_id: int, organization_id: int) -> Optional[Dict]:
-    # ... (keep existing implementation) ...
+    """Fetches an offering by its ID and organization ID, parsing JSON."""
+    # PASTE YOUR FULL get_offering_by_id IMPLEMENTATION HERE (indented)
+    # sql = "SELECT * FROM offerings WHERE id = %s AND organization_id = %s;"
+    # ... (rest of get logic) ...
+    pass # Remove pass once implementation is pasted
+
 def get_offerings_by_organization(organization_id: int, active_only: bool = True) -> List[Dict]:
-    # ... (keep existing implementation) ...
+    """Fetches offerings for an organization, parsing JSON."""
+    # PASTE YOUR FULL get_offerings_by_organization IMPLEMENTATION HERE (indented)
+    # sql = "SELECT * FROM offerings WHERE organization_id = %s"
+    # ... (rest of list logic) ...
+    pass # Remove pass once implementation is pasted
+
 def update_offering(offering_id: int, organization_id: int, updates: Dict[str, Any]) -> Optional[Dict]:
-    # ... (keep existing implementation - Needs implementation) ...
+    """Updates an existing offering."""
+    logger.warning("Function 'update_offering' is not implemented.")
+    # Return current state as placeholder or just pass
+    pass # <-- ADD INDENTED PASS
+    # return get_offering_by_id(offering_id, organization_id)
+
 def delete_offering(offering_id: int, organization_id: int) -> bool:
-    # ... (keep existing implementation - Needs implementation) ...
+    """Deletes an offering."""
+    logger.warning("Function 'delete_offering' is not implemented.")
+    pass # <-- ADD INDENTED PASS
+    # return False
 
 
 # ===========================================================
@@ -500,27 +528,265 @@ def get_campaigns_by_organization(organization_id: int, active_only: bool = True
         if conn and not getattr(conn, 'closed', True): conn.close()
     return campaigns
 
-# --- Step CRUD (Keep as is) ---
+# ===========================================================
+# CAMPAIGN STEP CRUD (Corrected for PostgreSQL)
+# ===========================================================
 def create_campaign_step(campaign_id: int, organization_id: int, step_number: int, delay_days: int, subject: Optional[str], body: Optional[str], is_ai: bool = False, follow_up_angle: Optional[str] = None) -> Optional[Dict]:
-    # ... (keep existing implementation) ...
-def get_campaign_step_by_id(step_id: int, organization_id: int) -> Optional[Dict]:
-    # ... (keep existing implementation) ...
-def get_steps_for_campaign(campaign_id: int, organization_id: int) -> List[Dict]:
-    # ... (keep existing implementation) ...
-def get_next_campaign_step(campaign_id: int, organization_id: int, current_step_number: int) -> Optional[Dict]:
-    # ... (keep existing implementation) ...
+    """Creates a new step within a campaign."""
+    sql = """
+        INSERT INTO campaign_steps
+        (campaign_id, organization_id, step_number, delay_days, subject_template, body_template, is_ai_crafted, follow_up_angle)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id;
+        """ # Use %s placeholders and RETURNING id
+    params = (campaign_id, organization_id, step_number, delay_days, subject, body, is_ai, follow_up_angle)
+    conn = None; new_id = None; step_data = None
+    try:
+        conn = get_connection()
+        if not conn: return None
+        with conn: # Auto commit/rollback
+             with conn.cursor() as cursor: # Default cursor for RETURNING
+                  try:
+                       cursor.execute(sql, params)
+                       result = cursor.fetchone()
+                       if result: new_id = result[0]
+                  except psycopg2.IntegrityError as ie:
+                       conn.rollback() # Explicit rollback needed within 'with conn:' if we handle error here
+                       logger.error(f"DB Integrity Error creating step {step_number} for Camp {campaign_id}: {ie} (Duplicate step number?)")
+                       return None # Return None on integrity error
 
-# --- Lead Status CRUD (Keep as is) ---
+        if new_id:
+             logger.info(f"Created step {step_number} (ID: {new_id}) for Campaign {campaign_id}, Org {organization_id}")
+             step_data = get_campaign_step_by_id(new_id, organization_id) # Fetch full data
+        else:
+             logger.error(f"Step creation for Camp {campaign_id}, Step {step_number} did not return ID.")
+
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error creating step {step_number} for Camp {campaign_id}: {e}", exc_info=True)
+        # Rollback happens automatically due to 'with conn:' if exception bubbles up
+    finally:
+        if conn and not getattr(conn, 'closed', True): conn.close()
+    return step_data
+
+def get_campaign_step_by_id(step_id: int, organization_id: int) -> Optional[Dict]:
+    """Fetches a specific campaign step by its ID."""
+    sql = "SELECT * FROM campaign_steps WHERE id = %s AND organization_id = %s" # Use %s
+    conn = None; step = None
+    try:
+        conn = get_connection()
+        if not conn: return None
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor: # Use RealDictCursor
+            cursor.execute(sql, (step_id, organization_id))
+            result = cursor.fetchone()
+            if result: step = dict(result)
+    except (Exception, psycopg2.Error) as e: # Use psycopg2.Error
+        logger.error(f"DB Error getting step ID {step_id} for Org {organization_id}: {e}", exc_info=True)
+    finally:
+        if conn and not getattr(conn, 'closed', True): conn.close()
+    return step
+
+def get_steps_for_campaign(campaign_id: int, organization_id: int) -> List[Dict]:
+    """Fetches all steps for a specific campaign, ordered by step number."""
+    sql = "SELECT * FROM campaign_steps WHERE campaign_id = %s AND organization_id = %s ORDER BY step_number" # Use %s
+    conn = None; steps = []
+    try:
+        conn = get_connection()
+        if not conn: return []
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor: # Use RealDictCursor
+            cursor.execute(sql, (campaign_id, organization_id))
+            results = cursor.fetchall()
+            for row in results: steps.append(dict(row))
+    except (Exception, psycopg2.Error) as e: # Use psycopg2.Error
+        logger.error(f"DB Error getting steps for Camp {campaign_id}, Org {organization_id}: {e}", exc_info=True)
+    finally:
+        if conn and not getattr(conn, 'closed', True): conn.close()
+    return steps
+
+def get_next_campaign_step(campaign_id: int, organization_id: int, current_step_number: int) -> Optional[Dict]:
+    """Fetches the next step in sequence for a campaign."""
+    sql = "SELECT * FROM campaign_steps WHERE campaign_id = %s AND organization_id = %s AND step_number = %s LIMIT 1" # Use %s
+    next_step_number = current_step_number + 1
+    conn = None; step_data = None
+    try:
+        conn = get_connection()
+        if not conn: return None
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor: # Use RealDictCursor
+            cursor.execute(sql, (campaign_id, organization_id, next_step_number))
+            result = cursor.fetchone()
+            if result: step_data = dict(result)
+    except (Exception, psycopg2.Error) as e: # Use psycopg2.Error
+        logger.error(f"DB Error getting next step ({next_step_number}) for Camp {campaign_id}, Org {organization_id}: {e}", exc_info=True)
+    finally:
+        if conn and not getattr(conn, 'closed', True): conn.close()
+    return step_data
+
+# --- TODO: Add update_campaign_step and delete_campaign_step ---
+def update_campaign_step(step_id: int, organization_id: int, updates: Dict[str, Any]) -> Optional[Dict]:
+     logger.warning(f"Function 'update_campaign_step' (ID: {step_id}) is not implemented.")
+     pass # IMPLEMENT ME
+     return get_campaign_step_by_id(step_id, organization_id) # Return current as placeholder
+
+def delete_campaign_step(step_id: int, organization_id: int) -> bool:
+     logger.warning(f"Function 'delete_campaign_step' (ID: {step_id}) is not implemented.")
+     pass # IMPLEMENT ME
+     return False
+
+# ===========================================================
+# LEAD CAMPAIGN STATUS CRUD (Corrected for PostgreSQL)
+# ===========================================================
 def enroll_lead_in_campaign(lead_id: int, campaign_id: int, organization_id: int) -> Optional[Dict]:
-    # ... (keep existing implementation) ...
+    """Enrolls a lead into a campaign by creating a status record."""
+    sql = """INSERT INTO lead_campaign_status (lead_id, campaign_id, organization_id, status, current_step_number)
+             VALUES (%s, %s, %s, 'active', 0) RETURNING id""" # Use %s and RETURNING
+    params = (lead_id, campaign_id, organization_id)
+    conn = None; status_data = None; status_id = None
+    try:
+        conn = get_connection()
+        if not conn: return None
+        with conn: # Auto commit/rollback
+            with conn.cursor() as cursor: # Default cursor for RETURNING
+                try:
+                    cursor.execute(sql, params)
+                    result = cursor.fetchone()
+                    if result: status_id = result[0]
+                except psycopg2.IntegrityError as ie:
+                    conn.rollback() # Explicit rollback
+                    logger.warning(f"DB Integrity Error enrolling lead {lead_id} in camp {campaign_id}: {ie} (Likely already enrolled or FK issue)")
+                    # Fetch existing status if already enrolled
+                    return get_lead_campaign_status(lead_id, organization_id)
+
+        if status_id:
+            logger.info(f"Enrolled Lead ID {lead_id} in Campaign ID {campaign_id} (Status ID: {status_id})")
+            status_data = get_lead_campaign_status_by_id(status_id, organization_id) # Fetch full data
+        else:
+            logger.error(f"Lead enrollment for lead {lead_id}, camp {campaign_id} did not return ID.")
+
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error enrolling lead {lead_id} in camp {campaign_id}: {e}", exc_info=True)
+        # Rollback happened automatically if exception bubbled up from 'with conn:'
+    finally:
+        if conn and not getattr(conn, 'closed', True): conn.close()
+    return status_data
+
 def update_lead_campaign_status(status_id: int, organization_id: int, updates: Dict[str, Any]) -> Optional[Dict]:
-    # ... (keep existing implementation) ...
+    """Updates the status record for a lead in a campaign."""
+    allowed_fields = {"current_step_number", "status", "last_email_sent_at", "next_email_due_at", "last_response_type", "last_response_at", "error_message"}
+    valid_updates = {k: v for k, v in updates.items() if k in allowed_fields}
+
+    # Optional: Add timezone handling for datetime fields if necessary before saving
+    # ...
+
+    if not valid_updates:
+         logger.warning(f"No valid fields provided for updating lead status ID {status_id}")
+         # Return current status without making changes
+         return get_lead_campaign_status_by_id(status_id, organization_id)
+
+
+    # Use named placeholders %(key)s for psycopg2 dictionary execution
+    set_parts = [f"{key} = %({key})s" for key in valid_updates.keys()]
+    # Always update 'updated_at' timestamp
+    set_parts.append("updated_at = timezone('utc', now())") # Use PostgreSQL function
+    set_clause = ", ".join(set_parts)
+
+    params = valid_updates.copy()
+    params["status_id"] = status_id
+    params["organization_id"] = organization_id
+
+    sql = f"UPDATE lead_campaign_status SET {set_clause} WHERE id = %(status_id)s AND organization_id = %(organization_id)s"
+
+    conn = None; success = False
+    try:
+        conn = get_connection()
+        if not conn: return None
+        with conn: # Auto commit/rollback
+            with conn.cursor() as cursor:
+                cursor.execute(sql, params)
+                if cursor.rowcount > 0:
+                    success = True
+                    logger.debug(f"Updated lead campaign status ID {status_id}")
+                else:
+                    # This means the status_id + organization_id combination wasn't found
+                    logger.warning(f"Lead campaign status ID {status_id} not found for Org {organization_id} during update.")
+                    success = False
+
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error updating lead status ID {status_id}: {e}", exc_info=True)
+        success = False # Mark as failed on error
+    finally:
+        if conn and not getattr(conn, 'closed', True): conn.close()
+
+    # Fetch and return updated status only if update affected a row
+    return get_lead_campaign_status_by_id(status_id, organization_id) if success else None
+
+
 def get_active_leads_due_for_step(organization_id: Optional[int] = None) -> List[Dict]:
-    # ... (keep existing implementation) ...
+    """Fetches active leads potentially due for the next step. Further filtering needed in application logic."""
+    logger.debug(f"Fetching active leads {f'for Org {organization_id}' if organization_id else 'across all orgs'}.")
+    leads_due = []; conn = None
+    # Select relevant fields including lead email, campaign name for context
+    sql = """
+        SELECT lcs.*, c.name as campaign_name, l.email as lead_email
+        FROM lead_campaign_status lcs
+        JOIN email_campaigns c ON lcs.campaign_id = c.id
+        JOIN leads l ON lcs.lead_id = l.id
+        WHERE lcs.status = 'active'
+        """
+    params = []
+    if organization_id is not None:
+        sql += " AND lcs.organization_id = %s"
+        params.append(organization_id)
+    # Order results consistently
+    sql += " ORDER BY lcs.organization_id, lcs.next_email_due_at ASC NULLS FIRST, lcs.last_email_sent_at ASC NULLS FIRST"
+
+    try:
+        conn = get_connection()
+        if not conn: return []
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(sql, params)
+            results = cursor.fetchall()
+            if results:
+                 leads_due = [dict(row) for row in results] # Convert all rows to dict
+            logger.debug(f"DB: Found {len(leads_due)} total active leads matching initial criteria {f'for Org {organization_id}' if organization_id else ''}.")
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error getting active leads{f' for Org {organization_id}' if organization_id else ''}: {e}", exc_info=True)
+    finally:
+        if conn and not getattr(conn, 'closed', True): conn.close()
+
+    return leads_due
+
+
 def get_lead_campaign_status_by_id(status_id: int, organization_id: int) -> Optional[Dict]:
-    # ... (keep existing implementation) ...
+    """Fetches a specific lead campaign status record by its ID."""
+    sql = "SELECT * FROM lead_campaign_status WHERE id = %s AND organization_id = %s" # Use %s
+    conn = None; status_data = None
+    try:
+        conn = get_connection()
+        if not conn: return None
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor: # Use RealDictCursor
+            cursor.execute(sql, (status_id, organization_id))
+            result = cursor.fetchone()
+            if result: status_data = dict(result)
+    except (Exception, psycopg2.Error) as e: # Use psycopg2.Error
+        logger.error(f"DB Error getting lead status ID {status_id} for Org {organization_id}: {e}", exc_info=True)
+    finally:
+        if conn and not getattr(conn, 'closed', True): conn.close()
+    return status_data
+
 def get_lead_campaign_status(lead_id: int, organization_id: int) -> Optional[Dict]:
-    # ... (keep existing implementation) ...
+    """Fetches the campaign status for a specific lead."""
+    sql = "SELECT * FROM lead_campaign_status WHERE lead_id = %s AND organization_id = %s" # Use %s
+    conn = None; status_data = None
+    try:
+        conn = get_connection()
+        if not conn: return None
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor: # Use RealDictCursor
+            cursor.execute(sql, (lead_id, organization_id))
+            result = cursor.fetchone()
+            if result: status_data = dict(result)
+    except (Exception, psycopg2.Error) as e: # Use psycopg2.Error
+        logger.error(f"DB Error getting campaign status for lead {lead_id}, Org {organization_id}: {e}", exc_info=True)
+    finally:
+        if conn and not getattr(conn, 'closed', True): conn.close()
+    return status_data
 
 # ==========================================
 # ORGANIZATION EMAIL SETTINGS CRUD (Keep as is)
