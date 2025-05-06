@@ -182,6 +182,55 @@ class OfferingResponse(BaseModel):
 # ... (keep all existing imports and schemas) ...
 from datetime import datetime
 
+# --- === Email Settings Schemas === ---
+
+class EmailProviderType(str, Enum):
+    # Enum for allowed provider types
+    SMTP = "smtp"
+    AWS_SES = "aws_ses"
+    # Add others later like GOOGLE_OAUTH, SENDGRID_API etc.
+
+class EmailSettingsBase(BaseModel):
+    provider_type: Optional[EmailProviderType] = Field(None, description="The email sending provider type")
+    verified_sender_email: Optional[EmailStr] = Field(None, description="The verified email address to send from")
+    sender_name: Optional[str] = Field(None, description="The 'From' name displayed in emails", examples=["Sales Team @ Company"])
+
+    # SMTP Specific - optional overall, but required if provider_type is 'smtp'
+    smtp_host: Optional[str] = None
+    smtp_port: Optional[int] = None # Typically 587 (TLS) or 465 (SSL)
+    smtp_username: Optional[str] = None
+
+    # AWS SES Specific - optional overall, but required if provider_type is 'aws_ses'
+    # Store API keys securely, these are just for input validation structure
+    aws_region: Optional[str] = Field(None, examples=["us-east-1"])
+
+    # Flag indicating if setup is considered complete by user/system
+    is_configured: Optional[bool] = Field(False)
+
+class EmailSettingsInput(EmailSettingsBase):
+    """Schema for inputting email settings. Secrets included here."""
+    # Secrets are optional on input (user might not want to update them every time)
+    smtp_password: Optional[str] = Field(None, description="SMTP Password (write-only)")
+    aws_access_key_id: Optional[str] = Field(None, description="AWS Access Key ID (write-only)")
+    aws_secret_access_key: Optional[str] = Field(None, description="AWS Secret Access Key (write-only)")
+
+    # Add fields for other providers (API Key, OAuth tokens) here when needed
+
+class EmailSettingsResponse(EmailSettingsBase):
+    """Schema for returning email settings. Excludes sensitive data."""
+    organization_id: int
+    id: int
+    # Indicate if essential credentials seem to be set for the chosen provider
+    # Note: This is a basic check, doesn't guarantee validity
+    credentials_set: bool = False
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True # Pydantic v2
+
+# --- === END Email Settings Schemas === ---
+
 # --- === NEW SCHEMAS FOR CAMPAIGN/STEP MANAGEMENT === ---
 
 # --- Campaign Schemas ---
