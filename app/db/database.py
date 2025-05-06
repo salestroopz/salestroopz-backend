@@ -330,11 +330,14 @@ def save_lead(lead_data: Dict, organization_id: int) -> Optional[Dict]:
     if not params.get('email'):
         logger.warning(f"Skipping lead save for org {organization_id}: missing email")
         return None
+    # Ensure boolean values for boolean columns
     params['matched'] = bool(params.get('matched', False))
     params['appointment_confirmed'] = bool(params.get('appointment_confirmed', False))
 
     insert_cols_str = ", ".join(columns)
     values_placeholders = ", ".join([f"%({col})s" for col in columns])
+    # Exclude unique key columns (org_id, email) and created_at from explicit update
+    # Let ON CONFLICT handle the unique key logic
     update_cols = [f"{col} = EXCLUDED.{col}" for col in columns if col not in ['id', 'organization_id', 'email', 'created_at']]
     update_clause = ", ".join(update_cols)
 
@@ -348,53 +351,161 @@ def save_lead(lead_data: Dict, organization_id: int) -> Optional[Dict]:
     try:
         conn = get_connection()
         if not conn: return None
-        with conn:
+        with conn: # Auto commit/rollback
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute(sql, params)
                 returned_id_row = cursor.fetchone()
                 if returned_id_row and 'id' in returned_id_row:
                     returned_id = returned_id_row['id']
                 else:
-                     logger.warning(f"Lead upsert did not return ID for {params['email']}, Org {organization_id}.")
+                     logger.warning(f"Lead upsert for {params.get('email')}, Org {organization_id} did not return ID consistently.")
+                     # If no ID returned, but also no error, try to fetch by email as a fallback
+                     # This scenario is less common with RETURNING id but can happen.
+
+        # Fetch full data after commit using the returned ID or by email as fallback
         if returned_id:
-            saved_lead = get_lead_by_id(returned_id, organization_id)
-            if saved_lead: logger.debug(f"Saved/Updated lead ID {saved_lead['id']} for org {organization_id}")
-            else: logger.error(f"Failed to fetch lead ID {returned_id} immediately after upsert.")
-        else:
+            saved_lead = get_lead_by_id(returned_id, organization_id) # Use the implemented function
+            if saved_lead:
+                 logger.debug(f"Successfully saved/updated lead ID {saved_lead['id']} for org {organization_id}")
+            else:
+                 logger.error(f"Failed to fetch lead ID {returned_id} immediately after upsert, even though ID was returned.")
+                 # Fallback to email just in case get_lead_by_id had an issue with new ID
+                 saved_lead = get_lead_by_email(params['email'], organization_id)
+        else: # If RETURNING ID failed for some reason
             logger.warning(f"Upsert didn't return ID, attempting fetch by email for {params['email']}, Org {organization_id}.")
             saved_lead = get_lead_by_email(params['email'], organization_id)
+
     except (Exception, psycopg2.Error) as e:
         logger.error(f"DB Error saving lead for org {organization_id}, email {params.get('email')}: {e}", exc_info=True)
     finally:
         if conn and not getattr(conn, 'closed', True): conn.close()
     return saved_lead
 
+# --- IMPLEMENTED ---
 def get_lead_by_id(lead_id: int, organization_id: int) -> Optional[Dict]:
     """Fetches a lead by its ID and organization ID."""
-    logger.warning("Function 'get_lead_by_id' is not implemented.")
-    pass
+    sql = "SELECT * FROM leads WHERE id = %s AND organization_id = %s;"
+    conn = None; lead_data = None
+    try:
+        conn = get_connection()
+        if not conn: return None
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(sql, (lead_id, organization_id))
+            result = cursor.fetchone()
+            if result:
+                lead_data = dict(result)
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error getting lead ID {lead_id} for Org {organization_id}: {e}", exc_info=True)
+    finally:
+        if conn and not getattr(conn, 'closed', True): conn.close()
+    return lead_data
 
+# --- IMPLEMENTED ---
 def get_lead_by_email(email: str, organization_id: int) -> Optional[Dict]:
     """Fetches a lead by its email and organization ID."""
-    logger.warning("Function 'get_lead_by_email' is not implemented.")
-    pass
+    sql = "SELECT * FROM leads WHERE email = %s AND organization_id = %s;"
+    conn = None; lead_data = None
+    try:
+        conn = get_connection()
+        if not conn: return None
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(sql, (email, organization_id))
+            result = cursor.fetchone()
+            if result:
+                lead_data = dict(result)
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error getting lead by email '{email}' for Org {organization_id}: {e}", exc_info=True)
+    finally:
+        if conn and not getattr(conn, 'closed', True): conn.close()
+    return lead_data
 
+# --- IMPLEMENTED ---
 def get_leads_by_organization(organization_id: int, offset: int = 0, limit: int = 100) -> List[Dict]:
-    """Fetches leads for an organization with pagination."""
-    logger.warning("Function 'get_leads_by_organization' is not implemented.")
-    pass
+    """Fetches leads for an organization with pagination, ordered by creation date descending."""
+    sql = "SELECT * FROM leads WHERE organization_id = %s ORDER BY created_at DESC LIMIT %s OFFSET %s;"
+    conn = None; leads_list = []
+    try:
+        conn = get_connection()
+        if not conn: return []
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(sql, (organization_id, limit, offset))
+            results = cursor.fetchall()
+            for row in results:
+                leads_list.append(dict(row))
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error getting leads for Org {organization_id}: {e}", exc_info=True)
+    finally:
+        if conn and not getattr(conn, 'closed', True): conn.close()
+    return leads_list
 
+# --- IMPLEMENTED ---
 def update_lead_partial(lead_id: int, organization_id: int, updates: Dict[str, Any]) -> Optional[Dict]:
-    """Updates specific fields for a lead."""
-    logger.warning("Function 'update_lead_partial' is not implemented.")
-    pass
+    """Updates specific fields for a lead. Ensures boolean fields are handled correctly."""
+    # Define allowed fields for update (excluding id, organization_id, email, created_at)
+    allowed_fields = {"name", "company", "title", "source", "linkedin_profile", "company_size", "industry", "location", "matched", "reason", "crm_status", "appointment_confirmed"}
+    
+    valid_updates = {}
+    for key, value in updates.items():
+        if key in allowed_fields:
+            if key in ['matched', 'appointment_confirmed']:
+                valid_updates[key] = bool(value) # Ensure boolean
+            else:
+                valid_updates[key] = value
 
+    if not valid_updates:
+        logger.warning(f"No valid fields provided for updating lead ID {lead_id}")
+        return get_lead_by_id(lead_id, organization_id) # Return current if no valid updates
+
+    set_parts = [f"{key} = %({key})s" for key in valid_updates.keys()]
+    set_parts.append("updated_at = timezone('utc', now())") # Assuming you add an updated_at to leads table
+    set_clause = ", ".join(set_parts)
+
+    params_for_exec = valid_updates.copy()
+    params_for_exec["lead_id"] = lead_id
+    params_for_exec["organization_id"] = organization_id
+
+    sql = f"UPDATE leads SET {set_clause} WHERE id = %(lead_id)s AND organization_id = %(organization_id)s;"
+
+    conn = None; success = False
+    try:
+        conn = get_connection()
+        if not conn: return None
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, params_for_exec)
+                if cursor.rowcount > 0:
+                    success = True
+                    logger.info(f"Partially updated lead ID {lead_id} for Org {organization_id}")
+                else:
+                    logger.warning(f"Lead ID {lead_id} not found for Org {organization_id} during partial update.")
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error partially updating lead ID {lead_id}: {e}", exc_info=True)
+    finally:
+        if conn and not getattr(conn, 'closed', True): conn.close()
+
+    return get_lead_by_id(lead_id, organization_id) if success else None
+
+# --- IMPLEMENTED ---
 def delete_lead(lead_id: int, organization_id: int) -> bool:
-    """Deletes a lead."""
-    logger.warning("Function 'delete_lead' is not implemented.")
-    pass
-
-
+    """Deletes a lead by its ID and organization ID."""
+    sql = "DELETE FROM leads WHERE id = %s AND organization_id = %s;"
+    conn = None; deleted = False
+    try:
+        conn = get_connection()
+        if not conn: return False
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, (lead_id, organization_id))
+                if cursor.rowcount > 0:
+                    deleted = True
+                    logger.info(f"Deleted lead ID {lead_id} for Org {organization_id}")
+                else:
+                    logger.warning(f"Lead ID {lead_id} not found for Org {organization_id} during delete.")
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error deleting lead ID {lead_id}: {e}", exc_info=True)
+    finally:
+        if conn and not getattr(conn, 'closed', True): conn.close()
+    return deleted
 # ==========================================
 # REFACTORED ICP CRUD OPERATIONS
 # ==========================================
