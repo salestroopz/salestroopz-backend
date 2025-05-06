@@ -368,6 +368,66 @@ def save_email_settings(settings_payload: Dict[str, Any], token: str) -> Optiona
     except requests.exceptions.RequestException as req_err: st.error(f"Failed to save email settings: Connection error - {req_err}"); return None
     except Exception as e: st.error(f"Failed to save email settings: An unexpected error occurred - {e}"); return None
 
+# --- ADD Lead Specific API Helpers ---
+
+def list_leads(token: str, skip: int = 0, limit: int = 100) -> Optional[List[Dict]]:
+    """Fetches a paginated list of leads for the organization."""
+    endpoint = f"{BACKEND_URL}/api/v1/leads/"
+    params = {"skip": skip, "limit": limit}
+    response_data = get_authenticated_request(endpoint, token, params=params)
+    if isinstance(response_data, list):
+        return response_data
+    return None
+
+def create_new_lead(lead_payload: Dict[str, Any], token: str) -> Optional[Dict]:
+    """Creates a new lead via POST request."""
+    endpoint = f"{BACKEND_URL}/api/v1/leads/"
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    try:
+        response = requests.post(endpoint, headers=headers, json=lead_payload, timeout=20)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.HTTPError as http_err:
+        # ... (similar detailed error handling as in create_new_icp/offering) ...
+        st.error(f"Failed to create lead: HTTP {http_err.response.status_code}")
+        return None
+    except requests.exceptions.RequestException as req_err: st.error(f"Failed to create lead: Connection error - {req_err}"); return None
+    except Exception as e: st.error(f"Failed to create lead: An unexpected error occurred - {e}"); return None
+
+def get_lead_details(lead_id: int, token: str) -> Optional[Dict]:
+    """Fetches details for a specific lead."""
+    endpoint = f"{BACKEND_URL}/api/v1/leads/{lead_id}"
+    return get_authenticated_request(endpoint, token)
+
+def update_existing_lead(lead_id: int, lead_payload: Dict[str, Any], token: str) -> Optional[Dict]:
+    """Updates an existing lead via PATCH or PUT request."""
+    endpoint = f"{BACKEND_URL}/api/v1/leads/{lead_id}" # Assuming PATCH for partial
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    try:
+        response = requests.patch(endpoint, headers=headers, json=lead_payload, timeout=20) # Use PATCH
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.HTTPError as http_err:
+        # ... (detailed error handling) ...
+        st.error(f"Failed to update lead: HTTP {http_err.response.status_code}")
+        return None
+    except requests.exceptions.RequestException as req_err: st.error(f"Failed to update lead: Connection error - {req_err}"); return None
+    except Exception as e: st.error(f"Failed to update lead: An unexpected error occurred - {e}"); return None
+
+def delete_existing_lead(lead_id: int, token: str) -> bool:
+    """Deletes an existing lead via DELETE request."""
+    endpoint = f"{BACKEND_URL}/api/v1/leads/{lead_id}"
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        response = requests.delete(endpoint, headers=headers, timeout=15)
+        response.raise_for_status()
+        return response.status_code == 204
+    except requests.exceptions.HTTPError as http_err:
+        # ... (detailed error handling) ...
+        st.error(f"Failed to delete lead: HTTP {http_err.response.status_code}")
+        return False
+    except requests.exceptions.RequestException as req_err: st.error(f"Failed to delete lead: Connection error - {req_err}"); return False
+    except Exception as e: st.error(f"Failed to delete lead: An unexpected error occurred - {e}"); return False
 
 # --- Main App Logic ---
 
@@ -483,11 +543,197 @@ else:
                 st.dataframe(leads_data)
             # Errors handled in get_authenticated_request
 
-    elif page == "Leads":
-        st.header("Leads Management")
-        st.info("Lead table and management features coming soon.") # Placeholder
+       # --- Page Content ---
+    # ... (Dashboard code) ...
 
-    elif page == "Campaigns":
+    elif page == "Leads":
+        st.header("👤 Leads Management")
+        st.caption("View, add, and manage your sales leads.")
+
+        # --- Initialize Session State for Leads Page ---
+        st.session_state.setdefault('leads_list', [])
+        st.session_state.setdefault('leads_loaded', False)
+        st.session_state.setdefault('show_lead_form', False) # Controls add/edit form visibility
+        st.session_state.setdefault('lead_form_data', {})   # Data for pre-filling form
+        st.session_state.setdefault('lead_being_edited_id', None) # Track if editing or creating
+        st.session_state.setdefault('lead_to_delete', None) # Store lead for delete confirmation
+        st.session_state.setdefault('lead_to_view_details', None) # Store lead for view details dialog
+
+        # --- Display Action Messages ---
+        if st.session_state.get('lead_action_success', None):
+            st.success(st.session_state.lead_action_success)
+            del st.session_state['lead_action_success']
+        if st.session_state.get('lead_action_error', None):
+            st.error(st.session_state.lead_action_error)
+            del st.session_state['lead_action_error']
+
+        # --- Load Data ---
+        if not st.session_state.leads_loaded:
+            with st.spinner("Loading leads..."):
+                fetched_leads = list_leads(auth_token) # Assuming pagination is handled or default
+                if fetched_leads is not None:
+                    st.session_state.leads_list = fetched_leads
+                else:
+                    st.session_state.leads_list = []
+                st.session_state.leads_loaded = True
+
+        lead_list = st.session_state.get('leads_list', [])
+
+        # --- Actions and Display ---
+        st.markdown("---")
+        col_header_lead1, col_header_lead2 = st.columns([3,1])
+        with col_header_lead1:
+            st.markdown("##### All Leads")
+        with col_header_lead2:
+            if st.button("✚ Add New Lead", use_container_width=True):
+                st.session_state.lead_form_data = {} # Clear form for new lead
+                st.session_state.lead_being_edited_id = None
+                st.session_state.show_lead_form = True
+                st.rerun() # Rerun to show the form
+
+        if not lead_list and st.session_state.leads_loaded:
+            st.info("No leads found. Click 'Add New Lead' to get started.")
+        elif lead_list:
+            # Display leads in a more compact way, potentially with st.dataframe or custom layout
+            # For now, simple iteration with details and actions
+            for lead in lead_list:
+                lead_id = lead.get('id')
+                with st.container(border=True):
+                    col_lead_info, col_lead_actions = st.columns([4,1])
+                    with col_lead_info:
+                        st.markdown(f"**{lead.get('name', 'N/A')}** ({lead.get('email')})")
+                        st.caption(f"Company: {lead.get('company', 'N/A')} | Title: {lead.get('title', 'N/A')} | Source: {lead.get('source', 'N/A')}")
+                    with col_lead_actions:
+                        sub_col_view, sub_col_edit, sub_col_delete = st.columns(3)
+                        with sub_col_view:
+                            if st.button("👁️", key=f"view_lead_{lead_id}", help="View Details", use_container_width=True):
+                                st.session_state.lead_to_view_details = lead
+                                st.rerun()
+                        with sub_col_edit:
+                            if st.button("✏️", key=f"edit_lead_{lead_id}", help="Edit Lead", use_container_width=True):
+                                st.session_state.lead_form_data = lead
+                                st.session_state.lead_being_edited_id = lead_id
+                                st.session_state.show_lead_form = True
+                                st.rerun()
+                        with sub_col_delete:
+                            if st.button("🗑️", key=f"delete_lead_{lead_id}", help="Delete Lead", use_container_width=True):
+                                st.session_state.lead_to_delete = lead
+                                st.rerun()
+            # --- TODO: Add Pagination if list_leads supports it ---
+
+        st.markdown("---")
+
+        # --- Delete Confirmation Dialog ---
+        if st.session_state.get('lead_to_delete') is not None:
+            lead_for_deletion = st.session_state.lead_to_delete
+            @st.dialog("Confirm Lead Deletion", dismissed=lambda: st.session_state.pop('lead_to_delete', None))
+            def show_lead_delete_dialog():
+                st.warning(f"Are you sure you want to delete the lead: **{lead_for_deletion.get('name', lead_for_deletion.get('email'))}**?", icon="⚠️")
+                col_del_c, col_del_k = st.columns(2)
+                with col_del_c:
+                    if st.button("Yes, Delete", type="primary", use_container_width=True):
+                        with st.spinner("Deleting lead..."): success = delete_existing_lead(lead_for_deletion['id'], auth_token)
+                        if success: st.session_state.lead_action_success = "Lead deleted successfully."; st.session_state.leads_loaded = False
+                        else: st.session_state.lead_action_error = "Failed to delete lead."
+                        del st.session_state.lead_to_delete; st.rerun()
+                with col_del_k:
+                    if st.button("Cancel", use_container_width=True): del st.session_state.lead_to_delete; st.rerun()
+            show_lead_delete_dialog()
+
+        # --- View Lead Details Dialog ---
+        if st.session_state.get('lead_to_view_details') is not None:
+            lead_to_view = st.session_state.lead_to_view_details
+            @st.dialog(f"Lead Details: {lead_to_view.get('name', lead_to_view.get('email'))}", dismissed=lambda: st.session_state.pop('lead_to_view_details', None))
+            def show_lead_view_dialog():
+                for key, value in lead_to_view.items():
+                    if value is not None: # Only display fields that have a value
+                        display_key = key.replace("_", " ").title()
+                        if isinstance(value, bool):
+                            st.markdown(f"**{display_key}:** {'Yes' if value else 'No'}")
+                        elif isinstance(value, str) and ("http" in value or "www" in value):
+                            st.markdown(f"**{display_key}:** [{value}]({value})")
+                        else:
+                            st.markdown(f"**{display_key}:** {value}")
+                if st.button("Close", key="close_lead_view_dialog"):
+                    del st.session_state.lead_to_view_details; st.rerun()
+            show_lead_view_dialog()
+
+
+        # --- Conditionally Display Lead Add/Edit Form ---
+        if st.session_state.get('show_lead_form', False):
+            form_title = "Edit Lead" if st.session_state.get('lead_being_edited_id') else "Add New Lead"
+            st.markdown(f"#### {form_title}")
+            form_data = st.session_state.get('lead_form_data', {})
+
+            with st.form("lead_form"):
+                st.text_input("Name:", value=form_data.get("name", ""), key="lead_form_name")
+                st.text_input("Email*:", value=form_data.get("email", ""), key="lead_form_email", placeholder="name@company.com")
+                st.text_input("Company:", value=form_data.get("company", ""), key="lead_form_company")
+                st.text_input("Title:", value=form_data.get("title", ""), key="lead_form_title")
+                st.text_input("Source:", value=form_data.get("source", "Manual Entry"), key="lead_form_source")
+                st.text_input("LinkedIn Profile:", value=form_data.get("linkedin_profile", ""), key="lead_form_linkedin", placeholder="https://linkedin.com/in/...")
+                st.text_input("Company Size:", value=form_data.get("company_size", ""), key="lead_form_company_size", placeholder="e.g., 51-200")
+                st.text_input("Industry:", value=form_data.get("industry", ""), key="lead_form_industry")
+                st.text_input("Location:", value=form_data.get("location", ""), key="lead_form_location")
+
+                st.divider()
+                col_match, col_appt = st.columns(2)
+                with col_match:
+                    st.checkbox("Matched ICP?", value=bool(form_data.get("matched", False)), key="lead_form_matched")
+                with col_appt:
+                    st.checkbox("Appointment Confirmed?", value=bool(form_data.get("appointment_confirmed", False)), key="lead_form_appointment")
+                    st.text_input("Match Reason (if applicable):", value=form_data.get("reason", ""), key="lead_form_reason")
+                    st.text_input("CRM Status:", value=form_data.get("crm_status", "pending"), key="lead_form_crm_status")
+
+
+                st.divider()
+                submitted = st.form_submit_button("💾 Save Lead")
+                cancel_clicked = st.form_submit_button("Cancel", type="secondary")
+
+                if cancel_clicked:
+                    st.session_state.show_lead_form = False; st.session_state.lead_form_data = {}; st.session_state.lead_being_edited_id = None; st.rerun()
+
+                if submitted:
+                    can_save = True
+                    lead_email = st.session_state.lead_form_email.strip()
+                    if not lead_email: st.error("Lead Email is required."); can_save = False
+                    # Add more validation as needed
+
+                    if can_save:
+                        lead_payload = {
+                            "name": st.session_state.lead_form_name.strip() or None,
+                            "email": lead_email,
+                            "company": st.session_state.lead_form_company.strip() or None,
+                            "title": st.session_state.lead_form_title.strip() or None,
+                            "source": st.session_state.lead_form_source.strip() or None,
+                            "linkedin_profile": st.session_state.lead_form_linkedin.strip() or None,
+                            "company_size": st.session_state.lead_form_company_size.strip() or None,
+                            "industry": st.session_state.lead_form_industry.strip() or None,
+                            "location": st.session_state.lead_form_location.strip() or None,
+                            "matched": st.session_state.lead_form_matched,
+                            "reason": st.session_state.lead_form_reason.strip() or None,
+                            "crm_status": st.session_state.lead_form_crm_status.strip() or None,
+                            "appointment_confirmed": st.session_state.lead_form_appointment
+                        }
+
+                        lead_id_to_update = st.session_state.get('lead_being_edited_id')
+                        success = False; result_data = None
+                        with st.spinner("Saving lead..."):
+                            if lead_id_to_update: # Update mode
+                                result_data = update_existing_lead(lead_id_to_update, lead_payload, auth_token)
+                            else: # Create mode (using save_lead which also handles create)
+                                result_data = create_new_lead(lead_payload, auth_token)
+                            success = result_data is not None
+
+                        if success:
+                            action = "updated" if lead_id_to_update else "added"
+                            st.session_state.lead_action_success = f"Lead '{lead_payload['email']}' {action} successfully!"
+                            st.session_state.leads_loaded = False; st.session_state.show_lead_form = False; st.session_state.lead_form_data = {}; st.session_state.lead_being_edited_id = None
+                            st.rerun()
+                        else:
+                            st.session_state.lead_action_error = "Failed to save lead."; st.rerun()
+
+     elif page == "Campaigns":
         st.header("Campaign Management")
         st.info("Campaign creation, step definition, and monitoring coming soon.") # Placeholder
 
