@@ -57,31 +57,52 @@ class LeadEnrichmentResponse(BaseModel):
 
 
 # --- Core Lead Workflow Schemas ---
-class LeadInput(BaseModel): # For direct lead input/processing trigger
-    name: Optional[str] = None
-    email: EmailStr
-    company: Optional[str] = None
-    title: Optional[str] = None
-    source: Optional[str] = "API Input"
-
-class LeadResponse(BaseModel): # For returning leads from DB
-    id: int
-    name: Optional[str] = None
-    email: EmailStr
-    company: Optional[str] = None
-    title: Optional[str] = None
-    source: Optional[str] = None
-    # Added enrichment fields to response
-    linkedin_profile: Optional[str] = None
-    company_size: Optional[str] = None
-    industry: Optional[str] = None
-    location: Optional[str] = None
+class LeadBase(BaseModel): # Common fields
+    name: Optional[str] = Field(None, examples=["Jane Doe"])
+    email: EmailStr = Field(..., examples=["jane.doe@example.com"]) # Email is mandatory for new leads
+    company: Optional[str] = Field(None, examples=["Acme Corp"])
+    title: Optional[str] = Field(None, examples=["Marketing Manager"])
+    source: Optional[str] = Field("API Input", examples=["Manual Entry", "CSV Upload"])
+    linkedin_profile: Optional[str] = Field(None, examples=["https://linkedin.com/in/janedoe"])
+    company_size: Optional[str] = Field(None, examples=["51-200"])
+    industry: Optional[str] = Field(None, examples=["SaaS"])
+    location: Optional[str] = Field(None, examples=["New York, USA"])
     # Workflow fields
-    matched: Optional[int] = None
-    reason: Optional[str] = None
-    crm_status: Optional[str] = None
-    appointment_confirmed: Optional[int] = None
-    created_at: Optional[datetime] = None # Added created_at
+    matched: Optional[bool] = Field(False) # Using bool
+    reason: Optional[str] = Field(None, description="Reason for match/no match")
+    crm_status: Optional[str] = Field("pending", description="Status in CRM")
+    appointment_confirmed: Optional[bool] = Field(False) # Using bool
+
+class LeadInput(LeadBase): # For creating new leads or full updates (via save_lead)
+    """Schema for creating or fully updating a lead."""
+    pass # Inherits all fields from LeadBase
+
+class LeadUpdatePartialInput(BaseModel): # For PATCH requests
+    """Schema for partially updating a lead. All fields are optional."""
+    name: Optional[str] = Field(None, examples=["Jane Doe"])
+    # Email usually not updatable as it's often a key identifier with organization_id
+    # email: Optional[EmailStr] = Field(None, examples=["jane.doe@example.com"])
+    company: Optional[str] = Field(None, examples=["Acme Corp"])
+    title: Optional[str] = Field(None, examples=["Marketing Manager"])
+    source: Optional[str] = Field(None, examples=["Manual Entry", "CSV Upload"])
+    linkedin_profile: Optional[str] = Field(None, examples=["https://linkedin.com/in/janedoe"])
+    company_size: Optional[str] = Field(None, examples=["51-200"])
+    industry: Optional[str] = Field(None, examples=["SaaS"])
+    location: Optional[str] = Field(None, examples=["New York, USA"])
+    matched: Optional[bool] = Field(None) # Allow updating to True/False/None
+    reason: Optional[str] = Field(None)
+    crm_status: Optional[str] = Field(None)
+    appointment_confirmed: Optional[bool] = Field(None) # Allow updating to True/False/None
+
+class LeadResponse(LeadBase): # For returning leads from DB
+    """Schema for returning lead data from the API."""
+    id: int
+    organization_id: int # Usually good to include the org_id in responses
+    created_at: datetime
+    updated_at: Optional[datetime] = None # Add if you have this column in DB
+
+    class Config:
+        from_attributes = True
 
     class Config:
         # --- UPDATE: Use from_attributes for Pydantic v2 ---
