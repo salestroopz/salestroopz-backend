@@ -132,7 +132,7 @@ try:
     app.include_router(campaigns.router)
     app.include_router(email_settings.router)
     print("Routers included successfully.")
-    except Exception as e:
+except Exception as e:
     print(f"ERROR INCLUDING ROUTERS: {e}")
 
 
