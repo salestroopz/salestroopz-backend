@@ -199,9 +199,7 @@ class OfferingResponse(BaseModel):
     class Config:
         from_attributes = True # Pydantic v2
 
-# app/schemas.py
-# ... (keep all existing imports and schemas) ...
-from datetime import datetime
+
 
 # --- === Email Settings Schemas === ---
 
@@ -323,3 +321,15 @@ class LeadCampaignStatusResponse(BaseModel):
         from_attributes = True
 
 # --- === END OF NEW CAMPAIGN/STEP SCHEMAS === ---
+
+class BulkImportErrorDetail(BaseModel):
+    row_number: Optional[int] = None # CSV row number (if identifiable)
+    email: Optional[EmailStr] = None # Email of the problematic lead
+    error: str                     # Description of the error
+
+class BulkImportSummary(BaseModel):
+    total_rows_in_file: int
+    rows_attempted: int # Number of rows we tried to process (e.g., after skipping header)
+    successfully_imported_or_updated: int
+    failed_imports: int
+    errors: List[BulkImportErrorDetail] = Field(default_factory=list)
