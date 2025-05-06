@@ -255,6 +255,88 @@ def delete_existing_icp(icp_id: int, token: str) -> bool:
         st.error(f"Failed to delete ICP: An unexpected error occurred - {e}")
         return False
 
+# --- ADD Offering Specific Helpers ---
+
+def list_offerings(token: str) -> Optional[List[Dict]]:
+    """Fetches a list of all offerings for the organization."""
+    endpoint = f"{BACKEND_URL}/api/v1/offerings/" # Ensure this endpoint exists in your backend
+    response_data = get_authenticated_request(endpoint, token)
+    if isinstance(response_data, list):
+        return response_data
+    else:
+        return None
+
+def create_new_offering(offering_payload: Dict[str, Any], token: str) -> Optional[Dict]:
+    """Creates a new offering via POST request."""
+    endpoint = f"{BACKEND_URL}/api/v1/offerings/" # Ensure POST is on the collection
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    try:
+        response = requests.post(endpoint, headers=headers, json=offering_payload, timeout=20)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.HTTPError as http_err:
+        if http_err.response.status_code == 401: st.error("Authentication failed."); logout_user()
+        elif http_err.response.status_code == 422:
+             error_detail = f"Failed to create offering: Validation Error"
+             try: error_detail += f" - {http_err.response.json().get('detail', '')}"
+             except: pass
+             st.error(error_detail)
+        else:
+             error_detail = f"Failed to create offering: HTTP {http_err.response.status_code}"
+             try: error_detail += f" - {http_err.response.json().get('detail', '')}"
+             except: pass
+             st.error(error_detail)
+        return None
+    except requests.exceptions.RequestException as req_err: st.error(f"Failed to create offering: Connection error - {req_err}"); return None
+    except Exception as e: st.error(f"Failed to create offering: An unexpected error occurred - {e}"); return None
+
+def update_existing_offering(offering_id: int, offering_payload: Dict[str, Any], token: str) -> Optional[Dict]:
+    """Updates an existing offering via PUT request."""
+    endpoint = f"{BACKEND_URL}/api/v1/offerings/{offering_id}"
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    try:
+        response = requests.put(endpoint, headers=headers, json=offering_payload, timeout=20)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.HTTPError as http_err:
+        if http_err.response.status_code == 401: st.error("Authentication failed."); logout_user()
+        elif http_err.response.status_code == 404: st.error(f"Failed to update offering: Not found (ID: {offering_id}).")
+        elif http_err.response.status_code == 422:
+             error_detail = f"Failed to update offering: Validation Error"
+             try: error_detail += f" - {http_err.response.json().get('detail', '')}"
+             except: pass
+             st.error(error_detail)
+        else:
+             error_detail = f"Failed to update offering: HTTP {http_err.response.status_code}"
+             try: error_detail += f" - {http_err.response.json().get('detail', '')}"
+             except: pass
+             st.error(error_detail)
+        return None
+    except requests.exceptions.RequestException as req_err: st.error(f"Failed to update offering: Connection error - {req_err}"); return None
+    except Exception as e: st.error(f"Failed to update offering: An unexpected error occurred - {e}"); return None
+
+def delete_existing_offering(offering_id: int, token: str) -> bool:
+    """Deletes an existing offering via DELETE request."""
+    endpoint = f"{BACKEND_URL}/api/v1/offerings/{offering_id}"
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        response = requests.delete(endpoint, headers=headers, timeout=15)
+        response.raise_for_status()
+        return response.status_code == 204
+    except requests.exceptions.HTTPError as http_err:
+        if http_err.response.status_code == 401: st.error("Authentication failed."); logout_user()
+        elif http_err.response.status_code == 404: st.error(f"Failed to delete offering: Not found (ID: {offering_id}).")
+        else:
+             error_detail = f"Failed to delete offering: HTTP {http_err.response.status_code}"
+             try: error_detail += f" - {http_err.response.json().get('detail', '')}"
+             except: pass
+             st.error(error_detail)
+        return False
+    except requests.exceptions.RequestException as req_err: st.error(f"Failed to delete offering: Connection error - {req_err}"); return False
+    except Exception as e: st.error(f"Failed to delete offering: An unexpected error occurred - {e}"); return False
+
+# --- END OF Offering Specific Helpers ---
+
 # --- Main App Logic ---
 
 # Initialize session state keys reliably
@@ -586,10 +668,191 @@ else:
                                  st.session_state.icp_action_error = "Failed to save ICP." # Generic, specific error shown by helper
                                  st.rerun() # Rerun to show error message at top
 
-        # --- Offerings Tab ---
+              # --- Offerings Tab ---
         with tab2:
-            st.subheader("💡 Offerings")
-            st.info("Offering management UI coming soon.") # Placeholder
+            st.subheader("💡 Offerings / Value Propositions")
+            st.caption("Define the products or services you offer to your target customers.")
+
+            # --- Initialize Session State Flags for this Tab ---
+            st.session_state.setdefault('offerings_list', [])
+            st.session_state.setdefault('offerings_loaded', False)
+            st.session_state.setdefault('show_offering_form', False) # Controls form visibility
+            st.session_state.setdefault('offering_form_data', {}) # Data for pre-filling form
+            st.session_state.setdefault('offering_being_edited_id', None) # Track if editing or creating
+            st.session_state.setdefault('offering_to_delete', None) # Store Offering for delete confirmation
+
+            # --- Display Action Messages ---
+            if st.session_state.get('offering_action_success', None):
+                st.success(st.session_state.offering_action_success)
+                del st.session_state['offering_action_success'] # Clear flag
+
+            if st.session_state.get('offering_action_error', None):
+                st.error(st.session_state.offering_action_error)
+                del st.session_state['offering_action_error'] # Clear flag
+
+            # --- Load Data ---
+            if not st.session_state.offerings_loaded:
+                with st.spinner("Loading offerings list..."):
+                    fetched_offerings = list_offerings(auth_token) # Call API helper
+                    if fetched_offerings is not None:
+                        st.session_state['offerings_list'] = fetched_offerings
+                    else:
+                        st.session_state['offerings_list'] = []
+                        # Error displayed by helper if load failed
+                    st.session_state.offerings_loaded = True
+
+            # Get current list from session state
+            offering_list = st.session_state.get('offerings_list', [])
+
+            # --- Display Offerings List and Actions ---
+            st.markdown("---")
+            col_offer_header_1, col_offer_header_2 = st.columns([4, 1])
+            with col_offer_header_1:
+                 st.markdown("##### Defined Offerings")
+            with col_offer_header_2:
+                 if st.button("✚ Add New Offering", use_container_width=True):
+                     st.session_state.offering_form_data = {"is_active": True} # Default to active
+                     st.session_state.offering_being_edited_id = None
+                     st.session_state.show_offering_form = True
+                     st.rerun()
+
+            if not offering_list and st.session_state.offerings_loaded:
+                st.info("No offerings defined yet. Click 'Add New Offering' to create one.")
+            elif offering_list:
+                # Display each offering
+                for offering in offering_list:
+                    offering_id = offering.get('id')
+                    with st.container(border=True):
+                        col_off_info, col_off_edit, col_off_delete = st.columns([4, 1, 1])
+                        with col_off_info:
+                            status_icon = "✅" if offering.get('is_active') else "⏸️"
+                            st.markdown(f"{status_icon} **{offering.get('name', 'Unnamed Offering')}** (ID: {offering_id})")
+                            if offering.get('description'):
+                                st.caption(f"{offering['description'][:100]}{'...' if len(offering['description']) > 100 else ''}")
+
+                        with col_off_edit:
+                             edit_key = f"edit_off_{offering_id}"
+                             if st.button("Edit", key=edit_key, type="secondary", use_container_width=True):
+                                 st.session_state.offering_form_data = offering # Pre-fill
+                                 st.session_state.offering_being_edited_id = offering_id # Set ID
+                                 st.session_state.show_offering_form = True # Show form
+                                 st.rerun()
+
+                        with col_off_delete:
+                             delete_key = f"delete_off_{offering_id}"
+                             if st.button("Delete", key=delete_key, type="primary", use_container_width=True):
+                                 # Check if backend function is implemented
+                                 if 'delete_offering' in locals() or 'delete_offering' in globals():
+                                     st.session_state.offering_to_delete = offering # Store for confirm
+                                     st.rerun()
+                                 else:
+                                     st.warning("Delete functionality not yet implemented in backend.")
+
+
+            st.markdown("---")
+
+            # --- Delete Confirmation Dialog ---
+            if st.session_state.get('offering_to_delete') is not None:
+                offering_for_deletion = st.session_state.offering_to_delete
+
+                @st.dialog("Confirm Offering Deletion", dismissed=lambda: st.session_state.pop('offering_to_delete', None))
+                def show_offering_delete_dialog():
+                    st.warning(f"Are you sure you want to delete the offering **'{offering_for_deletion.get('name', 'N/A')}'** (ID: {offering_for_deletion.get('id')})?", icon="⚠️")
+                    st.caption("This action cannot be undone.")
+                    col_del_confirm, col_del_cancel = st.columns(2)
+                    with col_del_confirm:
+                        if st.button("Yes, Delete Offering", type="primary", use_container_width=True):
+                             with st.spinner("Deleting Offering..."):
+                                 # Use the actual delete helper function
+                                 success = delete_existing_offering(offering_for_deletion['id'], auth_token)
+
+                             if success:
+                                 st.session_state.offering_action_success = f"Offering '{offering_for_deletion.get('name')}' deleted."
+                                 st.session_state.offerings_loaded = False # Force reload list
+                             else:
+                                 # Error message handled by delete_existing_offering
+                                 st.session_state.offering_action_error = "Failed to delete offering." # Generic fallback
+                             # Clear deletion state regardless of success/failure before rerun
+                             del st.session_state.offering_to_delete
+                             st.rerun()
+
+                    with col_del_cancel:
+                        if st.button("Cancel", use_container_width=True):
+                            del st.session_state.offering_to_delete # Just remove flag
+                            st.rerun()
+
+                show_offering_delete_dialog() # Show the dialog
+
+            # --- Conditionally Display Offering Create/Edit Form ---
+            if st.session_state.get('show_offering_form', False):
+                form_title = "Edit Offering" if st.session_state.get('offering_being_edited_id') else "Add New Offering"
+                st.markdown(f"#### {form_title}")
+                form_data = st.session_state.get('offering_form_data', {})
+
+                with st.form("offering_form"):
+                    # --- Form Fields ---
+                    name = st.text_input("Offering Name:", value=form_data.get("name", ""), key="off_form_name", placeholder="e.g., Cloud Migration Package")
+                    description = st.text_area("Description:", value=form_data.get("description", ""), key="off_form_desc", height=100, placeholder="Briefly describe the offering...")
+                    key_features = st.text_area("Key Features (one per line):", value="\n".join(form_data.get("key_features", [])), key="off_form_features", height=100, help="List the main components or benefits.")
+                    target_pain_points = st.text_area("Target Pain Points (one per line):", value="\n".join(form_data.get("target_pain_points", [])), key="off_form_pains", height=100, help="What problems does this offering solve?")
+                    call_to_action = st.text_input("Suggested Call to Action:", value=form_data.get("call_to_action", ""), key="off_form_cta", placeholder="e.g., Book a demo, Download whitepaper")
+                    is_active = st.toggle("Active Offering", value=bool(form_data.get("is_active", True)), key="off_form_active", help="Inactive offerings won't be used in new campaigns.")
+
+                    st.divider()
+
+                    # --- Form Buttons ---
+                    submitted = st.form_submit_button("💾 Save Offering")
+                    cancel_clicked = st.form_submit_button("Cancel", type="secondary")
+
+                    if cancel_clicked:
+                        st.session_state.show_offering_form = False
+                        st.session_state.offering_form_data = {}
+                        st.session_state.offering_being_edited_id = None
+                        st.rerun()
+
+                    if submitted:
+                        # --- Validation and Saving ---
+                        can_save = True
+                        offering_name = st.session_state.off_form_name.strip()
+                        if not offering_name: st.error("Offering Name cannot be empty."); can_save = False
+
+                        if can_save:
+                            # Process list inputs
+                            features_list = [f.strip() for f in st.session_state.off_form_features.split('\n') if f.strip()]
+                            pains_list = [p.strip() for p in st.session_state.off_form_pains.split('\n') if p.strip()]
+
+                            offering_payload = {
+                                "name": offering_name,
+                                "description": st.session_state.off_form_desc.strip() or None,
+                                "key_features": features_list,
+                                "target_pain_points": pains_list,
+                                "call_to_action": st.session_state.off_form_cta.strip() or None,
+                                "is_active": st.session_state.off_form_active
+                            }
+
+                            # --- Call Correct API ---
+                            offering_id_to_update = st.session_state.get('offering_being_edited_id')
+                            success = False
+                            result_data = None
+                            with st.spinner("Saving Offering..."):
+                                if offering_id_to_update: # UPDATE mode
+                                    result_data = update_existing_offering(offering_id_to_update, offering_payload, auth_token)
+                                else: # CREATE mode
+                                     result_data = create_new_offering(offering_payload, auth_token)
+                                success = result_data is not None
+
+                            if success:
+                                action = "updated" if offering_id_to_update else "created"
+                                st.session_state.offering_action_success = f"Offering '{offering_name}' {action} successfully!"
+                                st.session_state.offerings_loaded = False # Force reload list
+                                st.session_state.show_offering_form = False # Hide form
+                                st.session_state.offering_form_data = {}
+                                st.session_state.offering_being_edited_id = None
+                                st.rerun()
+                            else:
+                                 # Specific errors handled by helpers, show generic if needed
+                                 st.session_state.offering_action_error = "Failed to save offering."
+                                 st.rerun() # Rerun to show error message
 
         # --- Email Sending Tab ---
         with tab3:
