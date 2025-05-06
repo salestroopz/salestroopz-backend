@@ -336,6 +336,38 @@ def delete_existing_offering(offering_id: int, token: str) -> bool:
     except Exception as e: st.error(f"Failed to delete offering: An unexpected error occurred - {e}"); return False
 
 # --- END OF Offering Specific Helpers ---
+# --- ADD Email Settings Specific Helpers ---
+
+def get_email_settings(token: str) -> Optional[Dict]:
+    """Fetches email settings for the organization."""
+    endpoint = f"{BACKEND_URL}/api/v1/email-settings/"
+    return get_authenticated_request(endpoint, token)
+
+def save_email_settings(settings_payload: Dict[str, Any], token: str) -> Optional[Dict]:
+    """Saves (Creates/Updates) email settings via PUT request."""
+    endpoint = f"{BACKEND_URL}/api/v1/email-settings/"
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    try:
+        # Using PUT directly to get the response model back
+        response = requests.put(endpoint, headers=headers, json=settings_payload, timeout=20)
+        response.raise_for_status()
+        return response.json() # Return the saved/updated settings data (EmailSettingsResponse)
+    except requests.exceptions.HTTPError as http_err:
+        if http_err.response.status_code == 401: st.error("Authentication failed."); logout_user();
+        elif http_err.response.status_code == 422:
+             error_detail = f"Failed to save email settings: Validation Error"
+             try: error_detail += f" - {http_err.response.json().get('detail', '')}"
+             except: pass
+             st.error(error_detail)
+        else:
+             error_detail = f"Failed to save email settings: HTTP {http_err.response.status_code}"
+             try: error_detail += f" - {http_err.response.json().get('detail', '')}"
+             except: pass
+             st.error(error_detail)
+        return None
+    except requests.exceptions.RequestException as req_err: st.error(f"Failed to save email settings: Connection error - {req_err}"); return None
+    except Exception as e: st.error(f"Failed to save email settings: An unexpected error occurred - {e}"); return None
+
 
 # --- Main App Logic ---
 
@@ -857,8 +889,155 @@ else:
         # --- Email Sending Tab ---
         with tab3:
             st.subheader("📧 Email Sending Configuration")
-            st.info("Email setup UI coming soon.") # Placeholder
+            st.caption("Configure how SalesTroopz will send emails on your behalf.")
 
+            # --- Initialize State ---
+            st.session_state.setdefault('email_settings_loaded', False)
+            st.session_state.setdefault('current_email_settings', None)
+
+            # --- Display Messages ---
+            if st.session_state.get('email_save_success', False):
+                st.success("✅ Email settings saved successfully!")
+                del st.session_state['email_save_success']
+            if st.session_state.get('email_save_error', None):
+                st.error(st.session_state.email_save_error)
+                del st.session_state['email_save_error']
+
+            # --- Load Data ---
+            if not st.session_state.email_settings_loaded:
+                with st.spinner("Loading email settings..."):
+                    settings_data = get_email_settings(auth_token)
+                    st.session_state.current_email_settings = settings_data # Store dict or None
+                    st.session_state.email_settings_loaded = True
+
+            current_settings = st.session_state.current_email_settings
+
+            # --- Display Current Status ---
+            st.markdown("---")
+            if current_settings and current_settings.get('is_configured'):
+                st.markdown("##### Current Configuration:")
+                st.markdown(f"**Provider:** `{current_settings.get('provider_type', 'N/A').upper()}`")
+                st.markdown(f"**Sender Email:** `{current_settings.get('verified_sender_email', 'N/A')}`")
+                st.markdown(f"**Sender Name:** `{current_settings.get('sender_name', 'N/A')}`")
+                cred_status = "Set" if current_settings.get('credentials_set') else "Not Set / Incomplete"
+                st.markdown(f"**Credentials Status:** `{cred_status}`")
+            elif current_settings:
+                 st.warning("Email sending is not fully configured. Please complete the setup below.", icon="⚠️")
+            else:
+                 st.info("Email sending is not yet configured. Please select a provider and enter details below.")
+            st.markdown("---")
+
+            # --- Configuration Form ---
+            st.markdown("#### Configure Email Sending:")
+            with st.form("email_settings_form"):
+                current_provider = current_settings.get('provider_type') if current_settings else None
+
+                # Provider Selection
+                provider_options = ["Not Configured", "SMTP", "AWS_SES"] # Add more later
+                provider_display = {"Not Configured": "Not Configured", "SMTP": "Generic SMTP", "AWS_SES": "AWS SES (API Keys)"}
+                # Find index for current setting, default to 0 ("Not Configured")
+                current_index = 0
+                if current_provider and current_provider in provider_options:
+                     current_index = provider_options.index(current_provider)
+
+                selected_provider_key = st.selectbox(
+                    "Email Provider:",
+                    options=provider_options,
+                    format_func=lambda x: provider_display.get(x, x),
+                    index=current_index,
+                    key="email_provider_select",
+                    help="Choose your email sending method."
+                )
+
+                # Common Fields
+                st.text_input(
+                    "Verified Sender Email:",
+                    value=current_settings.get('verified_sender_email', '') if current_settings else '',
+                    key="email_sender_email",
+                    placeholder="e.g., sales@yourcompany.com",
+                    help="The email address emails will be sent from (must be verified with your provider)."
+                )
+                st.text_input(
+                    "Sender Name:",
+                    value=current_settings.get('sender_name', '') if current_settings else '',
+                    key="email_sender_name",
+                    placeholder="e.g., Sales Team or John Doe",
+                    help="The name recipients will see in the 'From' field."
+                )
+
+                # --- SMTP Specific Fields ---
+                if selected_provider_key == "SMTP":
+                    st.divider()
+                    st.markdown("**SMTP Server Details**")
+                    st.text_input("SMTP Host:", value=current_settings.get('smtp_host', '') if current_settings else '', key="email_smtp_host", placeholder="e.g., smtp.example.com")
+                    st.number_input("SMTP Port:", value=current_settings.get('smtp_port', 587) if current_settings else 587, min_value=1, max_value=65535, step=1, key="email_smtp_port", help="Usually 587 (TLS) or 465 (SSL).")
+                    st.text_input("SMTP Username:", value=current_settings.get('smtp_username', '') if current_settings else '', key="email_smtp_user")
+                    st.text_input("SMTP Password:", type="password", key="email_smtp_pass", help="Leave blank to keep existing password.")
+
+                # --- AWS SES Specific Fields ---
+                elif selected_provider_key == "AWS_SES":
+                    st.divider()
+                    st.markdown("**AWS SES Details (using API Keys)**")
+                    st.caption("Ensure the backend service has appropriate AWS permissions or credentials set via environment variables if using IAM roles instead of keys here.")
+                    st.text_input("AWS Access Key ID:", type="password", key="email_aws_key_id", help="Leave blank to keep existing key.")
+                    st.text_input("AWS Secret Access Key:", type="password", key="email_aws_secret", help="Leave blank to keep existing secret.")
+                    st.text_input("AWS Region:", value=current_settings.get('aws_region', '') if current_settings else '', key="email_aws_region", placeholder="e.g., us-east-1", help="The AWS region where your SES is configured.")
+
+
+                st.divider()
+                is_configured_toggle = st.toggle(
+                    "Mark as Fully Configured",
+                    value=bool(current_settings.get('is_configured', False)) if current_settings else False,
+                    key="email_is_configured",
+                    help="Enable this only when you believe all necessary settings for the chosen provider are correctly entered."
+                )
+
+                submitted = st.form_submit_button("💾 Save Email Settings")
+
+                if submitted:
+                    # --- Prepare Payload ---
+                    payload = {
+                        "provider_type": selected_provider_key if selected_provider_key != "Not Configured" else None,
+                        "verified_sender_email": st.session_state.email_sender_email.strip() or None,
+                        "sender_name": st.session_state.email_sender_name.strip() or None,
+                        "is_configured": is_configured_toggle
+                    }
+
+                    # Add provider-specific fields based on selection
+                    if selected_provider_key == "SMTP":
+                        payload["smtp_host"] = st.session_state.email_smtp_host.strip() or None
+                        payload["smtp_port"] = st.session_state.email_smtp_port # Already int
+                        payload["smtp_username"] = st.session_state.email_smtp_user.strip() or None
+                        # Only include password if user entered something (don't overwrite with blank)
+                        if st.session_state.email_smtp_pass:
+                            payload["smtp_password"] = st.session_state.email_smtp_pass
+
+                    elif selected_provider_key == "AWS_SES":
+                        payload["aws_region"] = st.session_state.email_aws_region.strip() or None
+                        # Only include keys if user entered something
+                        if st.session_state.email_aws_key_id:
+                            payload["aws_access_key_id"] = st.session_state.email_aws_key_id
+                        if st.session_state.email_aws_secret:
+                            payload["aws_secret_access_key"] = st.session_state.email_aws_secret
+
+                    # --- Basic Validation ---
+                    can_save = True
+                    if payload["provider_type"] and not payload["verified_sender_email"]:
+                        st.error("Verified Sender Email is required when a provider is selected.")
+                        can_save = False
+                    # Add more provider-specific validation if needed
+
+                    # --- API Call ---
+                    if can_save:
+                        with st.spinner("Saving email settings..."):
+                            result = save_email_settings(payload, auth_token)
+
+                        if result:
+                            st.session_state.email_save_success = True
+                            st.session_state.email_settings_loaded = False # Force reload
+                        else:
+                            st.session_state.email_save_error = "Failed to save email settings." # Specific error shown by helper
+                        st.rerun()
     # End of Page Content `if/elif/else` block
     else:
         st.error("Page not found.") # Should not be reachable with st.radio
