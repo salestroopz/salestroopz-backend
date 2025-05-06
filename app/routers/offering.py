@@ -58,10 +58,10 @@ def list_organization_offerings(
     """
     print(f"API: Listing offerings for Org ID: {current_user.organization_id} (Active only: {active_only})")
     # Call the database function to get offerings for the specific organization
-    offerings = database.get_offerings_by_organization_id(
-        organization_id=current_user.organization_id,
-        active_only=active_only
-        )
+    offerings = database.get_offerings_by_organization( # <--- Correct name
+    organization_id=current_user.organization_id,
+    active_only=active_only
+    )
     # FastAPI validates the list of dictionaries against List[OfferingResponse]
     return offerings
 
