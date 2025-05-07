@@ -30,7 +30,7 @@ REGISTER_ENDPOINT = f"{BACKEND_URL}/api/v1/auth/register"
 LEADS_ENDPOINT = f"{BACKEND_URL}/api/v1/leads"
 ICP_ENDPOINT = f"{BACKEND_URL}/api/v1/icp"
 OFFERINGS_ENDPOINT = f"{BACKEND_URL}/api/v1/offerings"
-# CAMPAIGNS_ENDPOINT = f"{BACKEND_URL}/api/v1/campaigns" # Add later
+CAMPAIGNS_ENDPOINT = f"{BACKEND_URL}/api/v1/campaigns" 
 
 # --- Authentication Functions ---
 
@@ -429,6 +429,47 @@ def delete_existing_lead(lead_id: int, token: str) -> bool:
     except requests.exceptions.RequestException as req_err: st.error(f"Failed to delete lead: Connection error - {req_err}"); return False
     except Exception as e: st.error(f"Failed to delete lead: An unexpected error occurred - {e}"); return False
 
+# --- ADD Campaign Specific API Helpers ---
+
+def list_campaigns(token: str, active_only: bool = True) -> Optional[List[Dict]]:
+    """Fetches a list of campaigns for the organization."""
+    endpoint = f"{BACKEND_URL}/api/v1/campaigns/"
+    params = {"active_only": active_only}
+    response_data = get_authenticated_request(endpoint, token, params=params)
+    if isinstance(response_data, list):
+        return response_data
+    return None
+
+def create_new_campaign(campaign_payload: Dict[str, Any], token: str) -> Optional[Dict]:
+    """Creates a new campaign via POST request."""
+    endpoint = f"{BACKEND_URL}/api/v1/campaigns/"
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    try:
+        response = requests.post(endpoint, headers=headers, json=campaign_payload, timeout=20)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.HTTPError as http_err:
+        # ... (Add detailed error handling like other create helpers) ...
+        st.error(f"Failed to create campaign: HTTP {http_err.response.status_code}")
+        return None
+    except requests.exceptions.RequestException as req_err: st.error(f"Failed to create campaign: Connection error - {req_err}"); return None
+    except Exception as e: st.error(f"Failed to create campaign: An unexpected error occurred - {e}"); return None
+
+def update_existing_campaign(campaign_id: int, campaign_payload: Dict[str, Any], token: str) -> Optional[Dict]:
+    """Updates an existing campaign via PUT request. (Placeholder - Backend needed)"""
+    endpoint = f"{BACKEND_URL}/api/v1/campaigns/{campaign_id}"
+    st.warning("Update Campaign functionality is not fully implemented in the backend yet.")
+    # --- TODO: Replace below with actual API call when backend PUT is ready ---
+    return None # Placeholder
+
+def delete_existing_campaign(campaign_id: int, token: str) -> bool:
+    """Deletes an existing campaign via DELETE request. (Placeholder - Backend needed)"""
+    endpoint = f"{BACKEND_URL}/api/v1/campaigns/{campaign_id}"
+    st.warning("Delete Campaign functionality is not fully implemented in the backend yet.")
+     # --- TODO: Replace below with actual API call when backend DELETE is ready ---
+    return False # Placeholder
+
+
 # --- Main App Logic ---
 
 # Initialize session state keys reliably
@@ -798,10 +839,212 @@ else:
                             else:
                                 st.session_state.lead_action_error = "Failed to save lead."; st.rerun()
 
-    elif page == "Campaigns":
-        st.header("Campaign Management")
-        st.info("Campaign creation, step definition, and monitoring coming soon.") # Placeholder
+     elif page == "Campaigns":
+        st.header("📣 Campaign Management")
+        st.caption("Create, view, and manage your email outreach campaigns.")
 
+        # --- Initialize Session State for Campaigns Page ---
+        st.session_state.setdefault('campaigns_list', [])
+        st.session_state.setdefault('campaigns_loaded', False)
+        st.session_state.setdefault('show_campaign_form', False)
+        st.session_state.setdefault('campaign_form_data', {})
+        st.session_state.setdefault('campaign_being_edited_id', None)
+        st.session_state.setdefault('campaign_to_delete', None)
+        st.session_state.setdefault('available_icps', []) # To store ICPs for dropdown
+        st.session_state.setdefault('available_icps_loaded', False)
+
+        # --- Display Action Messages ---
+        if st.session_state.get('campaign_action_success', None):
+            st.success(st.session_state.campaign_action_success)
+            del st.session_state['campaign_action_success']
+        if st.session_state.get('campaign_action_error', None):
+            st.error(st.session_state.campaign_action_error)
+            del st.session_state['campaign_action_error']
+
+        # --- Load Data (Campaigns and ICPs for dropdown) ---
+        # Load Campaigns
+        if not st.session_state.campaigns_loaded:
+            with st.spinner("Loading campaigns list..."):
+                fetched_campaigns = list_campaigns(auth_token, active_only=False) # Load all (active/inactive)
+                if fetched_campaigns is not None:
+                    st.session_state.campaigns_list = fetched_campaigns
+                else:
+                    st.session_state.campaigns_list = []
+                st.session_state.campaigns_loaded = True
+        # Load ICPs (needed for the create/edit form dropdown)
+        if not st.session_state.available_icps_loaded:
+            with st.spinner("Loading ICP list for dropdown..."):
+                fetched_icps = list_icps(auth_token)
+                if fetched_icps is not None:
+                    st.session_state.available_icps = fetched_icps
+                else:
+                    st.session_state.available_icps = []
+                st.session_state.available_icps_loaded = True
+
+        campaign_list = st.session_state.get('campaigns_list', [])
+        available_icps = st.session_state.get('available_icps', [])
+
+        # --- Display Campaigns List and Actions ---
+        st.markdown("---")
+        col_camp_header_1, col_camp_header_2 = st.columns([3, 1])
+        with col_camp_header_1:
+            st.markdown("##### Defined Campaigns")
+        with col_camp_header_2:
+            if st.button("✚ Add New Campaign", use_container_width=True):
+                st.session_state.campaign_form_data = {"is_active": True} # Default to active
+                st.session_state.campaign_being_edited_id = None
+                st.session_state.show_campaign_form = True
+                st.rerun()
+
+        if not campaign_list and st.session_state.campaigns_loaded:
+            st.info("No campaigns defined yet. Click 'Add New Campaign' to create one.")
+        elif campaign_list:
+            for campaign in campaign_list:
+                camp_id = campaign.get('id')
+                if not camp_id: continue
+                with st.container(border=True):
+                    col_camp_info, col_camp_actions = st.columns([4, 1])
+                    with col_camp_info:
+                        status_icon = "✅" if campaign.get('is_active') else "⏸️"
+                        icp_name_display = f"(ICP: `{campaign.get('icp_name', 'None')}`)" if campaign.get('icp_id') else "(No ICP linked)"
+                        st.markdown(f"{status_icon} **{campaign.get('name', 'Unnamed Campaign')}** {icp_name_display} (ID: {camp_id})")
+                        if campaign.get('description'):
+                            st.caption(f"{campaign['description'][:100]}{'...' if len(campaign['description']) > 100 else ''}")
+
+                    with col_camp_actions:
+                        sub_col_steps, sub_col_camp_edit, sub_col_camp_delete = st.columns(3)
+                        with sub_col_steps:
+                            if st.button("Steps", key=f"steps_camp_{camp_id}", help="View/Edit Steps", use_container_width=True):
+                                # --- TODO: Implement navigation or display logic for campaign steps ---
+                                st.info(f"Step management for Campaign ID {camp_id} coming soon!")
+                        with sub_col_camp_edit:
+                            if st.button("✏️", key=f"edit_camp_{camp_id}", help="Edit Campaign", use_container_width=True):
+                                # --- TODO: Implement Edit Logic (Backend PUT needed) ---
+                                st.session_state.campaign_form_data = campaign # Pre-fill form
+                                st.session_state.campaign_being_edited_id = camp_id # Set ID for update mode
+                                st.session_state.show_campaign_form = True # Show form
+                                st.rerun()
+                                # st.warning("Edit Campaign functionality not yet implemented.") # Placeholder message if backend incomplete
+                        with sub_col_camp_delete:
+                            if st.button("🗑️", key=f"delete_camp_{camp_id}", help="Delete Campaign", use_container_width=True):
+                                # --- TODO: Implement Delete Logic (Backend DELETE needed) ---
+                                st.session_state.campaign_to_delete = campaign # Store campaign data for confirm
+                                st.rerun()
+                                # st.warning("Delete Campaign functionality not yet implemented.") # Placeholder message if backend incomplete
+
+        st.markdown("---")
+
+        # --- Delete Confirmation Dialog ---
+        if st.session_state.get('campaign_to_delete') is not None:
+            campaign_for_deletion = st.session_state.campaign_to_delete
+            @st.dialog("Confirm Campaign Deletion", dismissed=lambda: st.session_state.pop('campaign_to_delete', None))
+            def show_campaign_delete_dialog():
+                 st.warning(f"Are you sure you want to delete the campaign **'{campaign_for_deletion.get('name', 'N/A')}'** (ID: {campaign_for_deletion.get('id')})?", icon="⚠️")
+                 st.caption("This will delete the campaign and all its associated steps and progress. This action cannot be undone.")
+                 col_cdel_c, col_cdel_k = st.columns(2)
+                 with col_cdel_c:
+                     if st.button("Yes, Delete Campaign", type="primary", use_container_width=True):
+                         # --- TODO: Replace with actual delete call when backend ready ---
+                         # with st.spinner("Deleting campaign..."): success = delete_existing_campaign(campaign_for_deletion['id'], auth_token)
+                         success = False # Placeholder
+                         st.warning("Delete Campaign functionality not yet implemented.") # Placeholder message
+
+                         if success: st.session_state.campaign_action_success = "Campaign deleted successfully."; st.session_state.campaigns_loaded = False
+                         else: st.session_state.campaign_action_error = "Failed to delete campaign."
+                         del st.session_state.campaign_to_delete; st.rerun()
+                 with col_cdel_k:
+                    if st.button("Cancel", use_container_width=True): del st.session_state.campaign_to_delete; st.rerun()
+            show_campaign_delete_dialog()
+
+        # --- Conditionally Display Campaign Add/Edit Form ---
+        if st.session_state.get('show_campaign_form', False):
+            form_title = "Edit Campaign" if st.session_state.get('campaign_being_edited_id') else "Add New Campaign"
+            st.markdown(f"#### {form_title}")
+            form_data = st.session_state.get('campaign_form_data', {})
+
+            with st.form("campaign_form"):
+                # --- Form Fields ---
+                name = st.text_input("Campaign Name*:", value=form_data.get("name", ""), key="camp_form_name", placeholder="e.g., Q3 New Leads Outreach")
+                description = st.text_area("Description (Optional):", value=form_data.get("description", ""), key="camp_form_desc", height=100, placeholder="Goal or target audience...")
+
+                # --- ICP Selection Dropdown ---
+                icp_options_dict = {icp['id']: f"{icp['name']} (ID: {icp['id']})" for icp in available_icps} # id -> display name
+                icp_options_display = ["None (No Specific ICP)"] + list(icp_options_dict.values()) # List for dropdown display
+
+                # Find current selection index
+                current_icp_id = form_data.get("icp_id")
+                current_icp_display = icp_options_dict.get(current_icp_id, "None (No Specific ICP)") if current_icp_id else "None (No Specific ICP)"
+                try:
+                     selected_index = icp_options_display.index(current_icp_display)
+                except ValueError:
+                     selected_index = 0 # Default to "None"
+
+                selected_icp_display_name = st.selectbox(
+                    "Link to ICP (Optional):",
+                    options=icp_options_display,
+                    index=selected_index,
+                    key="camp_form_icp_select",
+                    help="Associate this campaign with a specific Ideal Customer Profile."
+                )
+
+                # Map display name back to ID (or None)
+                selected_icp_id = None
+                for icp_id, display_name in icp_options_dict.items():
+                    if display_name == selected_icp_display_name:
+                        selected_icp_id = icp_id
+                        break
+
+                is_active = st.toggle("Active Campaign", value=bool(form_data.get("is_active", True)), key="camp_form_active", help="Only active campaigns will enroll new leads.")
+
+                st.divider()
+
+                # --- Form Buttons ---
+                submitted = st.form_submit_button("💾 Save Campaign")
+                cancel_clicked = st.form_submit_button("Cancel", type="secondary")
+
+                if cancel_clicked:
+                    st.session_state.show_campaign_form = False; st.session_state.campaign_form_data = {}; st.session_state.campaign_being_edited_id = None; st.rerun()
+
+                if submitted:
+                    # --- Validation and Saving ---
+                    can_save = True
+                    campaign_name = st.session_state.camp_form_name.strip()
+                    if not campaign_name: st.error("Campaign Name cannot be empty."); can_save = False
+
+                    if can_save:
+                        campaign_payload = {
+                            "name": campaign_name,
+                            "description": st.session_state.camp_form_desc.strip() or None,
+                            "is_active": st.session_state.camp_form_active,
+                            "icp_id": selected_icp_id # Use the ID retrieved from the selectbox mapping
+                        }
+
+                        # --- Call Correct API ---
+                        campaign_id_to_update = st.session_state.get('campaign_being_edited_id')
+                        success = False; result_data = None
+                        with st.spinner("Saving campaign..."):
+                            if campaign_id_to_update: # UPDATE mode
+                                 # --- TODO: Replace with actual API call when backend ready ---
+                                 # result_data = update_existing_campaign(campaign_id_to_update, campaign_payload, auth_token)
+                                 st.warning("Update functionality not yet implemented in backend.") # Placeholder message
+                                 success = False # Placeholder
+                            else: # CREATE mode
+                                 result_data = create_new_campaign(campaign_payload, auth_token)
+                                 success = result_data is not None
+
+                        if success:
+                            action = "updated" if campaign_id_to_update else "created"
+                            st.session_state.campaign_action_success = f"Campaign '{campaign_name}' {action} successfully!"
+                            st.session_state.campaigns_loaded = False # Force reload list
+                            st.session_state.show_campaign_form = False; st.session_state.campaign_form_data = {}; st.session_state.campaign_being_edited_id = None
+                            st.rerun()
+                        else:
+                            # Only set generic error if create failed (update placeholder shows its own warning)
+                            if not campaign_id_to_update:
+                                st.session_state.campaign_action_error = "Failed to save campaign."
+                                st.rerun() # Rerun to show error message
+
+  
     elif page == "Setup Assistant":
         st.header("Setup Assistant (Chatbot)")
         st.info("Chatbot integration for guided setup coming soon.") # Placeholder
