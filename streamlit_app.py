@@ -546,7 +546,7 @@ else:
        # --- Page Content ---
     # ... (Dashboard code) ...
 
-    elif page == "Leads":
+        elif page == "Leads":
         st.header("👤 Leads Management")
         st.caption("View, add, and manage your sales leads.")
 
@@ -559,7 +559,7 @@ else:
         st.session_state.setdefault('lead_to_delete', None) # Store lead for delete confirmation
         st.session_state.setdefault('lead_to_view_details', None) # Store lead for view details dialog
         st.session_state.setdefault('upload_summary', None) # For storing CSV upload results
-        
+
         # --- Display Action Messages ---
         if st.session_state.get('lead_action_success', None):
             st.success(st.session_state.lead_action_success)
@@ -569,61 +569,69 @@ else:
             del st.session_state['lead_action_error']
 
         # --- Bulk CSV Upload Section ---
-    st.markdown("---")
-    st.subheader("📤 Bulk Import Leads from CSV")
-    uploaded_file = st.file_uploader(
-        "Choose a CSV file",
-        type=["csv"],
-        help="Upload a CSV file with columns like Name, Email, Company, Title, Source, etc. 'Email' is required."
-    )
-
-    if uploaded_file is not None:
-        if st.button("🚀 Process Uploaded CSV"):
-            with st.spinner(f"Processing '{uploaded_file.name}'... This may take a moment for large files."):
-                summary = upload_leads_csv_file(uploaded_file, auth_token)
-                st.session_state.upload_summary = summary
-                st.session_state.leads_loaded = False # Force reload of leads list after import
-                st.rerun() # Rerun to display summary and refresh list
-
-    # Display upload summary if available
-    if st.session_state.get('upload_summary') is not None:
-        summary = st.session_state.upload_summary
         st.markdown("---")
-        st.markdown("#### CSV Import Summary:")
-        st.info(
-            f"- Total rows in file: {summary.get('total_rows_in_file', 'N/A')}\n"
-            f"- Rows attempted: {summary.get('rows_attempted', 'N/A')}\n"
-            f"- Successfully imported/updated: {summary.get('successfully_imported_or_updated', 'N/A')}\n"
-            f"- Failed imports: {summary.get('failed_imports', 'N/A')}"
+        st.subheader("📤 Bulk Import Leads from CSV")
+        uploaded_file = st.file_uploader(
+            "Choose a CSV file",
+            type=["csv"],
+            help="Upload a CSV file with columns like Name, Email, Company, Title, Source, etc. 'Email' is required."
         )
-        if summary.get('errors'):
-            st.error("Errors encountered during import:")
-            # Display first few errors for brevity in UI
-            for i, err_detail in enumerate(summary['errors'][:5]): # Show max 5 errors
-                row_info = f"Row {err_detail.get('row_number')}: " if err_detail.get('row_number') else ""
-                email_info = f"Email '{err_detail.get('email')}': " if err_detail.get('email') else ""
-                st.markdown(f"- {row_info}{email_info}{err_detail.get('error')}")
-            if len(summary['errors']) > 5:
-                st.caption(f"...and {len(summary['errors']) - 5} more errors (check backend logs for full details).")
-        # Clear summary after displaying so it doesn't reappear on unrelated reruns
-        del st.session_state.upload_summary
-    # --- END Bulk CSV Upload Section ---
+
+        if uploaded_file is not None:
+            if st.button("🚀 Process Uploaded CSV"):
+                with st.spinner(f"Processing '{uploaded_file.name}'... This may take a moment for large files."):
+                    # Ensure upload_leads_csv_file helper function is defined
+                    if 'upload_leads_csv_file' in locals() or 'upload_leads_csv_file' in globals():
+                         summary = upload_leads_csv_file(uploaded_file, auth_token)
+                         st.session_state.upload_summary = summary
+                         st.session_state.leads_loaded = False # Force reload of leads list after import
+                         st.rerun() # Rerun to display summary and refresh list
+                    else:
+                         st.error("ERROR: upload_leads_csv_file function not found!")
 
 
-             # --- Load Data (for lead list display) ---
-    if not st.session_state.leads_loaded:
-        # ... (keep existing data loading logic for the lead list) ...
-        with st.spinner("Loading leads..."): # This part remains
-            fetched_leads = list_leads(auth_token)
-            if fetched_leads is not None:
-                st.session_state.leads_list = fetched_leads
-            else:
-                st.session_state.leads_list = []
-            st.session_state.leads_loaded = True
+        # Display upload summary if available
+        if st.session_state.get('upload_summary') is not None:
+            summary = st.session_state.upload_summary
+            st.markdown("---")
+            st.markdown("#### CSV Import Summary:")
+            st.info(
+                f"- Total rows in file: {summary.get('total_rows_in_file', 'N/A')}\n"
+                f"- Rows attempted: {summary.get('rows_attempted', 'N/A')}\n"
+                f"- Successfully imported/updated: {summary.get('successfully_imported_or_updated', 'N/A')}\n"
+                f"- Failed imports: {summary.get('failed_imports', 'N/A')}"
+            )
+            if summary.get('errors'):
+                st.error("Errors encountered during import:")
+                for i, err_detail in enumerate(summary['errors'][:5]): # Show max 5 errors
+                    row_info = f"Row {err_detail.get('row_number')}: " if err_detail.get('row_number') else ""
+                    email_info = f"Email '{err_detail.get('email')}': " if err_detail.get('email') else ""
+                    st.markdown(f"- {row_info}{email_info}{err_detail.get('error')}")
+                if len(summary['errors']) > 5:
+                    st.caption(f"...and {len(summary['errors']) - 5} more errors (check backend logs for full details).")
+            # Clear summary after displaying
+            del st.session_state.upload_summary
+        # --- END Bulk CSV Upload Section ---
 
-    lead_list = st.session_state.get('leads_list', [])  
-       
-        # --- Actions and Display ---
+
+        # --- Load Data (for lead list display) ---
+        if not st.session_state.leads_loaded:
+            with st.spinner("Loading leads..."):
+                # Ensure list_leads helper function is defined
+                if 'list_leads' in locals() or 'list_leads' in globals():
+                     fetched_leads = list_leads(auth_token)
+                     if fetched_leads is not None:
+                         st.session_state.leads_list = fetched_leads
+                     else:
+                         st.session_state.leads_list = []
+                else:
+                     st.error("ERROR: list_leads function not found!")
+                     st.session_state.leads_list = [] # Set empty list on error
+                st.session_state.leads_loaded = True
+
+        lead_list = st.session_state.get('leads_list', [])
+
+        # --- Actions and Lead List Display ---
         st.markdown("---")
         col_header_lead1, col_header_lead2 = st.columns([3,1])
         with col_header_lead1:
@@ -636,12 +644,12 @@ else:
                 st.rerun() # Rerun to show the form
 
         if not lead_list and st.session_state.leads_loaded:
-            st.info("No leads found. Click 'Add New Lead' to get started.")
+            st.info("No leads found. Click 'Add New Lead' or upload a CSV to get started.")
         elif lead_list:
-            # Display leads in a more compact way, potentially with st.dataframe or custom layout
-            # For now, simple iteration with details and actions
+            # Display leads
             for lead in lead_list:
                 lead_id = lead.get('id')
+                if not lead_id: continue # Skip if lead doesn't have an ID for some reason
                 with st.container(border=True):
                     col_lead_info, col_lead_actions = st.columns([4,1])
                     with col_lead_info:
@@ -663,7 +671,7 @@ else:
                             if st.button("🗑️", key=f"delete_lead_{lead_id}", help="Delete Lead", use_container_width=True):
                                 st.session_state.lead_to_delete = lead
                                 st.rerun()
-            # --- TODO: Add Pagination if list_leads supports it ---
+            # --- TODO: Add Pagination UI if list_leads supports it and list is long ---
 
         st.markdown("---")
 
@@ -676,9 +684,13 @@ else:
                 col_del_c, col_del_k = st.columns(2)
                 with col_del_c:
                     if st.button("Yes, Delete", type="primary", use_container_width=True):
-                        with st.spinner("Deleting lead..."): success = delete_existing_lead(lead_for_deletion['id'], auth_token)
-                        if success: st.session_state.lead_action_success = "Lead deleted successfully."; st.session_state.leads_loaded = False
-                        else: st.session_state.lead_action_error = "Failed to delete lead."
+                        # Ensure delete_existing_lead helper exists
+                        if 'delete_existing_lead' in locals() or 'delete_existing_lead' in globals():
+                            with st.spinner("Deleting lead..."): success = delete_existing_lead(lead_for_deletion['id'], auth_token)
+                            if success: st.session_state.lead_action_success = "Lead deleted successfully."; st.session_state.leads_loaded = False
+                            else: st.session_state.lead_action_error = "Failed to delete lead."
+                        else:
+                            st.session_state.lead_action_error = "ERROR: delete_existing_lead function not found!"
                         del st.session_state.lead_to_delete; st.rerun()
                 with col_del_k:
                     if st.button("Cancel", use_container_width=True): del st.session_state.lead_to_delete; st.rerun()
@@ -689,15 +701,15 @@ else:
             lead_to_view = st.session_state.lead_to_view_details
             @st.dialog(f"Lead Details: {lead_to_view.get('name', lead_to_view.get('email'))}", dismissed=lambda: st.session_state.pop('lead_to_view_details', None))
             def show_lead_view_dialog():
-                for key, value in lead_to_view.items():
+                # Define order or specific fields to show if desired
+                display_fields = ['name', 'email', 'company', 'title', 'source', 'linkedin_profile', 'company_size', 'industry', 'location', 'matched', 'reason', 'crm_status', 'appointment_confirmed', 'created_at', 'updated_at']
+                for key in display_fields:
+                    value = lead_to_view.get(key)
                     if value is not None: # Only display fields that have a value
                         display_key = key.replace("_", " ").title()
-                        if isinstance(value, bool):
-                            st.markdown(f"**{display_key}:** {'Yes' if value else 'No'}")
-                        elif isinstance(value, str) and ("http" in value or "www" in value):
-                            st.markdown(f"**{display_key}:** [{value}]({value})")
-                        else:
-                            st.markdown(f"**{display_key}:** {value}")
+                        if isinstance(value, bool): st.markdown(f"**{display_key}:** {'Yes' if value else 'No'}")
+                        elif isinstance(value, str) and ("http" in value or "www" in value): st.markdown(f"**{display_key}:** [{value}]({value})")
+                        else: st.markdown(f"**{display_key}:** {value}")
                 if st.button("Close", key="close_lead_view_dialog"):
                     del st.session_state.lead_to_view_details; st.rerun()
             show_lead_view_dialog()
@@ -722,12 +734,10 @@ else:
 
                 st.divider()
                 col_match, col_appt = st.columns(2)
-                with col_match:
-                    st.checkbox("Matched ICP?", value=bool(form_data.get("matched", False)), key="lead_form_matched")
-                with col_appt:
-                    st.checkbox("Appointment Confirmed?", value=bool(form_data.get("appointment_confirmed", False)), key="lead_form_appointment")
-                    st.text_input("Match Reason (if applicable):", value=form_data.get("reason", ""), key="lead_form_reason")
-                    st.text_input("CRM Status:", value=form_data.get("crm_status", "pending"), key="lead_form_crm_status")
+                with col_match: st.checkbox("Matched ICP?", value=bool(form_data.get("matched", False)), key="lead_form_matched")
+                with col_appt: st.checkbox("Appointment Confirmed?", value=bool(form_data.get("appointment_confirmed", False)), key="lead_form_appointment")
+                st.text_input("Match Reason (if applicable):", value=form_data.get("reason", ""), key="lead_form_reason")
+                st.text_input("CRM Status:", value=form_data.get("crm_status", "pending"), key="lead_form_crm_status")
 
 
                 st.divider()
@@ -763,11 +773,18 @@ else:
                         lead_id_to_update = st.session_state.get('lead_being_edited_id')
                         success = False; result_data = None
                         with st.spinner("Saving lead..."):
+                            # Ensure relevant API helpers exist
                             if lead_id_to_update: # Update mode
-                                result_data = update_existing_lead(lead_id_to_update, lead_payload, auth_token)
-                            else: # Create mode (using save_lead which also handles create)
-                                result_data = create_new_lead(lead_payload, auth_token)
-                            success = result_data is not None
+                                if 'update_existing_lead' in locals() or 'update_existing_lead' in globals():
+                                    result_data = update_existing_lead(lead_id_to_update, lead_payload, auth_token)
+                                else: st.error("ERROR: update_existing_lead function not defined!"); success = False
+                            else: # Create mode
+                                if 'create_new_lead' in locals() or 'create_new_lead' in globals():
+                                    result_data = create_new_lead(lead_payload, auth_token)
+                                else: st.error("ERROR: create_new_lead function not defined!"); success = False
+                            # Check if result_data was populated only if no function error occurred
+                            if 'result_data' in locals(): success = result_data is not None
+
 
                         if success:
                             action = "updated" if lead_id_to_update else "added"
@@ -775,7 +792,11 @@ else:
                             st.session_state.leads_loaded = False; st.session_state.show_lead_form = False; st.session_state.lead_form_data = {}; st.session_state.lead_being_edited_id = None
                             st.rerun()
                         else:
-                            st.session_state.lead_action_error = "Failed to save lead."; st.rerun()
+                            # Only set generic error if specific function error wasn't already shown
+                            if not ('create_new_lead' in locals() or 'create_new_lead' in globals()) or not ('update_existing_lead' in locals() or 'update_existing_lead' in globals()):
+                                pass # Error about missing function already shown
+                            else:
+                                st.session_state.lead_action_error = "Failed to save lead."; st.rerun()
 
     elif page == "Campaigns":
         st.header("Campaign Management")
