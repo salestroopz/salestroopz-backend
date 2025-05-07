@@ -839,7 +839,7 @@ else:
                             else:
                                 st.session_state.lead_action_error = "Failed to save lead."; st.rerun()
 
-     elif page == "Campaigns":
+    elif page == "Campaigns":
         st.header("📣 Campaign Management")
         st.caption("Create, view, and manage your email outreach campaigns.")
 
