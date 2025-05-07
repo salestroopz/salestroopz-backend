@@ -558,7 +558,8 @@ else:
         st.session_state.setdefault('lead_being_edited_id', None) # Track if editing or creating
         st.session_state.setdefault('lead_to_delete', None) # Store lead for delete confirmation
         st.session_state.setdefault('lead_to_view_details', None) # Store lead for view details dialog
-
+        st.session_state.setdefault('upload_summary', None) # For storing CSV upload results
+        
         # --- Display Action Messages ---
         if st.session_state.get('lead_action_success', None):
             st.success(st.session_state.lead_action_success)
@@ -567,18 +568,75 @@ else:
             st.error(st.session_state.lead_action_error)
             del st.session_state['lead_action_error']
 
-        # --- Load Data ---
-        if not st.session_state.leads_loaded:
-            with st.spinner("Loading leads..."):
-                fetched_leads = list_leads(auth_token) # Assuming pagination is handled or default
-                if fetched_leads is not None:
-                    st.session_state.leads_list = fetched_leads
-                else:
-                    st.session_state.leads_list = []
-                st.session_state.leads_loaded = True
+        # --- Bulk CSV Upload Section ---
+    st.markdown("---")
+    st.subheader("📤 Bulk Import Leads from CSV")
+    uploaded_file = st.file_uploader(
+        "Choose a CSV file",
+        type=["csv"],
+        help="Upload a CSV file with columns like Name, Email, Company, Title, Source, etc. 'Email' is required."
+    )
 
-        lead_list = st.session_state.get('leads_list', [])
+    if uploaded_file is not None:
+        if st.button("🚀 Process Uploaded CSV"):
+            with st.spinner(f"Processing '{uploaded_file.name}'... This may take a moment for large files."):
+                summary = upload_leads_csv_file(uploaded_file, auth_token)
+                st.session_state.upload_summary = summary
+                st.session_state.leads_loaded = False # Force reload of leads list after import
+                st.rerun() # Rerun to display summary and refresh list
 
+    # Display upload summary if available
+    if st.session_state.get('upload_summary') is not None:
+        summary = st.session_state.upload_summary
+        st.markdown("---")
+        st.markdown("#### CSV Import Summary:")
+        st.info(
+            f"- Total rows in file: {summary.get('total_rows_in_file', 'N/A')}\n"
+            f"- Rows attempted: {summary.get('rows_attempted', 'N/A')}\n"
+            f"- Successfully imported/updated: {summary.get('successfully_imported_or_updated', 'N/A')}\n"
+            f"- Failed imports: {summary.get('failed_imports', 'N/A')}"
+        )
+        if summary.get('errors'):
+            st.error("Errors encountered during import:")
+            # Display first few errors for brevity in UI
+            for i, err_detail in enumerate(summary['errors'][:5]): # Show max 5 errors
+                row_info = f"Row {err_detail.get('row_number')}: " if err_detail.get('row_number') else ""
+                email_info = f"Email '{err_detail.get('email')}': " if err_detail.get('email') else ""
+                st.markdown(f"- {row_info}{email_info}{err_detail.get('error')}")
+            if len(summary['errors']) > 5:
+                st.caption(f"...and {len(summary['errors']) - 5} more errors (check backend logs for full details).")
+        # Clear summary after displaying so it doesn't reappear on unrelated reruns
+        del st.session_state.upload_summary
+    # --- END Bulk CSV Upload Section ---
+
+
+    # --- Load Data (for lead list display) ---
+    if not st.session_state.leads_loaded:
+        # ... (keep existing data loading logic for the lead list) ...
+        with st.spinner("Loading leads..."): # This part remains
+            fetched_leads = list_leads(auth_token)
+            if fetched_leads is not None:
+                st.session_state.leads_list = fetched_leads
+            else:
+                st.session_state.leads_list = []
+            st.session_state.leads_loaded = True
+
+    lead_list = st.session_state.get('leads_list', [])
+
+            # --- Load Data (for lead list display) ---
+    if not st.session_state.leads_loaded:
+        # ... (keep existing data loading logic for the lead list) ...
+        with st.spinner("Loading leads..."): # This part remains
+            fetched_leads = list_leads(auth_token)
+            if fetched_leads is not None:
+                st.session_state.leads_list = fetched_leads
+            else:
+                st.session_state.leads_list = []
+            st.session_state.leads_loaded = True
+
+    lead_list = st.session_state.get('leads_list', [])  
+
+        
         # --- Actions and Display ---
         st.markdown("---")
         col_header_lead1, col_header_lead2 = st.columns([3,1])
