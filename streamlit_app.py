@@ -546,7 +546,7 @@ else:
        # --- Page Content ---
     # ... (Dashboard code) ...
 
-        elif page == "Leads":
+    elif page == "Leads":
         st.header("👤 Leads Management")
         st.caption("View, add, and manage your sales leads.")
 
