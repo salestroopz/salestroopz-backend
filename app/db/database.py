@@ -50,15 +50,12 @@ def get_connection():
         if not all([db_name, username, password, hostname]):
              raise ValueError("DATABASE_URL is missing required components (dbname, user, password, host).")
 
-        # Using keywords is often clearer than DSN string
         conn = psycopg2.connect(
             dbname=db_name,
             user=username,
             password=password,
             host=hostname,
             port=port
-            # Add sslmode='require' here if needed for external connections,
-            # usually not needed for Render internal connections
         )
         return conn
     except ValueError as ve:
@@ -66,10 +63,10 @@ def get_connection():
         raise ValueError(f"Invalid DATABASE_URL format: {ve}") from ve
     except psycopg2.OperationalError as e:
         logger.error(f"DATABASE CONNECTION ERROR: Failed to connect to PostgreSQL - {e}", exc_info=True)
-        return None # Return None to indicate connection failure
+        return None
     except Exception as e:
          logger.error(f"Unexpected error getting PostgreSQL connection: {e}", exc_info=True)
-         return None # Return None for unexpected errors too
+         return None
 
 
 # --- Database Initialization (PostgreSQL Syntax) ---
@@ -80,12 +77,38 @@ def initialize_db():
     tables = {
         "organizations": """CREATE TABLE IF NOT EXISTS organizations ( id SERIAL PRIMARY KEY, name TEXT NOT NULL UNIQUE, created_at TIMESTAMPTZ DEFAULT timezone('utc', now()) );""",
         "users": """CREATE TABLE IF NOT EXISTS users ( id SERIAL PRIMARY KEY, email TEXT NOT NULL UNIQUE, hashed_password TEXT NOT NULL, organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, created_at TIMESTAMPTZ DEFAULT timezone('utc', now()) );""",
-        "leads": """CREATE TABLE IF NOT EXISTS leads ( id SERIAL PRIMARY KEY, organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, name TEXT, email TEXT NOT NULL, company TEXT, title TEXT, source TEXT, linkedin_profile TEXT, company_size TEXT, industry TEXT, location TEXT, matched BOOLEAN DEFAULT FALSE, reason TEXT, crm_status TEXT DEFAULT 'pending', appointment_confirmed BOOLEAN DEFAULT FALSE, created_at TIMESTAMPTZ DEFAULT timezone('utc', now()), UNIQUE (organization_id, email) );""",
+        "leads": """CREATE TABLE IF NOT EXISTS leads ( id SERIAL PRIMARY KEY, organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, name TEXT, email TEXT NOT NULL, company TEXT, title TEXT, source TEXT, linkedin_profile TEXT, company_size TEXT, industry TEXT, location TEXT, matched BOOLEAN DEFAULT FALSE, reason TEXT, crm_status TEXT DEFAULT 'pending', appointment_confirmed BOOLEAN DEFAULT FALSE, created_at TIMESTAMPTZ DEFAULT timezone('utc', now()), updated_at TIMESTAMPTZ DEFAULT timezone('utc', now()), UNIQUE (organization_id, email) );""", # Added updated_at
         "icps": """CREATE TABLE IF NOT EXISTS icps ( id SERIAL PRIMARY KEY, organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, name TEXT NOT NULL DEFAULT 'Default ICP', title_keywords JSONB, industry_keywords JSONB, company_size_rules JSONB, location_keywords JSONB, created_at TIMESTAMPTZ DEFAULT timezone('utc', now()), updated_at TIMESTAMPTZ DEFAULT timezone('utc', now()) );""",
         "offerings": """CREATE TABLE IF NOT EXISTS offerings ( id SERIAL PRIMARY KEY, organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, name TEXT NOT NULL, description TEXT, key_features JSONB, target_pain_points JSONB, call_to_action TEXT, is_active BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT timezone('utc', now()), updated_at TIMESTAMPTZ DEFAULT timezone('utc', now()), UNIQUE (organization_id, name) );""",
-        "email_campaigns": """CREATE TABLE IF NOT EXISTS email_campaigns ( id SERIAL PRIMARY KEY, organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, icp_id INTEGER REFERENCES icps(id) ON DELETE SET NULL, name TEXT NOT NULL, description TEXT, is_active BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT timezone('utc', now()), updated_at TIMESTAMPTZ DEFAULT timezone('utc', now()) );""",
-        "campaign_steps": """CREATE TABLE IF NOT EXISTS campaign_steps ( id SERIAL PRIMARY KEY, campaign_id INTEGER NOT NULL REFERENCES email_campaigns(id) ON DELETE CASCADE, organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, step_number INTEGER NOT NULL, delay_days INTEGER DEFAULT 1, subject_template TEXT, body_template TEXT, is_ai_crafted BOOLEAN DEFAULT FALSE, follow_up_angle TEXT, created_at TIMESTAMPTZ DEFAULT timezone('utc', now()), updated_at TIMESTAMPTZ DEFAULT timezone('utc', now()), UNIQUE (campaign_id, step_number) );""",
-        "lead_campaign_status": """CREATE TABLE IF NOT EXISTS lead_campaign_status ( id SERIAL PRIMARY KEY, lead_id INTEGER NOT NULL REFERENCES leads(id) ON DELETE CASCADE, campaign_id INTEGER NOT NULL REFERENCES email_campaigns(id) ON DELETE CASCADE, organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, current_step_number INTEGER DEFAULT 0, status TEXT NOT NULL DEFAULT 'pending', last_email_sent_at TIMESTAMPTZ, next_email_due_at TIMESTAMPTZ, last_response_type TEXT, last_response_at TIMESTAMPTZ, error_message TEXT, created_at TIMESTAMPTZ DEFAULT timezone('utc', now()), updated_at TIMESTAMPTZ DEFAULT timezone('utc', now()), UNIQUE (lead_id) );""",
+        "email_campaigns": """
+            CREATE TABLE IF NOT EXISTS email_campaigns (
+                id SERIAL PRIMARY KEY,
+                organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                icp_id INTEGER REFERENCES icps(id) ON DELETE SET NULL,
+                offering_id INTEGER REFERENCES offerings(id) ON DELETE SET NULL, -- NEW
+                name TEXT NOT NULL,
+                description TEXT,
+                is_active BOOLEAN DEFAULT TRUE,
+                ai_status TEXT DEFAULT 'pending', -- NEW (e.g., "pending", "generating", "completed", "failed")
+                created_at TIMESTAMPTZ DEFAULT timezone('utc', now()),
+                updated_at TIMESTAMPTZ DEFAULT timezone('utc', now())
+            );""",
+        "campaign_steps": """
+            CREATE TABLE IF NOT EXISTS campaign_steps (
+                id SERIAL PRIMARY KEY,
+                campaign_id INTEGER NOT NULL REFERENCES email_campaigns(id) ON DELETE CASCADE,
+                organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                step_number INTEGER NOT NULL,
+                delay_days INTEGER DEFAULT 1,
+                subject_template TEXT,
+                body_template TEXT,
+                is_ai_crafted BOOLEAN DEFAULT FALSE, -- Kept from original
+                follow_up_angle TEXT, -- NEW
+                created_at TIMESTAMPTZ DEFAULT timezone('utc', now()),
+                updated_at TIMESTAMPTZ DEFAULT timezone('utc', now()),
+                UNIQUE (campaign_id, step_number)
+            );""",
+        "lead_campaign_status": """CREATE TABLE IF NOT EXISTS lead_campaign_status ( id SERIAL PRIMARY KEY, lead_id INTEGER NOT NULL REFERENCES leads(id) ON DELETE CASCADE, campaign_id INTEGER NOT NULL REFERENCES email_campaigns(id) ON DELETE CASCADE, organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, current_step_number INTEGER DEFAULT 0, status TEXT NOT NULL DEFAULT 'pending', last_email_sent_at TIMESTAMPTZ, next_email_due_at TIMESTAMPTZ, last_response_type TEXT, last_response_at TIMESTAMPTZ, error_message TEXT, created_at TIMESTAMPTZ DEFAULT timezone('utc', now()), updated_at TIMESTAMPTZ DEFAULT timezone('utc', now()), UNIQUE (lead_id) );""", # Note: UNIQUE(lead_id) means a lead can only be in one campaign at a time. Revisit if a lead can be in multiple.
         "organization_email_settings": """CREATE TABLE IF NOT EXISTS organization_email_settings ( id SERIAL PRIMARY KEY, organization_id INTEGER NOT NULL UNIQUE REFERENCES organizations(id) ON DELETE CASCADE, provider_type TEXT, smtp_host TEXT, smtp_port INTEGER, smtp_username TEXT, encrypted_smtp_password TEXT, encrypted_api_key TEXT, encrypted_access_token TEXT, encrypted_refresh_token TEXT, token_expiry TIMESTAMPTZ, verified_sender_email TEXT NOT NULL, sender_name TEXT, is_configured BOOLEAN DEFAULT FALSE, created_at TIMESTAMPTZ DEFAULT timezone('utc', now()), updated_at TIMESTAMPTZ DEFAULT timezone('utc', now()) );"""
     }
     indexes = {
@@ -93,7 +116,12 @@ def initialize_db():
         "leads": ["CREATE INDEX IF NOT EXISTS idx_lead_organization ON leads (organization_id);", "CREATE INDEX IF NOT EXISTS idx_lead_org_email ON leads (organization_id, email);"],
         "icps": ["CREATE INDEX IF NOT EXISTS idx_icp_organization ON icps (organization_id);"],
         "offerings": ["CREATE INDEX IF NOT EXISTS idx_offering_organization ON offerings (organization_id);", "CREATE INDEX IF NOT EXISTS idx_offering_org_name ON offerings (organization_id, name);"],
-        "email_campaigns": ["CREATE INDEX IF NOT EXISTS idx_campaign_organization ON email_campaigns (organization_id);", "CREATE INDEX IF NOT EXISTS idx_campaign_icp ON email_campaigns (icp_id);"],
+        "email_campaigns": [
+            "CREATE INDEX IF NOT EXISTS idx_campaign_organization ON email_campaigns (organization_id);",
+            "CREATE INDEX IF NOT EXISTS idx_campaign_icp ON email_campaigns (icp_id);",
+            "CREATE INDEX IF NOT EXISTS idx_campaign_offering ON email_campaigns (offering_id);", # NEW
+            "CREATE INDEX IF NOT EXISTS idx_campaign_ai_status ON email_campaigns (ai_status);" # NEW
+        ],
         "campaign_steps": ["CREATE INDEX IF NOT EXISTS idx_step_campaign ON campaign_steps (campaign_id);", "CREATE INDEX IF NOT EXISTS idx_step_organization ON campaign_steps (organization_id);"],
         "lead_campaign_status": ["CREATE INDEX IF NOT EXISTS idx_status_lead ON lead_campaign_status (lead_id);", "CREATE INDEX IF NOT EXISTS idx_status_campaign ON lead_campaign_status (campaign_id);", "CREATE INDEX IF NOT EXISTS idx_status_organization ON lead_campaign_status (organization_id);", "CREATE INDEX IF NOT EXISTS idx_status_status ON lead_campaign_status (status);", "CREATE INDEX IF NOT EXISTS idx_status_due ON lead_campaign_status (next_email_due_at);"],
         "organization_email_settings": ["CREATE INDEX IF NOT EXISTS idx_email_settings_organization ON organization_email_settings (organization_id);"]
@@ -103,25 +131,17 @@ def initialize_db():
         if not conn:
             logger.error("DATABASE ERROR during initialization: Could not establish connection.")
             return
-        with conn:
+        with conn: # Auto-commit context manager
             with conn.cursor() as cursor:
                 logger.info("Executing CREATE TABLE IF NOT EXISTS statements...")
                 for table_name, sql_create in tables.items():
                     cursor.execute(sql_create)
                     logger.debug(f" -> {table_name.capitalize()} table checked/created.")
+
                 logger.info("Executing CREATE INDEX IF NOT EXISTS statements...")
                 for table_name, index_sqls in indexes.items():
                      for sql_index in index_sqls:
-                         # Check if column exists before creating index (e.g., for icp_id)
-                         # This is redundant now we use ALTER TABLE outside, but safe
-                         if "icp_id" in sql_index:
-                            cursor.execute("SELECT 1 FROM information_schema.columns WHERE table_name='email_campaigns' AND column_name='icp_id'")
-                            if cursor.fetchone():
-                                cursor.execute(sql_index)
-                            else:
-                                logger.warning("Skipping index creation for icp_id as column doesn't exist yet.")
-                         else:
-                             cursor.execute(sql_index)
+                         cursor.execute(sql_index)
                      logger.debug(f" -> {table_name.capitalize()} indexes checked/created.")
         logger.info("Database initialization sequence complete.")
     except (Exception, psycopg2.DatabaseError) as error:
@@ -134,7 +154,7 @@ def initialize_db():
 # ==========================================
 def _encrypt_data(plain_text: Optional[str]) -> Optional[str]:
     if plain_text is None: return None
-    logger.warning("ENCRYPTION NOT IMPLEMENTED! Sensitive data is NOT being encrypted.")
+    # logger.warning("ENCRYPTION NOT IMPLEMENTED! Sensitive data is NOT being encrypted.") # Reduce noise for now
     return plain_text
 def _decrypt_data(encrypted_text: Optional[str]) -> Optional[str]:
     if encrypted_text is None: return None
@@ -152,7 +172,7 @@ def _parse_json_fields(data_row: Optional[Dict], json_fields: List[str], default
         elif field_value and isinstance(field_value, str):
             try: parsed_value = json.loads(field_value)
             except json.JSONDecodeError: logger.warning(f"Could not parse JSON string for field '{field}' in row ID {data_row.get('id')}")
-        elif field in data_row and field_value is None: parsed_value = default_value
+        elif field in data_row and field_value is None: parsed_value = default_value # Handle explicit NULLs in JSONB
         data_row[field] = parsed_value
     return data_row
 
@@ -178,8 +198,8 @@ def create_organization(name: str) -> Optional[Dict]:
                          return None
                 except psycopg2.IntegrityError:
                     logger.warning(f"Org name '{name}' already exists. Fetching existing.")
-                    conn.rollback()
-                    return get_organization_by_name(name) # Call the implemented function
+                    conn.rollback() # Important before another query in same transaction block
+                    return get_organization_by_name(name)
 
         if org_id:
              org_data = get_organization_by_id(org_id)
@@ -209,27 +229,34 @@ def get_organization_by_id(organization_id: int) -> Optional[Dict]:
 def get_organization_by_name(name: str) -> Optional[Dict]:
     """Fetches organization data by its unique name."""
     sql = "SELECT * FROM organizations WHERE name = %s;"
-    conn = None
-    org_data = None
+    conn = None; org_data = None
     try:
         conn = get_connection()
         if not conn: return None
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute(sql, (name,))
-            result = cursor.fetchone()
-            if result:
-                org_data = dict(result)
+            cursor.execute(sql, (name,)); result = cursor.fetchone()
+            if result: org_data = dict(result)
     except (Exception, psycopg2.Error) as e:
         logger.error(f"DB Error getting org by name '{name}': {e}", exc_info=True)
     finally:
-        if conn and not getattr(conn, 'closed', True):
-            conn.close()
+        if conn and not getattr(conn, 'closed', True): conn.close()
     return org_data
 
 def get_all_organizations() -> List[Dict]:
     """Fetches all organizations."""
-    logger.warning("Function 'get_all_organizations' is not implemented.")
-    pass
+    sql = "SELECT * FROM organizations ORDER BY name;"
+    conn = None; org_list = []
+    try:
+        conn = get_connection()
+        if not conn: return []
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(sql); results = cursor.fetchall()
+            for row in results: org_list.append(dict(row))
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error getting all organizations: {e}", exc_info=True)
+    finally:
+        if conn and not getattr(conn, 'closed', True): conn.close()
+    return org_list
 
 
 # ==========================================
@@ -298,14 +325,12 @@ def get_user_by_email(email: str) -> Optional[Dict]:
         JOIN organizations o ON u.organization_id = o.id
         WHERE u.email = %s;
         """
-    conn = None
-    user_data = None
+    conn = None; user_data = None
     try:
         conn = get_connection()
         if not conn: return None
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute(sql, (email,))
-            result = cursor.fetchone()
+            cursor.execute(sql, (email,)); result = cursor.fetchone()
             if result: user_data = dict(result)
     except (Exception, psycopg2.Error) as e:
         logger.error(f"DB Error getting user by email {email}: {e}", exc_info=True)
@@ -315,8 +340,25 @@ def get_user_by_email(email: str) -> Optional[Dict]:
 
 def get_users_by_organization(organization_id: int) -> List[Dict]:
     """Fetches all users for a given organization."""
-    logger.warning("Function 'get_users_by_organization' is not implemented.")
-    pass
+    sql = """
+        SELECT
+            u.id, u.email, u.organization_id, o.name as organization_name
+        FROM users u
+        JOIN organizations o ON u.organization_id = o.id
+        WHERE u.organization_id = %s ORDER BY u.email;
+        """
+    conn = None; users_list = []
+    try:
+        conn = get_connection()
+        if not conn: return []
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(sql, (organization_id,)); results = cursor.fetchall()
+            for row in results: users_list.append(dict(row))
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error getting users for Org {organization_id}: {e}", exc_info=True)
+    finally:
+        if conn and not getattr(conn, 'closed', True): conn.close()
+    return users_list
 
 
 # ==========================================
@@ -324,20 +366,18 @@ def get_users_by_organization(organization_id: int) -> List[Dict]:
 # ==========================================
 def save_lead(lead_data: Dict, organization_id: int) -> Optional[Dict]:
     """Creates or updates a lead based on organization_id and email."""
-    columns = [ "organization_id", "name", "email", "company", "title", "source", "linkedin_profile", "company_size", "industry", "location", "matched", "reason", "crm_status", "appointment_confirmed" ]
-    params = {col: lead_data.get(col) for col in columns}
+    columns = [ "organization_id", "name", "email", "company", "title", "source", "linkedin_profile", "company_size", "industry", "location", "matched", "reason", "crm_status", "appointment_confirmed", "updated_at" ]
+    params = {col: lead_data.get(col) for col in columns if col != "updated_at"} # updated_at handled by DB or explicit set
     params['organization_id'] = organization_id
     if not params.get('email'):
         logger.warning(f"Skipping lead save for org {organization_id}: missing email")
         return None
-    # Ensure boolean values for boolean columns
     params['matched'] = bool(params.get('matched', False))
     params['appointment_confirmed'] = bool(params.get('appointment_confirmed', False))
+    params['updated_at'] = datetime.now(timezone.utc) # Set updated_at for insert/update
 
     insert_cols_str = ", ".join(columns)
     values_placeholders = ", ".join([f"%({col})s" for col in columns])
-    # Exclude unique key columns (org_id, email) and created_at from explicit update
-    # Let ON CONFLICT handle the unique key logic
     update_cols = [f"{col} = EXCLUDED.{col}" for col in columns if col not in ['id', 'organization_id', 'email', 'created_at']]
     update_clause = ", ".join(update_cols)
 
@@ -351,7 +391,7 @@ def save_lead(lead_data: Dict, organization_id: int) -> Optional[Dict]:
     try:
         conn = get_connection()
         if not conn: return None
-        with conn: # Auto commit/rollback
+        with conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute(sql, params)
                 returned_id_row = cursor.fetchone()
@@ -359,20 +399,14 @@ def save_lead(lead_data: Dict, organization_id: int) -> Optional[Dict]:
                     returned_id = returned_id_row['id']
                 else:
                      logger.warning(f"Lead upsert for {params.get('email')}, Org {organization_id} did not return ID consistently.")
-                     # If no ID returned, but also no error, try to fetch by email as a fallback
-                     # This scenario is less common with RETURNING id but can happen.
 
-        # Fetch full data after commit using the returned ID or by email as fallback
         if returned_id:
-            saved_lead = get_lead_by_id(returned_id, organization_id) # Use the implemented function
+            saved_lead = get_lead_by_id(returned_id, organization_id)
             if saved_lead:
                  logger.debug(f"Successfully saved/updated lead ID {saved_lead['id']} for org {organization_id}")
-            else:
-                 logger.error(f"Failed to fetch lead ID {returned_id} immediately after upsert, even though ID was returned.")
-                 # Fallback to email just in case get_lead_by_id had an issue with new ID
+            else: # Fallback
                  saved_lead = get_lead_by_email(params['email'], organization_id)
-        else: # If RETURNING ID failed for some reason
-            logger.warning(f"Upsert didn't return ID, attempting fetch by email for {params['email']}, Org {organization_id}.")
+        else: # Fallback if RETURNING ID failed
             saved_lead = get_lead_by_email(params['email'], organization_id)
 
     except (Exception, psycopg2.Error) as e:
@@ -381,91 +415,69 @@ def save_lead(lead_data: Dict, organization_id: int) -> Optional[Dict]:
         if conn and not getattr(conn, 'closed', True): conn.close()
     return saved_lead
 
-# --- IMPLEMENTED ---
 def get_lead_by_id(lead_id: int, organization_id: int) -> Optional[Dict]:
-    """Fetches a lead by its ID and organization ID."""
     sql = "SELECT * FROM leads WHERE id = %s AND organization_id = %s;"
     conn = None; lead_data = None
     try:
         conn = get_connection()
         if not conn: return None
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute(sql, (lead_id, organization_id))
-            result = cursor.fetchone()
-            if result:
-                lead_data = dict(result)
+            cursor.execute(sql, (lead_id, organization_id)); result = cursor.fetchone()
+            if result: lead_data = dict(result)
     except (Exception, psycopg2.Error) as e:
         logger.error(f"DB Error getting lead ID {lead_id} for Org {organization_id}: {e}", exc_info=True)
     finally:
         if conn and not getattr(conn, 'closed', True): conn.close()
     return lead_data
 
-# --- IMPLEMENTED ---
 def get_lead_by_email(email: str, organization_id: int) -> Optional[Dict]:
-    """Fetches a lead by its email and organization ID."""
     sql = "SELECT * FROM leads WHERE email = %s AND organization_id = %s;"
     conn = None; lead_data = None
     try:
         conn = get_connection()
         if not conn: return None
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute(sql, (email, organization_id))
-            result = cursor.fetchone()
-            if result:
-                lead_data = dict(result)
+            cursor.execute(sql, (email, organization_id)); result = cursor.fetchone()
+            if result: lead_data = dict(result)
     except (Exception, psycopg2.Error) as e:
         logger.error(f"DB Error getting lead by email '{email}' for Org {organization_id}: {e}", exc_info=True)
     finally:
         if conn and not getattr(conn, 'closed', True): conn.close()
     return lead_data
 
-# --- IMPLEMENTED ---
 def get_leads_by_organization(organization_id: int, offset: int = 0, limit: int = 100) -> List[Dict]:
-    """Fetches leads for an organization with pagination, ordered by creation date descending."""
     sql = "SELECT * FROM leads WHERE organization_id = %s ORDER BY created_at DESC LIMIT %s OFFSET %s;"
     conn = None; leads_list = []
     try:
         conn = get_connection()
         if not conn: return []
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute(sql, (organization_id, limit, offset))
-            results = cursor.fetchall()
-            for row in results:
-                leads_list.append(dict(row))
+            cursor.execute(sql, (organization_id, limit, offset)); results = cursor.fetchall()
+            for row in results: leads_list.append(dict(row))
     except (Exception, psycopg2.Error) as e:
         logger.error(f"DB Error getting leads for Org {organization_id}: {e}", exc_info=True)
     finally:
         if conn and not getattr(conn, 'closed', True): conn.close()
     return leads_list
 
-# --- IMPLEMENTED ---
 def update_lead_partial(lead_id: int, organization_id: int, updates: Dict[str, Any]) -> Optional[Dict]:
-    """Updates specific fields for a lead. Ensures boolean fields are handled correctly."""
-    # Define allowed fields for update (excluding id, organization_id, email, created_at)
     allowed_fields = {"name", "company", "title", "source", "linkedin_profile", "company_size", "industry", "location", "matched", "reason", "crm_status", "appointment_confirmed"}
-    
     valid_updates = {}
     for key, value in updates.items():
         if key in allowed_fields:
-            if key in ['matched', 'appointment_confirmed']:
-                valid_updates[key] = bool(value) # Ensure boolean
-            else:
-                valid_updates[key] = value
-
+            if key in ['matched', 'appointment_confirmed']: valid_updates[key] = bool(value)
+            else: valid_updates[key] = value
     if not valid_updates:
         logger.warning(f"No valid fields provided for updating lead ID {lead_id}")
-        return get_lead_by_id(lead_id, organization_id) # Return current if no valid updates
+        return get_lead_by_id(lead_id, organization_id)
 
     set_parts = [f"{key} = %({key})s" for key in valid_updates.keys()]
-    set_parts.append("updated_at = timezone('utc', now())") # Assuming you add an updated_at to leads table
+    set_parts.append("updated_at = timezone('utc', now())")
     set_clause = ", ".join(set_parts)
-
     params_for_exec = valid_updates.copy()
     params_for_exec["lead_id"] = lead_id
     params_for_exec["organization_id"] = organization_id
-
-    sql = f"UPDATE leads SET {set_clause} WHERE id = %(lead_id)s AND organization_id = %(organization_id)s;"
-
+    sql = f"UPDATE leads SET {set_clause} WHERE id = %(lead_id)s AND organization_id = %(organization_id)s RETURNING id;"
     conn = None; success = False
     try:
         conn = get_connection()
@@ -473,21 +485,18 @@ def update_lead_partial(lead_id: int, organization_id: int, updates: Dict[str, A
         with conn:
             with conn.cursor() as cursor:
                 cursor.execute(sql, params_for_exec)
-                if cursor.rowcount > 0:
+                if cursor.fetchone(): # Check if RETURNING id returned something
                     success = True
                     logger.info(f"Partially updated lead ID {lead_id} for Org {organization_id}")
                 else:
-                    logger.warning(f"Lead ID {lead_id} not found for Org {organization_id} during partial update.")
+                    logger.warning(f"Lead ID {lead_id} not found for Org {organization_id} during partial update or no change.")
     except (Exception, psycopg2.Error) as e:
         logger.error(f"DB Error partially updating lead ID {lead_id}: {e}", exc_info=True)
     finally:
         if conn and not getattr(conn, 'closed', True): conn.close()
-
     return get_lead_by_id(lead_id, organization_id) if success else None
 
-# --- IMPLEMENTED ---
 def delete_lead(lead_id: int, organization_id: int) -> bool:
-    """Deletes a lead by its ID and organization ID."""
     sql = "DELETE FROM leads WHERE id = %s AND organization_id = %s;"
     conn = None; deleted = False
     try:
@@ -506,26 +515,28 @@ def delete_lead(lead_id: int, organization_id: int) -> bool:
     finally:
         if conn and not getattr(conn, 'closed', True): conn.close()
     return deleted
+
 # ==========================================
-# REFACTORED ICP CRUD OPERATIONS
+# ICP CRUD OPERATIONS
 # ==========================================
 def create_icp(organization_id: int, icp_definition: Dict[str, Any]) -> Optional[Dict]:
-    """Creates a new ICP definition for an organization."""
     conn = None; saved_icp = None; new_id = None
     params = {
-        "organization_id": organization_id,
-        "name": icp_definition.get("name", f"New ICP"),
+        "organization_id": organization_id, "name": icp_definition.get("name", f"New ICP"),
         "title_keywords": json.dumps(icp_definition.get("title_keywords") or []),
         "industry_keywords": json.dumps(icp_definition.get("industry_keywords") or []),
         "company_size_rules": json.dumps(icp_definition.get("company_size_rules") or {}),
         "location_keywords": json.dumps(icp_definition.get("location_keywords") or []),
+        "updated_at": datetime.now(timezone.utc) # Also set on create
     }
-    insert_columns = list(params.keys())
+    insert_columns = [k for k in params.keys() if k != "updated_at"] # updated_at is set by default or explicit
+    insert_columns.append("updated_at") # ensure it's in the insert list
+    
     values_placeholders = ", ".join([f"%({col})s" for col in insert_columns])
     sql = f""" INSERT INTO icps ({", ".join(insert_columns)}) VALUES ({values_placeholders}) RETURNING id; """
     try:
         if not params["name"]: raise ValueError("ICP name cannot be empty")
-        conn = get_connection()
+        conn = get_connection();
         if not conn: return None
         with conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
@@ -545,42 +556,52 @@ def create_icp(organization_id: int, icp_definition: Dict[str, Any]) -> Optional
     return saved_icp
 
 def update_icp(icp_id: int, organization_id: int, icp_definition: Dict[str, Any]) -> Optional[Dict]:
-    """Updates an existing ICP definition."""
-    conn = None; updated_icp = None; success = False
-    params = {
-        "icp_id": icp_id, "organization_id": organization_id, "name": icp_definition.get("name"),
-        "title_keywords": json.dumps(icp_definition.get("title_keywords")),
-        "industry_keywords": json.dumps(icp_definition.get("industry_keywords")),
-        "company_size_rules": json.dumps(icp_definition.get("company_size_rules")),
-        "location_keywords": json.dumps(icp_definition.get("location_keywords")),
-        "updated_at": datetime.now(timezone.utc)
-    }
-    update_fields = {k: v for k, v in params.items() if v is not None and k not in ['icp_id', 'organization_id']}
-    if not update_fields or not params["name"]:
-        logger.warning(f"No valid fields provided for updating ICP ID {icp_id} or name is missing.")
-        return get_icp_by_id(icp_id, organization_id)
+    conn = None; success = False
+    current_icp = get_icp_by_id(icp_id, organization_id)
+    if not current_icp:
+        logger.warning(f"ICP ID {icp_id} not found for Org ID {organization_id} for update.")
+        return None
+
+    update_fields = {}
+    if "name" in icp_definition and icp_definition["name"] is not None:
+        update_fields["name"] = icp_definition["name"]
+    if "title_keywords" in icp_definition: # Allow setting to empty list
+        update_fields["title_keywords"] = json.dumps(icp_definition["title_keywords"])
+    if "industry_keywords" in icp_definition:
+        update_fields["industry_keywords"] = json.dumps(icp_definition["industry_keywords"])
+    if "company_size_rules" in icp_definition:
+        update_fields["company_size_rules"] = json.dumps(icp_definition["company_size_rules"])
+    if "location_keywords" in icp_definition:
+        update_fields["location_keywords"] = json.dumps(icp_definition["location_keywords"])
+
+    if not update_fields:
+        logger.info(f"No fields to update for ICP ID {icp_id}.")
+        return current_icp # Return current if no actual changes
+
+    update_fields["updated_at"] = datetime.now(timezone.utc)
     set_clause_parts = [f"{key} = %({key})s" for key in update_fields.keys()]
     set_clause = ", ".join(set_clause_parts)
-    sql = f""" UPDATE icps SET {set_clause} WHERE id = %(icp_id)s AND organization_id = %(organization_id)s; """
-    params_for_exec = update_fields
+    sql = f""" UPDATE icps SET {set_clause} WHERE id = %(icp_id)s AND organization_id = %(organization_id)s RETURNING id; """
+    
+    params_for_exec = update_fields.copy()
     params_for_exec["icp_id"] = icp_id
     params_for_exec["organization_id"] = organization_id
+    
     try:
         conn = get_connection();
         if not conn: return None
         with conn:
             with conn.cursor() as cursor:
                 cursor.execute(sql, params_for_exec)
-                if cursor.rowcount > 0: success = True; logger.info(f"Updated ICP ID {icp_id} for Org ID {organization_id}")
-                else: logger.warning(f"ICP ID {icp_id} not found for Org ID {organization_id} during update.")
-        if success: updated_icp = get_icp_by_id(icp_id, organization_id)
+                if cursor.fetchone(): success = True; logger.info(f"Updated ICP ID {icp_id} for Org ID {organization_id}")
+                else: logger.warning(f"ICP ID {icp_id} update for Org ID {organization_id} reported no rows affected.")
+        return get_icp_by_id(icp_id, organization_id) if success else current_icp # return new or old on failure
     except (Exception, psycopg2.Error) as e: logger.error(f"DB Error updating ICP ID {icp_id} for Org ID {organization_id}: {e}", exc_info=True)
     finally:
         if conn and not getattr(conn, 'closed', True): conn.close()
-    return updated_icp
+    return current_icp # Fallback
 
 def get_icp_by_id(icp_id: int, organization_id: int) -> Optional[Dict]:
-    """Fetches a specific ICP definition by its ID and organization ID."""
     sql = "SELECT * FROM icps WHERE id = %s AND organization_id = %s;"
     conn = None; icp_data = None
     json_fields_to_parse = ["title_keywords", "industry_keywords", "company_size_rules", "location_keywords"]
@@ -589,14 +610,13 @@ def get_icp_by_id(icp_id: int, organization_id: int) -> Optional[Dict]:
         if not conn: return None
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(sql, (icp_id, organization_id)); result = cursor.fetchone()
-            if result: icp_data = _parse_json_fields(dict(result), json_fields_to_parse, default_value=None)
+            if result: icp_data = _parse_json_fields(dict(result), json_fields_to_parse, default_value=None) # Use default_value=None for potentially null JSON fields
     except (Exception, psycopg2.Error) as e: logger.error(f"DB Error getting ICP ID {icp_id} for Org ID {organization_id}: {e}", exc_info=True)
     finally:
         if conn and not getattr(conn, 'closed', True): conn.close()
     return icp_data
 
 def get_icps_by_organization_id(organization_id: int) -> List[Dict]:
-    """Fetches all ICP definitions for an organization, parsing JSON fields."""
     sql = "SELECT * FROM icps WHERE organization_id = %s ORDER BY name;"
     conn = None; icps_list = []
     json_fields_to_parse = ["title_keywords", "industry_keywords", "company_size_rules", "location_keywords"]
@@ -614,7 +634,6 @@ def get_icps_by_organization_id(organization_id: int) -> List[Dict]:
     return icps_list
 
 def delete_icp(icp_id: int, organization_id: int) -> bool:
-    """Deletes a specific ICP definition."""
     sql = "DELETE FROM icps WHERE id = %s AND organization_id = %s;"
     conn = None; deleted = False
     try:
@@ -635,26 +654,26 @@ def delete_icp(icp_id: int, organization_id: int) -> bool:
 # OFFERING CRUD OPERATIONS (Psycopg2)
 # ==========================================
 def _parse_offering_json_fields(offering_row: Dict) -> Optional[Dict]:
-    """Helper to parse JSON fields from an Offering dictionary row."""
     if not offering_row: return None
     json_fields = ["key_features", "target_pain_points"]
     for field in json_fields:
-        field_value = offering_row.get(field); parsed_value = []
+        field_value = offering_row.get(field); parsed_value = None # Default to None
         if isinstance(field_value, list): parsed_value = field_value
-        elif isinstance(field_value, dict): logger.warning(f"Offering field '{field}' ID {offering_row.get('id')} was dict, expected list."); parsed_value = []
+        elif isinstance(field_value, dict): logger.warning(f"Offering field '{field}' ID {offering_row.get('id')} was dict, expected list or null."); parsed_value = None
         elif isinstance(field_value, str):
-            try: parsed = json.loads(field_value); parsed_value = parsed if isinstance(parsed, list) else []
+            try: parsed = json.loads(field_value); parsed_value = parsed if isinstance(parsed, list) else None
             except json.JSONDecodeError: logger.warning(f"Could not parse JSON for Offering field '{field}' ID {offering_row.get('id')}")
         offering_row[field] = parsed_value
     return offering_row
 
 def create_offering(organization_id: int, offering_data: Dict[str, Any]) -> Optional[Dict]:
-    """Creates a new offering for an organization."""
-    columns = ["organization_id", "name", "description", "key_features", "target_pain_points", "call_to_action", "is_active"]
+    columns = ["organization_id", "name", "description", "key_features", "target_pain_points", "call_to_action", "is_active", "updated_at"]
     params = {
         "organization_id": organization_id, "name": offering_data.get("name"), "description": offering_data.get("description"),
-        "key_features": json.dumps(offering_data.get("key_features") or []), "target_pain_points": json.dumps(offering_data.get("target_pain_points") or []),
-        "call_to_action": offering_data.get("call_to_action"), "is_active": bool(offering_data.get("is_active", True))
+        "key_features": json.dumps(offering_data.get("key_features") or None), # Store null if empty
+        "target_pain_points": json.dumps(offering_data.get("target_pain_points") or None), # Store null if empty
+        "call_to_action": offering_data.get("call_to_action"), "is_active": bool(offering_data.get("is_active", True)),
+        "updated_at": datetime.now(timezone.utc)
     }
     sql = f"INSERT INTO offerings ({', '.join(columns)}) VALUES ({', '.join([f'%({col})s' for col in columns])}) RETURNING id;"
     conn = None; saved_offering = None; offering_id = None
@@ -671,7 +690,7 @@ def create_offering(organization_id: int, offering_data: Dict[str, Any]) -> Opti
                  except psycopg2.IntegrityError as ie:
                       conn.rollback()
                       logger.warning(f"DB Integrity Error creating offering '{params['name']}': {ie} (Likely duplicate name for org)")
-                      return None # Or fetch existing if needed
+                      return None
 
         if offering_id: saved_offering = get_offering_by_id(offering_id, organization_id)
     except ValueError as ve: logger.error(f"Validation error creating offering for Org ID {organization_id}: {ve}")
@@ -681,7 +700,6 @@ def create_offering(organization_id: int, offering_data: Dict[str, Any]) -> Opti
     return saved_offering
 
 def get_offering_by_id(offering_id: int, organization_id: int) -> Optional[Dict]:
-    """Fetches an offering by its ID and organization ID, parsing JSON."""
     sql = "SELECT * FROM offerings WHERE id = %s AND organization_id = %s;"
     conn = None; offering_data = None
     try:
@@ -696,7 +714,6 @@ def get_offering_by_id(offering_id: int, organization_id: int) -> Optional[Dict]
     return offering_data
 
 def get_offerings_by_organization(organization_id: int, active_only: bool = True) -> List[Dict]:
-    """Fetches offerings for an organization, parsing JSON."""
     sql = "SELECT * FROM offerings WHERE organization_id = %s"
     params = [organization_id]
     if active_only: sql += " AND is_active = TRUE"
@@ -706,7 +723,7 @@ def get_offerings_by_organization(organization_id: int, active_only: bool = True
         conn = get_connection();
         if not conn: return []
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute(sql, params); results = cursor.fetchall()
+            cursor.execute(sql, tuple(params)); results = cursor.fetchall()
             for row in results:
                 parsed_row = _parse_offering_json_fields(dict(row))
                 if parsed_row: offerings.append(parsed_row)
@@ -716,44 +733,115 @@ def get_offerings_by_organization(organization_id: int, active_only: bool = True
     return offerings
 
 def update_offering(offering_id: int, organization_id: int, updates: Dict[str, Any]) -> Optional[Dict]:
-    """Updates an existing offering."""
-    logger.warning("Function 'update_offering' is not implemented.")
-    pass
+    current_offering = get_offering_by_id(offering_id, organization_id)
+    if not current_offering:
+        logger.warning(f"Offering ID {offering_id} not found for Org {organization_id} during update.")
+        return None
+
+    update_fields = {}
+    if "name" in updates and updates["name"] is not None:
+        update_fields["name"] = updates["name"]
+    if "description" in updates: # Allow setting to null
+        update_fields["description"] = updates["description"]
+    if "key_features" in updates: # Allow setting to empty or null
+        update_fields["key_features"] = json.dumps(updates["key_features"] or None)
+    if "target_pain_points" in updates:
+        update_fields["target_pain_points"] = json.dumps(updates["target_pain_points"] or None)
+    if "call_to_action" in updates:
+        update_fields["call_to_action"] = updates["call_to_action"]
+    if "is_active" in updates and updates["is_active"] is not None:
+        update_fields["is_active"] = bool(updates["is_active"])
+
+    if not update_fields:
+        logger.info(f"No fields to update for Offering ID {offering_id}.")
+        return current_offering
+
+    update_fields["updated_at"] = datetime.now(timezone.utc)
+    set_clause_parts = [f"{key} = %({key})s" for key in update_fields.keys()]
+    set_clause = ", ".join(set_clause_parts)
+    sql = f""" UPDATE offerings SET {set_clause} WHERE id = %(offering_id)s AND organization_id = %(organization_id)s RETURNING id; """
+    
+    params_for_exec = update_fields.copy()
+    params_for_exec["offering_id"] = offering_id
+    params_for_exec["organization_id"] = organization_id
+
+    conn = None; success = False
+    try:
+        conn = get_connection();
+        if not conn: return current_offering # Return old if no connection
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, params_for_exec)
+                if cursor.fetchone(): success = True; logger.info(f"Updated Offering ID {offering_id} for Org {organization_id}")
+                else: logger.warning(f"Offering ID {offering_id} update for Org {organization_id} reported no rows affected.")
+        return get_offering_by_id(offering_id, organization_id) if success else current_offering
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error updating offering ID {offering_id}: {e}", exc_info=True)
+    finally:
+        if conn and not getattr(conn, 'closed', True): conn.close()
+    return current_offering # Fallback
 
 def delete_offering(offering_id: int, organization_id: int) -> bool:
-    """Deletes an offering."""
-    logger.warning("Function 'delete_offering' is not implemented.")
-    pass
+    sql = "DELETE FROM offerings WHERE id = %s AND organization_id = %s;"
+    conn = None; deleted = False
+    try:
+        conn = get_connection();
+        if not conn: return False
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, (offering_id, organization_id))
+                if cursor.rowcount > 0: deleted = True; logger.info(f"Deleted Offering ID {offering_id} for Org {organization_id}")
+                else: logger.warning(f"Offering ID {offering_id} not found for Org {organization_id} during delete.")
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error deleting offering ID {offering_id}: {e}", exc_info=True)
+    finally:
+        if conn and not getattr(conn, 'closed', True): conn.close()
+    return deleted
 
 
 # ===========================================================
-# CAMPAIGN/STEP/STATUS CRUD (MODIFIED FOR ICP LINK)
+# CAMPAIGN CRUD (MODIFIED FOR AI GENERATION)
 # ===========================================================
-
-# --- Campaign CRUD ---
-def create_campaign(organization_id: int, name: str, description: Optional[str] = None, is_active: bool = True, icp_id: Optional[int] = None) -> Optional[Dict]:
-    """Creates a new campaign, optionally linking an ICP."""
-    sql = "INSERT INTO email_campaigns (organization_id, name, description, is_active, icp_id) VALUES (%s, %s, %s, %s, %s) RETURNING id"
-    params = (organization_id, name, description, is_active, icp_id)
+def create_campaign(organization_id: int, name: str, description: Optional[str] = None,
+                    is_active: bool = True, icp_id: Optional[int] = None,
+                    offering_id: Optional[int] = None, ai_status: str = "pending") -> Optional[Dict]:
+    """Creates a new campaign, linking ICP and Offering, and setting AI status."""
+    sql = """
+        INSERT INTO email_campaigns
+        (organization_id, name, description, is_active, icp_id, offering_id, ai_status, updated_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, timezone('utc', now())) RETURNING id
+    """
+    params = (organization_id, name, description, is_active, icp_id, offering_id, ai_status)
     conn = None; campaign_data = None; new_id = None
     try:
         conn = get_connection();
         if not conn: return None
-        with conn:
+        with conn: # Auto-commit
             with conn.cursor() as cursor:
                 cursor.execute(sql, params); result = cursor.fetchone()
                 if result: new_id = result[0]
-        if new_id: logger.info(f"Created campaign '{name}' (ID: {new_id}, ICP ID: {icp_id}) for Org {organization_id}"); campaign_data = get_campaign_by_id(new_id, organization_id)
-        else: logger.error(f"Campaign creation for '{name}' did not return ID.")
-    except psycopg2.IntegrityError as ie: logger.warning(f"DB Integrity Error creating campaign '{name}' for Org {organization_id}: {ie} (Bad FK?)")
-    except (Exception, psycopg2.Error) as e: logger.error(f"DB Error creating campaign for Org {organization_id}: {e}")
+        if new_id:
+            logger.info(f"Created campaign '{name}' (ID: {new_id}, ICP ID: {icp_id}, Offering ID: {offering_id}, AI Status: {ai_status}) for Org {organization_id}")
+            campaign_data = get_campaign_by_id(new_id, organization_id) # Fetch full data including joins
+        else:
+            logger.error(f"Campaign creation for '{name}' did not return ID.")
+    except psycopg2.IntegrityError as ie:
+        logger.warning(f"DB Integrity Error creating campaign '{name}' for Org {organization_id}: {ie} (Bad FK or unique constraint?)")
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error creating campaign for Org {organization_id}: {e}", exc_info=True)
     finally:
         if conn and not getattr(conn, 'closed', True): conn.close()
     return campaign_data
 
 def get_campaign_by_id(campaign_id: int, organization_id: int) -> Optional[Dict]:
-    """Fetches a specific campaign, joining ICP name."""
-    sql = "SELECT ec.*, i.name as icp_name FROM email_campaigns ec LEFT JOIN icps i ON ec.icp_id = i.id WHERE ec.id = %s AND ec.organization_id = %s"
+    """Fetches a specific campaign, joining ICP and Offering names."""
+    sql = """
+        SELECT ec.*, i.name as icp_name, o.name as offering_name
+        FROM email_campaigns ec
+        LEFT JOIN icps i ON ec.icp_id = i.id
+        LEFT JOIN offerings o ON ec.offering_id = o.id
+        WHERE ec.id = %s AND ec.organization_id = %s
+    """
     conn = None; campaign = None
     try:
         conn = get_connection();
@@ -761,36 +849,148 @@ def get_campaign_by_id(campaign_id: int, organization_id: int) -> Optional[Dict]
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(sql, (campaign_id, organization_id)); result = cursor.fetchone()
             if result: campaign = dict(result)
-    except (Exception, psycopg2.Error) as e: logger.error(f"DB Error getting campaign ID {campaign_id} for Org {organization_id}: {e}")
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error getting campaign ID {campaign_id} for Org {organization_id}: {e}", exc_info=True)
     finally:
         if conn and not getattr(conn, 'closed', True): conn.close()
     return campaign
 
-def get_campaigns_by_organization(organization_id: int, active_only: bool = True) -> List[Dict]:
-    """Fetches campaigns for an organization, joining ICP name."""
-    sql = "SELECT ec.*, i.name as icp_name FROM email_campaigns ec LEFT JOIN icps i ON ec.icp_id = i.id WHERE ec.organization_id = %s"
+def get_campaigns_by_organization(organization_id: int, active_only: Optional[bool] = None) -> List[Dict]:
+    """Fetches campaigns for an organization, joining ICP and Offering names."""
+    sql_base = """
+        SELECT ec.*, i.name as icp_name, o.name as offering_name
+        FROM email_campaigns ec
+        LEFT JOIN icps i ON ec.icp_id = i.id
+        LEFT JOIN offerings o ON ec.offering_id = o.id
+        WHERE ec.organization_id = %s
+    """
     params = [organization_id]
-    if active_only: sql += " AND ec.is_active = TRUE"
-    sql += " ORDER BY ec.name"
+    if active_only is not None: # Allow filtering by active status (True or False)
+        sql_base += " AND ec.is_active = %s"
+        params.append(active_only)
+    sql_final = sql_base + " ORDER BY ec.name"
+
     conn = None; campaigns = []
     try:
         conn = get_connection();
         if not conn: return []
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute(sql, params); results = cursor.fetchall()
+            cursor.execute(sql_final, tuple(params)); results = cursor.fetchall()
             for row in results: campaigns.append(dict(row))
-    except (Exception, psycopg2.Error) as e: logger.error(f"DB Error getting campaigns for Org {organization_id}: {e}")
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error getting campaigns for Org {organization_id}: {e}", exc_info=True)
     finally:
         if conn and not getattr(conn, 'closed', True): conn.close()
     return campaigns
 
+def update_campaign(campaign_id: int, organization_id: int, updates: Dict[str, Any]) -> Optional[Dict]:
+    """Updates a campaign's basic info, ICP, or Offering links."""
+    current_campaign = get_campaign_by_id(campaign_id, organization_id)
+    if not current_campaign:
+        logger.warning(f"Campaign ID {campaign_id} not found for Org {organization_id} for update.")
+        return None
+
+    allowed_fields = {"name", "description", "is_active", "icp_id", "offering_id", "ai_status"}
+    update_fields = {}
+
+    for field in allowed_fields:
+        if field in updates: # Check if key exists in updates
+            # Special handling for icp_id and offering_id to allow unsetting (setting to None)
+            if field in ["icp_id", "offering_id"] and updates[field] is None:
+                update_fields[field] = None
+            elif updates[field] is not None: # For other fields, only update if not None
+                 update_fields[field] = updates[field]
+            # If updates[field] is None and it's not icp_id/offering_id, we don't add it to update_fields
+            # to avoid unintentionally nullifying fields like name or description.
+            # However, is_active should be settable to False.
+            elif field == "is_active" and updates[field] is False:
+                update_fields[field] = False
+
+
+    if not update_fields:
+        logger.info(f"No valid fields to update for Campaign ID {campaign_id}.")
+        return current_campaign
+
+    update_fields["updated_at"] = datetime.now(timezone.utc)
+    set_clause_parts = [f"{key} = %({key})s" for key in update_fields.keys()]
+    set_clause = ", ".join(set_clause_parts)
+    sql = f""" UPDATE email_campaigns SET {set_clause} WHERE id = %(campaign_id)s AND organization_id = %(organization_id)s RETURNING id; """
+    
+    params_for_exec = update_fields.copy()
+    params_for_exec["campaign_id"] = campaign_id
+    params_for_exec["organization_id"] = organization_id
+
+    conn = None; success = False
+    try:
+        conn = get_connection()
+        if not conn: return current_campaign
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, params_for_exec)
+                if cursor.fetchone(): success = True; logger.info(f"Updated Campaign ID {campaign_id} for Org {organization_id}")
+                else: logger.warning(f"Campaign ID {campaign_id} update for Org {organization_id} reported no rows affected.")
+        return get_campaign_by_id(campaign_id, organization_id) if success else current_campaign
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error updating campaign ID {campaign_id}: {e}", exc_info=True)
+    finally:
+        if conn and not getattr(conn, 'closed', True): conn.close()
+    return current_campaign # Fallback
+
+def update_campaign_ai_status(campaign_id: int, organization_id: int, ai_status: str) -> Optional[Dict]:
+    """Specifically updates the AI status of a campaign."""
+    sql = """
+        UPDATE email_campaigns
+        SET ai_status = %s, updated_at = timezone('utc', now())
+        WHERE id = %s AND organization_id = %s
+        RETURNING id
+    """
+    conn = None; success = False
+    try:
+        conn = get_connection()
+        if not conn: return None
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, (ai_status, campaign_id, organization_id))
+                if cursor.fetchone(): success = True; logger.info(f"Updated AI status to '{ai_status}' for Campaign ID {campaign_id}")
+                else: logger.warning(f"Campaign ID {campaign_id} not found for Org {organization_id} when updating AI status.")
+        return get_campaign_by_id(campaign_id, organization_id) if success else None
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error updating AI status for campaign ID {campaign_id}: {e}", exc_info=True)
+    finally:
+        if conn and not getattr(conn, 'closed', True): conn.close()
+    return None
+
+def delete_campaign(campaign_id: int, organization_id: int) -> bool:
+    """Deletes a campaign. Steps are deleted via CASCADE."""
+    sql = "DELETE FROM email_campaigns WHERE id = %s AND organization_id = %s;"
+    conn = None; deleted = False
+    try:
+        conn = get_connection();
+        if not conn: return False
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, (campaign_id, organization_id))
+                if cursor.rowcount > 0: deleted = True; logger.info(f"Deleted Campaign ID {campaign_id} for Org {organization_id}")
+                else: logger.warning(f"Campaign ID {campaign_id} not found for Org {organization_id} during delete.")
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error deleting campaign ID {campaign_id}: {e}", exc_info=True)
+    finally:
+        if conn and not getattr(conn, 'closed', True): conn.close()
+    return deleted
+
 # ===========================================================
-# CAMPAIGN STEP CRUD (Corrected for PostgreSQL)
+# CAMPAIGN STEP CRUD
 # ===========================================================
-def create_campaign_step(campaign_id: int, organization_id: int, step_number: int, delay_days: int, subject: Optional[str], body: Optional[str], is_ai: bool = False, follow_up_angle: Optional[str] = None) -> Optional[Dict]:
-    """Creates a new step within a campaign."""
-    sql = """ INSERT INTO campaign_steps (campaign_id, organization_id, step_number, delay_days, subject_template, body_template, is_ai_crafted, follow_up_angle) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id; """
-    params = (campaign_id, organization_id, step_number, delay_days, subject, body, is_ai, follow_up_angle)
+def create_campaign_step(campaign_id: int, organization_id: int, step_number: int, delay_days: int,
+                         subject_template: Optional[str], body_template: Optional[str],
+                         is_ai_crafted: bool = False, follow_up_angle: Optional[str] = None) -> Optional[Dict]:
+    """Creates a new step within a campaign, including follow_up_angle."""
+    sql = """
+        INSERT INTO campaign_steps
+        (campaign_id, organization_id, step_number, delay_days, subject_template, body_template, is_ai_crafted, follow_up_angle, updated_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, timezone('utc', now())) RETURNING id;
+    """
+    params = (campaign_id, organization_id, step_number, delay_days, subject_template, body_template, is_ai_crafted, follow_up_angle)
     conn = None; new_id = None; step_data = None
     try:
         conn = get_connection();
@@ -801,10 +1001,14 @@ def create_campaign_step(campaign_id: int, organization_id: int, step_number: in
                        cursor.execute(sql, params); result = cursor.fetchone()
                        if result: new_id = result[0]
                   except psycopg2.IntegrityError as ie:
-                       conn.rollback(); logger.error(f"DB Integrity Error creating step {step_number} for Camp {campaign_id}: {ie}"); return None
-        if new_id: logger.info(f"Created step {step_number} (ID: {new_id}) for Campaign {campaign_id}, Org {organization_id}"); step_data = get_campaign_step_by_id(new_id, organization_id)
-        else: logger.error(f"Step creation for Camp {campaign_id}, Step {step_number} did not return ID.")
-    except (Exception, psycopg2.Error) as e: logger.error(f"DB Error creating step {step_number} for Camp {campaign_id}: {e}", exc_info=True)
+                       conn.rollback(); logger.error(f"DB Integrity Error creating step {step_number} for Camp {campaign_id}: {ie} (Likely duplicate step_number or bad FK)"); return None
+        if new_id:
+            logger.info(f"Created step {step_number} (ID: {new_id}) for Campaign {campaign_id}, Org {organization_id}")
+            step_data = get_campaign_step_by_id(new_id, organization_id)
+        else:
+            logger.error(f"Step creation for Camp {campaign_id}, Step {step_number} did not return ID.")
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error creating step {step_number} for Camp {campaign_id}: {e}", exc_info=True)
     finally:
         if conn and not getattr(conn, 'closed', True): conn.close()
     return step_data
@@ -819,7 +1023,8 @@ def get_campaign_step_by_id(step_id: int, organization_id: int) -> Optional[Dict
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(sql, (step_id, organization_id)); result = cursor.fetchone()
             if result: step = dict(result)
-    except (Exception, psycopg2.Error) as e: logger.error(f"DB Error getting step ID {step_id} for Org {organization_id}: {e}")
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error getting step ID {step_id} for Org {organization_id}: {e}", exc_info=True)
     finally:
         if conn and not getattr(conn, 'closed', True): conn.close()
     return step
@@ -834,7 +1039,8 @@ def get_steps_for_campaign(campaign_id: int, organization_id: int) -> List[Dict]
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(sql, (campaign_id, organization_id)); results = cursor.fetchall()
             for row in results: steps.append(dict(row))
-    except (Exception, psycopg2.Error) as e: logger.error(f"DB Error getting steps for Camp {campaign_id}, Org {organization_id}: {e}")
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error getting steps for Camp {campaign_id}, Org {organization_id}: {e}", exc_info=True)
     finally:
         if conn and not getattr(conn, 'closed', True): conn.close()
     return steps
@@ -850,26 +1056,79 @@ def get_next_campaign_step(campaign_id: int, organization_id: int, current_step_
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(sql, (campaign_id, organization_id, next_step_number)); result = cursor.fetchone()
             if result: step_data = dict(result)
-    except (Exception, psycopg2.Error) as e: logger.error(f"DB Error getting next step ({next_step_number}) for Camp {campaign_id}: {e}")
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error getting next step ({next_step_number}) for Camp {campaign_id}: {e}", exc_info=True)
     finally:
         if conn and not getattr(conn, 'closed', True): conn.close()
     return step_data
 
 def update_campaign_step(step_id: int, organization_id: int, updates: Dict[str, Any]) -> Optional[Dict]:
-     logger.warning(f"Function 'update_campaign_step' (ID: {step_id}) is not implemented.")
-     pass # IMPLEMENT ME
+    current_step = get_campaign_step_by_id(step_id, organization_id)
+    if not current_step:
+        logger.warning(f"Campaign Step ID {step_id} not found for Org {organization_id} for update.")
+        return None
+
+    allowed_fields = {"step_number", "delay_days", "subject_template", "body_template", "is_ai_crafted", "follow_up_angle"}
+    update_fields = {}
+    for field in allowed_fields:
+        if field in updates: # Allow explicitly setting fields to None or False
+            update_fields[field] = updates[field]
+    
+    if not update_fields:
+        logger.info(f"No valid fields to update for Campaign Step ID {step_id}.")
+        return current_step
+
+    update_fields["updated_at"] = datetime.now(timezone.utc)
+    set_clause_parts = [f"{key} = %({key})s" for key in update_fields.keys()]
+    set_clause = ", ".join(set_clause_parts)
+    sql = f""" UPDATE campaign_steps SET {set_clause} WHERE id = %(step_id)s AND organization_id = %(organization_id)s RETURNING id; """
+    
+    params_for_exec = update_fields.copy()
+    params_for_exec["step_id"] = step_id
+    params_for_exec["organization_id"] = organization_id
+
+    conn = None; success = False
+    try:
+        conn = get_connection()
+        if not conn: return current_step
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, params_for_exec)
+                if cursor.fetchone(): success = True; logger.info(f"Updated Campaign Step ID {step_id} for Org {organization_id}")
+                else: logger.warning(f"Campaign Step ID {step_id} update for Org {organization_id} reported no rows affected.")
+        return get_campaign_step_by_id(step_id, organization_id) if success else current_step
+    except psycopg2.IntegrityError as ie:
+        logger.error(f"DB Integrity Error updating step {step_id}: {ie} (Likely duplicate step_number for campaign)")
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error updating campaign step ID {step_id}: {e}", exc_info=True)
+    finally:
+        if conn and not getattr(conn, 'closed', True): conn.close()
+    return current_step # Fallback
+
 
 def delete_campaign_step(step_id: int, organization_id: int) -> bool:
-     logger.warning(f"Function 'delete_campaign_step' (ID: {step_id}) is not implemented.")
-     pass # IMPLEMENT ME
+    sql = "DELETE FROM campaign_steps WHERE id = %s AND organization_id = %s;"
+    conn = None; deleted = False
+    try:
+        conn = get_connection();
+        if not conn: return False
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, (step_id, organization_id))
+                if cursor.rowcount > 0: deleted = True; logger.info(f"Deleted Campaign Step ID {step_id} for Org {organization_id}")
+                else: logger.warning(f"Campaign Step ID {step_id} not found for Org {organization_id} during delete.")
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error deleting campaign step ID {step_id}: {e}", exc_info=True)
+    finally:
+        if conn and not getattr(conn, 'closed', True): conn.close()
+    return deleted
 
 
 # ===========================================================
-# LEAD CAMPAIGN STATUS CRUD (Corrected for PostgreSQL)
+# LEAD CAMPAIGN STATUS CRUD
 # ===========================================================
 def enroll_lead_in_campaign(lead_id: int, campaign_id: int, organization_id: int) -> Optional[Dict]:
-    """Enrolls a lead into a campaign by creating a status record."""
-    sql = """INSERT INTO lead_campaign_status (lead_id, campaign_id, organization_id, status, current_step_number) VALUES (%s, %s, %s, 'active', 0) RETURNING id"""
+    sql = """INSERT INTO lead_campaign_status (lead_id, campaign_id, organization_id, status, current_step_number, updated_at) VALUES (%s, %s, %s, 'active', 0, timezone('utc', now())) RETURNING id"""
     params = (lead_id, campaign_id, organization_id)
     conn = None; status_data = None; status_id = None
     try:
@@ -881,26 +1140,33 @@ def enroll_lead_in_campaign(lead_id: int, campaign_id: int, organization_id: int
                     cursor.execute(sql, params); result = cursor.fetchone()
                     if result: status_id = result[0]
                 except psycopg2.IntegrityError as ie:
-                    conn.rollback(); logger.warning(f"DB Integrity Error enrolling lead {lead_id} in camp {campaign_id}: {ie}"); return get_lead_campaign_status(lead_id, organization_id)
-        if status_id: logger.info(f"Enrolled Lead ID {lead_id} in Campaign ID {campaign_id} (Status ID: {status_id})"); status_data = get_lead_campaign_status_by_id(status_id, organization_id)
-        else: logger.error(f"Lead enrollment for lead {lead_id}, camp {campaign_id} did not return ID.")
-    except (Exception, psycopg2.Error) as e: logger.error(f"DB Error enrolling lead {lead_id} in camp {campaign_id}: {e}")
+                    conn.rollback(); logger.warning(f"DB Integrity Error enrolling lead {lead_id} in camp {campaign_id}: {ie} (lead already in a campaign due to UNIQUE(lead_id) or bad FK?)");
+                    return get_lead_campaign_status(lead_id, organization_id) # Return existing if unique constraint hit
+        if status_id:
+            logger.info(f"Enrolled Lead ID {lead_id} in Campaign ID {campaign_id} (Status ID: {status_id})")
+            status_data = get_lead_campaign_status_by_id(status_id, organization_id)
+        else:
+            logger.error(f"Lead enrollment for lead {lead_id}, camp {campaign_id} did not return ID and no integrity error caught.")
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error enrolling lead {lead_id} in camp {campaign_id}: {e}", exc_info=True)
     finally:
         if conn and not getattr(conn, 'closed', True): conn.close()
     return status_data
 
 def update_lead_campaign_status(status_id: int, organization_id: int, updates: Dict[str, Any]) -> Optional[Dict]:
-    """Updates the status record for a lead in a campaign."""
     allowed_fields = {"current_step_number", "status", "last_email_sent_at", "next_email_due_at", "last_response_type", "last_response_at", "error_message"}
-    valid_updates = {k: v for k, v in updates.items() if k in allowed_fields}
-    if not valid_updates: logger.warning(f"No valid fields provided for updating lead status ID {status_id}"); return get_lead_campaign_status_by_id(status_id, organization_id)
+    valid_updates = {k: v for k, v in updates.items() if k in allowed_fields} # Only update allowed fields
+    if not valid_updates:
+        logger.warning(f"No valid fields provided for updating lead status ID {status_id}")
+        return get_lead_campaign_status_by_id(status_id, organization_id)
+
     set_parts = [f"{key} = %({key})s" for key in valid_updates.keys()]
     set_parts.append("updated_at = timezone('utc', now())")
     set_clause = ", ".join(set_parts)
     params = valid_updates.copy()
     params["status_id"] = status_id
     params["organization_id"] = organization_id
-    sql = f"UPDATE lead_campaign_status SET {set_clause} WHERE id = %(status_id)s AND organization_id = %(organization_id)s"
+    sql = f"UPDATE lead_campaign_status SET {set_clause} WHERE id = %(status_id)s AND organization_id = %(organization_id)s RETURNING id"
     conn = None; success = False
     try:
         conn = get_connection();
@@ -908,35 +1174,45 @@ def update_lead_campaign_status(status_id: int, organization_id: int, updates: D
         with conn:
             with conn.cursor() as cursor:
                 cursor.execute(sql, params)
-                if cursor.rowcount > 0: success = True; logger.debug(f"Updated lead campaign status ID {status_id}")
-                else: logger.warning(f"Lead campaign status ID {status_id} not found for Org {organization_id} during update."); success = False
-    except (Exception, psycopg2.Error) as e: logger.error(f"DB Error updating lead status ID {status_id}: {e}"); success = False
+                if cursor.fetchone(): success = True; logger.debug(f"Updated lead campaign status ID {status_id}")
+                else: logger.warning(f"Lead campaign status ID {status_id} not found for Org {organization_id} during update or no change.");
+        return get_lead_campaign_status_by_id(status_id, organization_id) if success else None
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error updating lead status ID {status_id}: {e}", exc_info=True)
     finally:
         if conn and not getattr(conn, 'closed', True): conn.close()
-    return get_lead_campaign_status_by_id(status_id, organization_id) if success else None
+    return None # Fallback
 
 def get_active_leads_due_for_step(organization_id: Optional[int] = None) -> List[Dict]:
-    """Fetches active leads potentially due for the next step."""
-    logger.debug(f"Fetching active leads {f'for Org {organization_id}' if organization_id else 'across all orgs'}.")
     leads_due = []; conn = None
-    sql = """ SELECT lcs.*, c.name as campaign_name, l.email as lead_email FROM lead_campaign_status lcs JOIN email_campaigns c ON lcs.campaign_id = c.id JOIN leads l ON lcs.lead_id = l.id WHERE lcs.status = 'active' """
+    sql = """
+        SELECT lcs.*, c.name as campaign_name, l.email as lead_email, l.name as lead_name
+        FROM lead_campaign_status lcs
+        JOIN email_campaigns c ON lcs.campaign_id = c.id
+        JOIN leads l ON lcs.lead_id = l.id
+        WHERE lcs.status = 'active'
+        AND (lcs.next_email_due_at <= timezone('utc', now()) OR lcs.next_email_due_at IS NULL) -- Due now or never set (for first step)
+    """
     params = []
-    if organization_id is not None: sql += " AND lcs.organization_id = %s"; params.append(organization_id)
-    sql += " ORDER BY lcs.organization_id, lcs.next_email_due_at ASC NULLS FIRST, lcs.last_email_sent_at ASC NULLS FIRST"
+    if organization_id is not None:
+        sql += " AND lcs.organization_id = %s"
+        params.append(organization_id)
+    sql += " ORDER BY lcs.organization_id, lcs.next_email_due_at ASC NULLS FIRST, lcs.created_at ASC" # Prioritize older enrollments if due time is same or null
+
     try:
         conn = get_connection();
         if not conn: return []
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute(sql, params); results = cursor.fetchall()
+            cursor.execute(sql, tuple(params)); results = cursor.fetchall()
             if results: leads_due = [dict(row) for row in results]
-            logger.debug(f"DB: Found {len(leads_due)} total active leads matching initial criteria {f'for Org {organization_id}' if organization_id else ''}.")
-    except (Exception, psycopg2.Error) as e: logger.error(f"DB Error getting active leads{f' for Org {organization_id}' if organization_id else ''}: {e}")
+            logger.debug(f"DB: Found {len(leads_due)} active leads due for step {f'for Org {organization_id}' if organization_id else ''}.")
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error getting active leads due{f' for Org {organization_id}' if organization_id else ''}: {e}", exc_info=True)
     finally:
         if conn and not getattr(conn, 'closed', True): conn.close()
     return leads_due
 
 def get_lead_campaign_status_by_id(status_id: int, organization_id: int) -> Optional[Dict]:
-    """Fetches a specific lead campaign status record by its ID."""
     sql = "SELECT * FROM lead_campaign_status WHERE id = %s AND organization_id = %s"
     conn = None; status_data = None
     try:
@@ -945,13 +1221,14 @@ def get_lead_campaign_status_by_id(status_id: int, organization_id: int) -> Opti
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(sql, (status_id, organization_id)); result = cursor.fetchone()
             if result: status_data = dict(result)
-    except (Exception, psycopg2.Error) as e: logger.error(f"DB Error getting lead status ID {status_id} for Org {organization_id}: {e}")
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error getting lead status ID {status_id} for Org {organization_id}: {e}", exc_info=True)
     finally:
         if conn and not getattr(conn, 'closed', True): conn.close()
     return status_data
 
 def get_lead_campaign_status(lead_id: int, organization_id: int) -> Optional[Dict]:
-    """Fetches the campaign status for a specific lead."""
+    # Assuming a lead can only be in one campaign at a time due to UNIQUE (lead_id)
     sql = "SELECT * FROM lead_campaign_status WHERE lead_id = %s AND organization_id = %s"
     conn = None; status_data = None
     try:
@@ -960,7 +1237,8 @@ def get_lead_campaign_status(lead_id: int, organization_id: int) -> Optional[Dic
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(sql, (lead_id, organization_id)); result = cursor.fetchone()
             if result: status_data = dict(result)
-    except (Exception, psycopg2.Error) as e: logger.error(f"DB Error getting campaign status for lead {lead_id}, Org {organization_id}: {e}")
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error getting campaign status for lead {lead_id}, Org {organization_id}: {e}", exc_info=True)
     finally:
         if conn and not getattr(conn, 'closed', True): conn.close()
     return status_data
@@ -969,7 +1247,6 @@ def get_lead_campaign_status(lead_id: int, organization_id: int) -> Optional[Dic
 # ORGANIZATION EMAIL SETTINGS CRUD (Psycopg2)
 # ==========================================
 def save_org_email_settings(organization_id: int, settings_data: Dict[str, Any]) -> Optional[Dict]:
-    """Saves or updates email settings for an organization, 'encrypting' sensitive fields."""
     encrypted_password = _encrypt_data(settings_data.get("smtp_password"))
     encrypted_api_key = _encrypt_data(settings_data.get("api_key"))
     encrypted_access_token = _encrypt_data(settings_data.get("access_token"))
@@ -988,22 +1265,27 @@ def save_org_email_settings(organization_id: int, settings_data: Dict[str, Any])
     if params["smtp_port"] is not None:
         try: params["smtp_port"] = int(params["smtp_port"])
         except (ValueError, TypeError): raise ValueError("SMTP port must be a valid integer.")
-    insert_cols_str = ", ".join(columns)
-    values_placeholders = ", ".join([f"%({col})s" for col in columns])
+
+    insert_cols_list = columns + ["updated_at"]
+    insert_cols_str = ", ".join(insert_cols_list)
+    values_placeholders = ", ".join([f"%({col})s" for col in insert_cols_list])
+
+    # For ON CONFLICT, exclude organization_id from SET, and ensure updated_at is also set
     update_cols = [f"{col} = EXCLUDED.{col}" for col in columns if col != 'organization_id']
-    update_cols.append("updated_at = %(updated_at)s")
+    update_cols.append("updated_at = EXCLUDED.updated_at") # Use EXCLUDED.updated_at from values
     update_clause = ", ".join(update_cols)
+
     sql = f""" INSERT INTO organization_email_settings ({insert_cols_str}) VALUES ({values_placeholders}) ON CONFLICT (organization_id) DO UPDATE SET {update_clause} RETURNING id; """
-    conn = None; saved_settings = None; returned_id = None
+    conn = None; saved_settings = None
     try:
         conn = get_connection();
         if not conn: return None
         with conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute(sql, params); returned_id_row = cursor.fetchone()
-                if returned_id_row and 'id' in returned_id_row: returned_id = returned_id_row['id']; logger.info(f"Saved/Updated Email Settings for Org ID: {organization_id}")
+                if returned_id_row and 'id' in returned_id_row: logger.info(f"Saved/Updated Email Settings for Org ID: {organization_id}")
                 else: logger.warning(f"Email settings upsert for Org {organization_id} did not return ID.")
-        saved_settings = get_org_email_settings_from_db(organization_id)
+        saved_settings = get_org_email_settings_from_db(organization_id) # Fetch fresh after commit
     except ValueError as ve: logger.error(f"Validation Error saving email settings for Org {organization_id}: {ve}")
     except (Exception, psycopg2.Error) as e: logger.error(f"DB Error saving email settings for Org {organization_id}: {e}", exc_info=True)
     finally:
@@ -1011,22 +1293,21 @@ def save_org_email_settings(organization_id: int, settings_data: Dict[str, Any])
     return saved_settings
 
 def get_org_email_settings_from_db(organization_id: int) -> Optional[Dict]:
-    """Fetches email settings for an organization, 'decrypting' sensitive fields."""
     sql = "SELECT * FROM organization_email_settings WHERE organization_id = %s"
     conn = None; settings_data = None
     try:
         conn = get_connection();
         if not conn: return None
-        with conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute(sql, (organization_id,)); result = cursor.fetchone()
-                if result:
-                    settings_data = dict(result)
-                    settings_data["smtp_password"] = _decrypt_data(settings_data.pop("encrypted_smtp_password", None))
-                    settings_data["api_key"] = _decrypt_data(settings_data.pop("encrypted_api_key", None))
-                    settings_data["access_token"] = _decrypt_data(settings_data.pop("encrypted_access_token", None))
-                    settings_data["refresh_token"] = _decrypt_data(settings_data.pop("encrypted_refresh_token", None))
-    except (Exception, psycopg2.Error) as e: logger.error(f"DB Error getting email settings for Org {organization_id}: {e}")
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor: # Changed to use conn.cursor within with conn
+            cursor.execute(sql, (organization_id,)); result = cursor.fetchone()
+            if result:
+                settings_data = dict(result)
+                settings_data["smtp_password"] = _decrypt_data(settings_data.pop("encrypted_smtp_password", None))
+                settings_data["api_key"] = _decrypt_data(settings_data.pop("encrypted_api_key", None))
+                settings_data["access_token"] = _decrypt_data(settings_data.pop("encrypted_access_token", None))
+                settings_data["refresh_token"] = _decrypt_data(settings_data.pop("encrypted_refresh_token", None))
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error getting email settings for Org {organization_id}: {e}", exc_info=True)
     finally:
         if conn and not getattr(conn, 'closed', True): conn.close()
     return settings_data
@@ -1036,9 +1317,23 @@ def get_org_email_settings_from_db(organization_id: int) -> Optional[Dict]:
 # ==========================================
 if __name__ == "__main__":
     logger.info("Running database.py directly, attempting initialization...")
-    if settings:
+    if settings and settings.DATABASE_URL and not settings.DATABASE_URL == "ENV_VAR_DATABASE_URL_NOT_SET":
         initialize_db()
+        # Example usage (optional, for testing)
+        # test_org = create_organization("Test AI Corp")
+        # if test_org:
+        #     logger.info(f"Test org: {test_org}")
+        #     test_offering = create_offering(test_org['id'], {"name": "AI Product X", "description": "Solves all problems"})
+        #     if test_offering:
+        #         logger.info(f"Test offering: {test_offering}")
+        #         test_campaign = create_campaign(test_org['id'], "AI Test Campaign", offering_id=test_offering['id'])
+        #         if test_campaign:
+        #             logger.info(f"Test campaign created: {test_campaign}")
+        #             create_campaign_step(test_campaign['id'], test_org['id'], 1, 2, "Subject 1", "Body 1", follow_up_angle="Intro")
+        #             create_campaign_step(test_campaign['id'], test_org['id'], 2, 3, "Subject 2", "Body 2", follow_up_angle="Value Prop")
+        #             steps = get_steps_for_campaign(test_campaign['id'], test_org['id'])
+        #             logger.info(f"Campaign steps: {steps}")
+
         logger.info("Direct execution initialization attempt finished.")
     else:
-        logger.error("Cannot initialize database directly because settings (DATABASE_URL) are not configured.")
-
+        logger.error("Cannot initialize database directly because settings (DATABASE_URL) are not configured or invalid.")
