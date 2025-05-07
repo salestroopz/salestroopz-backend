@@ -610,20 +610,7 @@ else:
     # --- END Bulk CSV Upload Section ---
 
 
-    # --- Load Data (for lead list display) ---
-    if not st.session_state.leads_loaded:
-        # ... (keep existing data loading logic for the lead list) ...
-        with st.spinner("Loading leads..."): # This part remains
-            fetched_leads = list_leads(auth_token)
-            if fetched_leads is not None:
-                st.session_state.leads_list = fetched_leads
-            else:
-                st.session_state.leads_list = []
-            st.session_state.leads_loaded = True
-
-    lead_list = st.session_state.get('leads_list', [])
-
-            # --- Load Data (for lead list display) ---
+             # --- Load Data (for lead list display) ---
     if not st.session_state.leads_loaded:
         # ... (keep existing data loading logic for the lead list) ...
         with st.spinner("Loading leads..."): # This part remains
@@ -635,8 +622,7 @@ else:
             st.session_state.leads_loaded = True
 
     lead_list = st.session_state.get('leads_list', [])  
-
-        
+       
         # --- Actions and Display ---
         st.markdown("---")
         col_header_lead1, col_header_lead2 = st.columns([3,1])
