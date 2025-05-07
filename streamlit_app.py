@@ -638,7 +638,7 @@ else:
 
         
         # --- Actions and Display ---
-        st.markdown("---")
+    st.markdown("---")
         col_header_lead1, col_header_lead2 = st.columns([3,1])
         with col_header_lead1:
             st.markdown("##### All Leads")
