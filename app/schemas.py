@@ -273,33 +273,72 @@ class CampaignStepResponse(CampaignStepInput):
     class Config:
         from_attributes = True
 
+class CampaignStepBase(BaseModel): # Added a base for consistency
+    step_number: int = Field(..., gt=0, description="Order of the step (1, 2, ...)")
+    delay_days: int = Field(..., ge=0, description="Days to wait after previous step/enrollment")
+    subject_template: Optional[str] = Field(None, description="Subject line template (use {{placeholders}})")
+    body_template: Optional[str] = Field(None, description="Email body template (use {{placeholders}})")
+    follow_up_angle: Optional[str] = Field(None, description="Hint for AI personalization / Angle of the step")
+
+class CampaignStepInput(CampaignStepBase): # This will primarily be used by the AI agent
+    # is_ai_crafted: bool = Field(True, description="Indicates if the step was crafted by AI") # Agent sets this to True
+    pass
+
+class CampaignStepResponse(CampaignStepBase):
+    """Response model for a campaign step, includes DB ID."""
+    id: int
+    campaign_id: int
+    organization_id: int # Good to have for context if ever needed directly
+    is_ai_crafted: bool = Field(False, description="True if AI generated content for this step") # This comes from DB
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True # Replaces orm_mode in Pydantic v2
+
 # --- Campaign Schemas ---
-class CampaignInput(BaseModel):
-    """Input for creating or updating a campaign definition."""
+class CampaignInput(BaseModel): # For POST /campaigns/
+    """Input for creating a campaign definition. Steps are AI-generated."""
     name: str = Field(..., min_length=1, examples=["Q3 Fintech Outreach"])
     description: Optional[str] = Field(None, examples=["Campaign targeting Fintech CTOs..."])
-    is_active: bool = Field(True)
-    icp_id: Optional[int] = Field(None, description="Optional ID of the ICP to associate with this campaign") # *** ADDED THIS LINE ***
-    # Optionally allow creating steps along with campaign
-    steps: Optional[List[CampaignStepInput]] = Field(None, description="Optionally define steps during campaign creation")
+    is_active: bool = Field(False) # Default to False, activate after AI generates steps perhaps
+    icp_id: Optional[int] = Field(None, description="Optional ID of the ICP to associate with this campaign")
+    offering_id: Optional[int] = Field(None, description="Optional ID of the Offering to associate with this campaign") # <<< ADDED
+    # steps: Optional[List[CampaignStepInput]] = Field(None, ...) # <<< REMOVED
 
-class CampaignResponse(BaseModel):
-    """Response model for a campaign definition."""
+class CampaignUpdate(BaseModel): # For PUT /campaigns/{id}
+    name: Optional[str] = Field(None, min_length=1)
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+    icp_id: Optional[int] = None
+    offering_id: Optional[int] = None
+    # trigger_ai_regeneration: bool = Field(False, description="Set to true to re-generate steps if ICP/Offering changes") # Future idea
+
+class CampaignResponseBase(BaseModel): # Base for common campaign response fields
     id: int
     organization_id: int
     name: str
     description: Optional[str] = None
     is_active: bool
-    icp_id: Optional[int] = None # *** ADDED THIS LINE ***
-    icp_name: Optional[str] = None # *** ADDED THIS LINE (populated by DB JOIN) ***
+    icp_id: Optional[int] = None
+    icp_name: Optional[str] = None
+    offering_id: Optional[int] = None # <<< ADDED
+    offering_name: Optional[str] = None # <<< ADDED
+    ai_status: Optional[str] = Field(None, examples=["pending", "generating", "completed", "failed"]) # <<< ADDED
     created_at: datetime
     updated_at: datetime
-    # Optionally include steps in the response
-    steps: Optional[List[CampaignStepResponse]] = None # Loaded separately if needed
 
+class CampaignResponse(CampaignResponseBase): # For POST response and GET /campaigns/ list items
+    """Response model for a campaign definition."""
     class Config:
         from_attributes = True
 
+class CampaignDetailResponse(CampaignResponseBase): # For GET /campaigns/{id}
+    """Detailed response for a campaign, including its steps."""
+    steps: List[CampaignStepResponse] = [] # Steps are included here
+
+    class Config:
+        from_attributes = True
 
 # --- Lead Status Schema (Optional - for API responses if needed) ---
 class LeadCampaignStatusResponse(BaseModel):
