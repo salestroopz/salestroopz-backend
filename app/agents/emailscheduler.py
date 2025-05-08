@@ -9,7 +9,7 @@ from app.utils.logger import logger
 # Import database functions
 from app.db import database
 # Import Email Crafter if using AI steps
-from app.agents.emailcampaign import EmailCraftingAgent
+from app.agents.campaign_generator import EmailCraftingAgent
 # --- CORRECTED IMPORT: Import the main send_email function ---
 from app.utils.email_sender import send_email # Import the refactored main function
 
