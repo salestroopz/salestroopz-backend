@@ -7,7 +7,7 @@ from pydantic import BaseModel
 # Import Agents
 from app.agents.leadenrichment import LeadEnrichmentAgent
 from app.agents.icp_matcher import ICPMatcherAgent
-from app.agents.campaign_generator 
+from app.agents.campaign_generator import generate_campaign_steps
 # from app.agents.crmagent import CRMConnectorAgent
 # from app.agents.appointment import AppointmentAgent
 
