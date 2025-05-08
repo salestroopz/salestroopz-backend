@@ -500,6 +500,38 @@ def delete_existing_campaign(campaign_id: int, token: str) -> bool: # Keep as is
         st.error(f"Failed to delete campaign: HTTP {http_err.response.status_code}")
         return False
     except Exception as e: st.error(f"Failed to delete campaign: {e}"); return False
+# Add or ensure update_existing_campaign exists and works for toggling is_active
+def update_existing_campaign(campaign_id: int, campaign_payload: Dict[str, Any], token: str) -> Optional[Dict]:
+    """Updates an existing campaign via PUT request."""
+    endpoint = f"{CAMPAIGNS_ENDPOINT}/{campaign_id}"
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    try:
+        response = requests.put(endpoint, headers=headers, json=campaign_payload, timeout=20)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.HTTPError as http_err:
+        if http_err.response.status_code == 401: st.error("Authentication failed."); logout_user(); return None
+        elif http_err.response.status_code == 404: st.error(f"Failed to update campaign: Not found (ID: {campaign_id})."); return None
+        elif http_err.response.status_code == 422:
+             error_detail = f"Failed to update campaign: Validation Error"
+             try: error_detail += f" - {http_err.response.json().get('detail', '')}"
+             except: pass
+             st.error(error_detail)
+        else:
+             error_detail = f"Failed to update campaign: HTTP {http_err.response.status_code}"
+             try: error_detail += f" - {http_err.response.json().get('detail', '')}"
+             except: pass
+             st.error(error_detail)
+        return None
+    except requests.exceptions.RequestException as req_err: st.error(f"Failed to update campaign: Connection error - {req_err}"); return None
+    except Exception as e: st.error(f"Failed to update campaign: An unexpected error occurred - {e}"); return None
+
+# Helper function specifically for activation toggle for clarity
+def activate_deactivate_campaign_in_api(campaign_id: int, is_active_status: bool, token: str) -> bool:
+    """Calls the update endpoint to set the is_active status."""
+    payload = {"is_active": is_active_status}
+    result = update_existing_campaign(campaign_id, payload, token)
+    return result is not None # Return True if update was successful (returned data)
 
 
 # --- Main App Logic ---
@@ -897,10 +929,16 @@ else:
             st.error(st.session_state.campaign_action_error)
             del st.session_state['campaign_action_error']
 
+        # --- Conditionally Display Campaign Details & Steps ---
+        if st.session_state.get('view_campaign_id') is not None:
+            campaign_id_to_view = st.session_state.view_campaign_id
+            st.subheader(f"🔍 Campaign Details & AI-Generated Steps")
+        
         # --- Load Data (Campaigns and ICPs for dropdown) ---
         # Load Campaigns
         if not st.session_state.campaigns_loaded:
-            with st.spinner("Loading campaigns list..."):
+            with st.spinner(f"Loading details for campaign ID {campaign_id_to_view}..."):
+                campaign_details_data = get_campaign_details(campaign_id_to_view, auth_token)
                 # Load all campaigns by default (active_only=None or remove param from helper if not needed)
                 fetched_campaigns = list_campaigns(auth_token, active_only=None)
                 if fetched_campaigns is not None:
@@ -1044,7 +1082,7 @@ else:
                 st.markdown(f"**Description:** {campaign_details_data.get('description', '_No description_')}")
                 st.markdown(f"**Linked ICP:** {campaign_details_data.get('icp_name', '_None_')}")
                 st.markdown(f"**Linked Offering:** {campaign_details_data.get('offering_name', '_None_')}")
-                
+                               
                 created_dt = campaign_details_data.get('created_at')
                 if created_dt:
                     try: # Handle potential Z for UTC
@@ -1055,13 +1093,14 @@ else:
 
 
                 steps = campaign_details_data.get('steps', [])
-                if not steps and campaign_details_data.get('ai_status') not in ["generating", "pending"]:
+                if not steps and campaign_details_data.get('ai_status') not in ["generating", "pending", "failed", "failed_llm_empty", "failed_config"]: # Added failure states
                      st.warning("No steps found for this campaign. AI generation might have failed or produced no steps.", icon="⚠️")
                 elif not steps and campaign_details_data.get('ai_status') in ["generating", "pending"]:
                      st.info(f"AI is currently {campaign_details_data.get('ai_status')} steps. Please refresh or check back soon.", icon="⏳")
                 elif steps:
                     st.markdown("##### ✉️ Email Steps:")
                     for step in sorted(steps, key=lambda x: x.get('step_number', 0)):
+                        # ... (Your existing step expander code) ...
                         exp_title = f"Step {step.get('step_number')}: {step.get('subject_template', 'No Subject')}"
                         exp_title += f" (Delay: {step.get('delay_days')} days)"
                         with st.expander(exp_title):
@@ -1069,22 +1108,78 @@ else:
                             st.markdown(f"**Subject Template:**")
                             st.code(step.get('subject_template', ''), language='text')
                             st.markdown(f"**Body Template:**")
-                            # Use a unique key for each text_area to prevent Streamlit widget state issues
                             st.text_area(
-                                f"body_display_{campaign_id_to_view}_{step.get('id')}", 
-                                value=step.get('body_template', ''), 
-                                height=250, 
-                                disabled=True, 
-                                key=f"body_text_display_{campaign_id_to_view}_{step.get('id')}"
+                                f"body_display_{campaign_id_to_view}_{step.get('id')}",
+                                value=step.get('body_template', ''),
+                                height=250,
+                                disabled=True,
+                                key=f"body_text_display_{campaign_id_to_view}_{step.get('id')}" # Ensure unique key
                             )
                             st.caption(f"Step ID: {step.get('id')} | AI Crafted: {'Yes' if step.get('is_ai_crafted') else 'No'}")
-                
-                if st.button("🔙 Close Details", key=f"hide_details_{campaign_id_to_view}"):
-                    del st.session_state.view_campaign_id
+
+                  # ***** --- INSERT ACTIVATION CONTROLS HERE --- *****
+                st.markdown("---") # Separator before controls
+                current_is_active = campaign_details_data.get('is_active', False)
+                current_ai_status = campaign_details_data.get('ai_status')
+
+                # Conditions for activation: AI completed/partial, not already active, and has steps
+                can_activate = current_ai_status in ["completed", "completed_partial"] and not current_is_active and steps
+
+                col1_act, col2_act, col3_act = st.columns([1,1,2]) # Adjust layout as needed
+
+                with col1_act:
+                    if can_activate:
+                        if st.button("✅ Activate Campaign", key=f"activate_camp_{campaign_id_to_view}", type="primary", help="Make this campaign ready to enroll leads."):
+                            with st.spinner("Activating campaign..."):
+                                success = activate_deactivate_campaign_in_api(campaign_id_to_view, True, auth_token)
+                            if success:
+                                st.session_state.campaign_action_success = "Campaign activated successfully!"
+                                st.session_state.campaigns_loaded = False
+                                # Clear view state after action might be good practice
+                                if 'view_campaign_id' in st.session_state: del st.session_state.view_campaign_id
+                                st.rerun()
+                            else:
+                                st.session_state.campaign_action_error = "Failed to activate campaign."
+                                st.rerun() # Rerun to show error
+
+                with col2_act:
+                    if current_is_active:
+                        if st.button("⏸️ Deactivate Campaign", key=f"deactivate_camp_{campaign_id_to_view}", type="secondary", help="Stop this campaign from enrolling new leads."):
+                             with st.spinner("Deactivating campaign..."):
+                                 success = activate_deactivate_campaign_in_api(campaign_id_to_view, False, auth_token)
+                             if success:
+                                 st.session_state.campaign_action_success = "Campaign deactivated successfully."
+                                 st.session_state.campaigns_loaded = False
+                                 if 'view_campaign_id' in st.session_state: del st.session_state.view_campaign_id
+                                 st.rerun()
+                             else:
+                                st.session_state.campaign_action_error = "Failed to deactivate campaign."
+                                st.rerun() # Rerun to show error
+
+                # --- Option for AI Regeneration (Simple Version) ---
+                # Show if generation is completed or failed
+                if current_ai_status in ["completed", "completed_partial", "failed", "failed_llm_empty", "failed_config"]:
+                    with col3_act: # Place in the third column
+                         if st.button("🔄 Ask AI to Regenerate Steps", key=f"regen_camp_{campaign_id_to_view}", help="Delete current steps and ask AI to generate a new sequence."):
+                            # --- TODO: Implement Backend endpoint like POST /campaigns/{id}/regenerate ---
+                            st.warning("Regeneration feature is not yet implemented in the backend.")
+                            # Example API call (needs backend endpoint first):
+                            # if trigger_regeneration_in_api(campaign_id_to_view, auth_token):
+                            #    st.info("AI regeneration request sent. Refresh the page in a few moments to see the new status.")
+                            #    # Update status locally or wait for refresh
+                            # else:
+                            #    st.error("Failed to trigger AI regeneration.")
+
+
+                # --- Close Details Button ---
+                st.markdown("---") # Separator before close button
+                if st.button("🔙 Close Details", key=f"hide_details_btn_{campaign_id_to_view}"):
+                    if 'view_campaign_id' in st.session_state: del st.session_state.view_campaign_id
                     st.rerun()
+            # --- Error Handling for Details Fetch ---
             else: # campaign_details_data is None
                 st.error(f"Could not load details for campaign ID: {campaign_id_to_view}. It might have been deleted or an error occurred.")
-                if st.button("Return to Campaign List"):
+                if st.button("Return to Campaign List", key="return_from_detail_error"):
                     if 'view_campaign_id' in st.session_state: del st.session_state.view_campaign_id
                     st.rerun()
 
