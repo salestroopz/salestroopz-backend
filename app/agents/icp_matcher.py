@@ -1,111 +1,138 @@
 # app/agents/icp_matcher.py
-
-from typing import Dict, Any, List # Added List
+from typing import Dict, Any, List, Optional
 from app.utils.logger import logger
 import re
-
-# --- Import database module ---
-# Make sure database.py is in app/db/ and has get_icp_by_organization_id
-from app.db import database
+from app.db import database # Assuming your database functions are accessible
 
 class ICPMatcherAgent:
     def __init__(self):
-        # No longer store hardcoded ICP criteria here
         logger.info("ICPMatcherAgent initialized.")
-        # Initialization logic if needed (e.g., loading models)
-        pass
 
-    def match(self, enriched_lead_data: Dict[str, Any], organization_id: int) -> float: # organization_id is now required
+    def _parse_lead_company_size(self, lead_size_str: str) -> Optional[int]:
+        # ... (same as previously suggested _parse_lead_company_size) ...
+        if not lead_size_str: return None
+        match = re.search(r'\d+', lead_size_str)
+        if match:
+            try: return int(match.group(0))
+            except ValueError: return None
+        return None
+
+    def _score_single_lead_against_single_icp(
+        self,
+        lead_data_dict: Dict[str, Any], # Lead data as dict
+        icp_definition: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
-        Compares enriched lead data against the organization's specific ICP fetched from the DB.
-        Returns a match score (0.0 to 1.0).
+        Scores a single lead against a single ICP definition.
+        Internal helper method.
         """
-        email = enriched_lead_data.get('email', 'N/A')
-        if not organization_id:
-            logger.error(f"Organization ID missing for ICP match attempt on {email}. Cannot proceed.")
-            return 0.0 # Cannot match without knowing which ICP to use
-
-        logger.info(f"Attempting ICP match for: {email} (Org: {organization_id})")
-
-        # --- Fetch ICP Definition from Database ---
-        icp_to_use = database.get_icp_by_organization_id(organization_id)
-
-        if not icp_to_use:
-            logger.warning(f"No ICP definition found in DB for Org ID: {organization_id}. Returning 0 match score.")
-            return 0.0 # Cannot match if no ICP is defined for this org
-
-        logger.debug(f"Using fetched ICP definition for Org {organization_id}: {icp_to_use}")
-
-        # --- Initialize Scoring ---
+        email = lead_data_dict.get('email', 'N/A')
+        icp_name = icp_definition.get('name', 'Unknown ICP')
+        
         max_possible_score = 0.0
         achieved_score = 0.0
-        reasons = []
+        match_reasons = []
+        matched_criteria_count = 0
+        total_criteria_considered = 0
 
-        # --- Scoring Logic using fetched icp_to_use ---
-        # Get lead data safely, converting to lowercase string for comparison
-        lead_industry = str(enriched_lead_data.get('industry', '')).lower()
-        lead_title = str(enriched_lead_data.get('title', '')).lower()
-        lead_size_str = str(enriched_lead_data.get('company_size', ''))
-        lead_location = str(enriched_lead_data.get('location', '')).lower()
+        lead_industry = str(lead_data_dict.get('industry', '')).lower().strip()
+        lead_title = str(lead_data_dict.get('title', '')).lower().strip()
+        lead_company_size_str = str(lead_data_dict.get('company_size', '')).strip()
+        lead_location = str(lead_data_dict.get('location', '')).lower().strip()
 
-        # 1. Title Match
-        # get() returns None if key missing OR if JSON parsing failed in DB layer
-        title_keywords = icp_to_use.get("title_keywords")
-        if isinstance(title_keywords, list) and title_keywords and lead_title: # Check type and content
-            max_possible_score += 1.0 # Increment max score only if criteria exists and lead has data
-            # Ensure keywords in DB list are also compared lowercase
-            if any(str(keyword).lower() in lead_title for keyword in title_keywords):
-                achieved_score += 1.0; reasons.append("Title Match")
-                logger.debug(f" Match: Title '{lead_title}'")
+        # Title Match
+        title_keywords = icp_definition.get("title_keywords")
+        if isinstance(title_keywords, list) and title_keywords:
+            total_criteria_considered +=1
+            if lead_title:
+                max_possible_score += 1.0
+                if any(str(kw).lower().strip() in lead_title for kw in title_keywords if kw):
+                    achieved_score += 1.0; match_reasons.append("Title"); matched_criteria_count +=1
+        
+        # Industry Match
+        industry_keywords = icp_definition.get("industry_keywords")
+        if isinstance(industry_keywords, list) and industry_keywords:
+            total_criteria_considered +=1
+            if lead_industry:
+                max_possible_score += 1.0
+                if any(str(kw).lower().strip() in lead_industry for kw in industry_keywords if kw):
+                    achieved_score += 1.0; match_reasons.append("Industry"); matched_criteria_count +=1
 
-        # 2. Industry Match
-        industry_keywords = icp_to_use.get("industry_keywords")
-        if isinstance(industry_keywords, list) and industry_keywords and lead_industry:
-            max_possible_score += 1.0
-            if any(str(keyword).lower() in lead_industry for keyword in industry_keywords):
-                achieved_score += 1.0; reasons.append("Industry Match")
-                logger.debug(f" Match: Industry '{lead_industry}'")
+        # Company Size Match
+        size_rules = icp_definition.get("company_size_rules")
+        if isinstance(size_rules, dict) and ("min" in size_rules or "max" in size_rules):
+            total_criteria_considered +=1
+            lead_numerical_size = self._parse_lead_company_size(lead_company_size_str)
+            if lead_numerical_size is not None:
+                max_possible_score += 1.0
+                min_ok = (size_rules.get("min") is None) or (lead_numerical_size >= int(size_rules["min"]))
+                max_ok = (size_rules.get("max") is None) or (lead_numerical_size <= int(size_rules["max"]))
+                if min_ok and max_ok:
+                    achieved_score += 1.0; match_reasons.append("Company Size"); matched_criteria_count +=1
+        
+        # Location Match
+        location_keywords = icp_definition.get("location_keywords")
+        if isinstance(location_keywords, list) and location_keywords:
+            total_criteria_considered +=1
+            if lead_location:
+                max_possible_score += 1.0
+                if any(str(kw).lower().strip() in lead_location for kw in location_keywords if kw):
+                    achieved_score += 1.0; match_reasons.append("Location"); matched_criteria_count +=1
+        
+        final_score_percentage = (achieved_score / max_possible_score * 100) if max_possible_score > 0 else 0.0
+        
+        MATCH_THRESHOLD_PERCENTAGE = 50.0
+        MIN_CRITERIA_MATCHED = 1 # For a simple definition of "is_match"
+        is_match = (max_possible_score > 0 and 
+                    final_score_percentage >= MATCH_THRESHOLD_PERCENTAGE and 
+                    matched_criteria_count >= MIN_CRITERIA_MATCHED)
+            
+        return {
+            "score_percentage": round(final_score_percentage, 2),
+            "is_match": is_match,
+            "reasons": match_reasons,
+            "matched_icp_id": icp_definition.get("id"),
+            "matched_icp_name": icp_name,
+            "lead_email": email # For easier identification in results
+        }
 
-        # 3. Company Size Match (Adapt based on how 'company_size_rules' is stored)
-        size_rules = icp_to_use.get("company_size_rules") # This should be a dict or list after parsing
-        if size_rules and lead_size_str: # Check if rules exist AND lead has size info
-            max_possible_score += 1.0
-            size_matched = False
-            try:
-                # Example logic if storing rules as {"min": 50, "max": 500}
-                if isinstance(size_rules, dict) and "min" in size_rules:
-                    size_match_num = re.search(r'\d+', lead_size_str) # Get first number
-                    if size_match_num:
-                        lead_num = int(size_match_num.group(0))
-                        min_ok = lead_num >= int(size_rules["min"])
-                        max_val = size_rules.get("max") # Max is optional
-                        max_ok = (max_val is None) or (lead_num <= int(max_val))
-                        if min_ok and max_ok: size_matched = True
-                # Example logic if storing rules as a list of strings ["51-200", "1000+"]
-                elif isinstance(size_rules, list):
-                     if any(str(target).strip() == lead_size_str.strip() for target in size_rules):
-                         size_matched = True
-                # Add more complex parsing/comparison logic as needed
-            except (ValueError, TypeError, KeyError) as parse_err:
-                 logger.warning(f"Could not parse/compare company size rule '{size_rules}' with lead size '{lead_size_str}': {parse_err}")
+    def match_leads_against_org_icps(
+        self,
+        leads_input: List[Dict[str, Any]], # Expect list of lead dicts (converted from LeadInput)
+        organization_id: int
+    ) -> List[Dict[str, Any]]:
+        """
+        Matches a list of leads against all ICPs of a given organization.
+        Returns a list of leads, each with their best ICP match info or indication of no match.
+        This method does NOT update the database.
+        """
+        logger.info(f"Matching {len(leads_input)} leads for organization_id: {organization_id}")
+        
+        org_icps = database.get_icps_by_organization_id(organization_id)
+        if not org_icps:
+            logger.warning(f"No ICPs found for organization {organization_id}. Cannot perform matching.")
+            # Return leads with no match info
+            return [{**lead, "icp_match_result": {"is_match": False, "message": "No ICPs defined for organization."}} for lead in leads_input]
 
-            if size_matched:
-                 achieved_score += 1.0; reasons.append("Company Size Match")
-                 logger.debug(f" Match: Size '{lead_size_str}'")
+        processed_leads_with_match_info = []
+        for lead_data_dict in leads_input:
+            best_match_for_this_lead = {"is_match": False, "score_percentage": -1.0} # Initialize with a non-match
 
-        # 4. Location Match
-        location_keywords = icp_to_use.get("location_keywords")
-        if isinstance(location_keywords, list) and location_keywords and lead_location:
-             max_possible_score += 1.0
-             if any(str(keyword).lower() in lead_location for keyword in location_keywords):
-                 achieved_score += 1.0; reasons.append("Location Match")
-                 logger.debug(f" Match: Location '{lead_location}'")
+            for icp_def in org_icps:
+                current_match_details = self._score_single_lead_against_single_icp(lead_data_dict, icp_def)
+                
+                if current_match_details["is_match"]:
+                    if current_match_details["score_percentage"] > best_match_for_this_lead["score_percentage"]:
+                        best_match_for_this_lead = current_match_details
+            
+            # Add original lead data along with the best match result
+            processed_leads_with_match_info.append({
+                "original_lead_data": lead_data_dict, # Or just specific fields like lead_id/email
+                "icp_match_result": best_match_for_this_lead
+            })
+            logger.debug(f"Lead {lead_data_dict.get('email', 'N/A')} best match: {best_match_for_this_lead.get('matched_icp_name', 'None')}")
 
-
-        # --- Calculate Final Score ---
-        final_score = achieved_score / max_possible_score if max_possible_score > 0 else 0.0
-        logger.info(f"ICP Match score for {email} (Org {organization_id}): {final_score:.2f} [{'; '.join(reasons)}]")
-        return final_score
+        return processed_leads_with_match_info
 
         logger.info(f"ICP Match score for {email}: {final_score:.2f} (Score: {achieved_score}/{max_possible_score}, Reasons: {'; '.join(reasons)})")
         # For now, just return the score. The LeadWorkflowAgent will set 'matched' and 'reason'.
