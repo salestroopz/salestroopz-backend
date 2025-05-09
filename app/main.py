@@ -50,33 +50,38 @@ except ImportError as e:
 # It's good practice to have an __init__.py in 'routes' and 'routers' to mark them as packages.
 
 # From app.routes directory
+# app/main.py
+
+# From app.routes directory
 try:
     print("DEBUG: Attempting to import from app.routes...")
     from app.routes import auth as auth_router_module
     print(f"DEBUG: Imported auth. Type: {type(auth_router_module)}")
     from app.routes import icpmatch as icp_match_router_module
     print(f"DEBUG: Imported icpmatch. Type: {type(icp_match_router_module)}")
-    
-    from app.routes import workflow as workflow_router_module # <<< The line in question
-    print(f"DEBUG: Imported workflow. workflow_router_module IS DEFINED HERE. Type: {type(workflow_router_module)}") # <<< ADD THIS
-    
+    from app.routes import workflow as workflow_router_module
+    print(f"DEBUG: Imported workflow. Type: {type(workflow_router_module)}")
     from app.routes import leadworkflow as leadworkflow_router_module
     print(f"DEBUG: Imported leadworkflow. Type: {type(leadworkflow_router_module)}")
+    from app.routes import crm as crm_routes_module
+    print(f"DEBUG: Imported crm. Type: {type(crm_routes_module)}")
+    from app.routes import agents as agents_router_module
+    print(f"DEBUG: Imported agents route. Type: {type(agents_router_module)}")
+    from app.routes import insidesales as insidesales_router_module
+    print(f"DEBUG: Imported insidesales. Type: {type(insidesales_router_module)}")
+    from app.routes import scheduler as scheduler_router_module
+    print(f"DEBUG: Imported scheduler. Type: {type(scheduler_router_module)}")
     from app.routes import leadenrichment as leadenrichment_router_module
-    print("DEBUG: Imported leadenrichment.") # Add this
-    print("INFO: Successfully imported modules from 'app.routes'.")
+    print(f"DEBUG: Imported leadenrichment. Type: {type(leadenrichment_router_module)}")
+    
+    print("INFO: Successfully imported modules from 'app.routes'.") # This line might not be reached if an error occurs above
 
-    print(f"FATAL ERROR during import from 'app.routes': {type(e).__name__} - {e}")
+except Exception as e:  # 'e' is defined for this block
+    # ALL THE FOLLOWING LINES MUST BE INDENTED UNDER 'except':
+    print(f"FATAL ERROR during import from 'app.routes': {type(e).__name__} - {e}") # Line 69 (example)
     import traceback
-    traceback.print_exc() # Print the full traceback of the actual error
-    # For now, let the program exit if a critical router fails to load
-    raise SystemExit(f"Failed to import a module from app.routes: {e}")
-    from app.routes import leadworkflow as leadworkflow_router_module
-    print(f"DEBUG: Imported leadworkflow. Type: {type(leadworkflow_router_module)}")
-    # ... continue for other imports in this block ...
-    print("INFO: Successfully imported modules from 'app.routes'.")
-except ImportError as e:
-    print(f"ERROR: Could not import one or more modules from 'app.routers': {e}")
+    traceback.print_exc() # This will print the REAL traceback
+    raise SystemExit(f"Failed to import a module from app.routes: {e}"))
 
 # From app.routers directory
 try:
