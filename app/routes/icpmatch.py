@@ -8,6 +8,7 @@ from pydantic import BaseModel #
 from app.agents.icp_matcher import ICPMatcherAgent
 from app.db import database
 from app.auth.dependencies import get_current_user
+from app.schemas import User 
 from app.utils.logger import logger
 
 router = APIRouter(prefix="/api/v1/icp-matching", tags=["ICP Matching"])
