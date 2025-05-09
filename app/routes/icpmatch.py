@@ -82,7 +82,7 @@ def _background_match_and_update_leads(lead_ids_to_process: List[int], org_id: i
 async def trigger_lead_icp_matching_task(
     request_data: LeadMatchRequest, # Expects a list of lead_ids
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(get_current_user) # Assuming User is your Pydantic model for auth
+    current_user: UserPublic = Depends(get_current_user) # Assuming User is your Pydantic model for auth
 ):
     """
     Triggers a background task to match the provided list of leads
@@ -106,7 +106,7 @@ async def trigger_lead_icp_matching_task(
 @router.post("/trigger_matching_for_all_org_leads", status_code=status.HTTP_202_ACCEPTED)
 async def trigger_all_leads_icp_matching_task(
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(get_current_user)
+    current_user: UserPublic = Depends(get_current_user)
 ):
     """
     Triggers a background task to match ALL leads for the current user's organization
