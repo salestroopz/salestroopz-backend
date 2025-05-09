@@ -4,60 +4,89 @@
 import sys
 import os
 from pathlib import Path
-import warnings
+# import warnings # Not used, can be removed
 
-# --- sys.path modification (Good practice for robustness) ---
+# --- sys.path modification (Consider alternatives if possible) ---
+# This is generally okay for local dev but might not be ideal for all deployment scenarios.
+# Ensure your run command (e.g., uvicorn) is executed from the project root.
+# Or use `PYTHONPATH=.` or `pip install -e .`
 try:
-    project_root_dir = Path(__file__).resolve().parent.parent
-    if str(project_root_dir) not in sys.path:
-        sys.path.insert(0, str(project_root_dir))
-        print(f"DEBUG: Added project root to sys.path: {project_root_dir}")
+    PROJECT_ROOT_DIR = Path(__file__).resolve().parent.parent # Assuming main.py is in app/
+    if str(PROJECT_ROOT_DIR) not in sys.path:
+        sys.path.insert(0, str(PROJECT_ROOT_DIR))
+        print(f"DEBUG: Added project root to sys.path: {PROJECT_ROOT_DIR}") # For debugging, consider logging
 except Exception as e:
-    print(f"Warning: Could not modify sys.path: {e}")
+    print(f"Warning: Could not modify sys.path: {e}") # For debugging, consider logging
 
 # --- Third-Party Imports ---
 try:
     from fastapi import FastAPI
     from fastapi.middleware.cors import CORSMiddleware
 except ImportError as e:
-     print(f"FATAL ERROR: Could not import FastAPI or CORSMiddleware: {e}")
-     raise SystemExit("FastAPI framework not found.") from e
+     print(f"FATAL ERROR: Could not import FastAPI or CORSMiddleware: {e}") # Consider logging
+     raise SystemExit("FastAPI framework not found. Please ensure it's installed.") from e
 
 # --- Application Imports ---
-# Configuration (Load FIRST)
+
+# Configuration (Load FIRST - Crucial)
 try:
     from app.utils.config import settings
-except ImportError as e:
-    print(f"FATAL ERROR: Could not import settings from app.utils.config: {e}")
-    raise SystemExit(f"Failed to load settings: {e}") from e
+    print(f"INFO: Settings loaded successfully for app: {settings.app_name}") # For debugging, consider logging
+except ImportError as e_import:
+    print(f"FATAL ERROR: Could not import settings from app.utils.config: {e_import}") # Consider logging
+    raise SystemExit(f"Failed to load application settings: {e_import}") from e_import
 except Exception as e_generic:
-    print(f"FATAL ERROR: An unexpected error occurred importing settings: {e_generic}")
-    raise SystemExit(f"Failed loading settings: {e_generic}") from e_generic
+    print(f"FATAL ERROR: An unexpected error occurred importing settings: {e_generic}") # Consider logging
+    raise SystemExit(f"Unexpected failure loading application settings: {e_generic}") from e_generic
 
-# Database Initialization
+# Database Initialization Function
 try:
     from app.db.database import initialize_db
 except ImportError as e:
-    print(f"ERROR: Could not import database initialization: {e}")
-    initialize_db = None
+    print(f"WARNING: Could not import 'initialize_db' from app.db.database: {e}. Database might not be auto-initialized.") # Consider logging
+    initialize_db = None # Define as None so startup event can check
 
-# API Routers
-try:
-    # Import all router modules
-    from app.routes import auth, workflow, leadworkflow, crm, agents, insidesales, scheduler, leadenrichment, icpmatch
-    from app.routers import icp, offering, campaigns, email_settings
-except ImportError as e:
-    print(f"ERROR: Could not import one or more routers: {e}")
-    raise SystemExit(f"Failed to import routers: {e}") from e
+# API Routers/Routes (Grouped by their location)
+# It's good practice to have an __init__.py in 'routes' and 'routers' to mark them as packages.
 
-# Global Agent Instances (Optional)
+# From app.routes directory
 try:
-    from app.agents.crmagent import CRMConnectorAgent
-    crm_agent_instance = CRMConnectorAgent()
-    print("CRMConnectorAgent instance created.")
+    from app.routes import auth as auth_router_module
+    from app.routes import icpmatch as icp_match_router_module
+    from app.routes import workflow as workflow_router_module
+    from app.routes import leadworkflow as leadworkflow_router_module
+    from app.routes import crm as crm_routes_module
+    from app.routes import agents as agents_router_module # This should define a router if it's for API endpoints
+    from app.routes import insidesales as insidesales_router_module
+    from app.routes import scheduler as scheduler_router_module
+    from app.routes import leadenrichment as leadenrichment_router_module
+    print("INFO: Successfully imported modules from 'app.routes'.") # For debugging
 except ImportError as e:
-     print(f"Warning: Could not import or instantiate CRMConnectorAgent: {e}")
-     crm_agent_instance = None
+    print(f"ERROR: Could not import one or more modules from 'app.routes': {e}") # Consider logging
+    # Depending on criticality, you might raise SystemExit here
+
+# From app.routers directory
+try:
+    from app.routers import icp as icp_crud_router_module
+    from app.routers import offering as offering_router_module
+    from app.routers import campaigns as campaigns_router_module
+    from app.routers import email_settings as email_settings_router_module
+    from app.routers import leads as leads_router_module # Corrected typo from 'leads_router_modul'
+    print("INFO: Successfully imported modules from 'app.routers'.") # For debugging
+except ImportError as e:
+    print(f"ERROR: Could not import one or more modules from 'app.routers': {e}") # Consider logging
+    # Depending on criticality, you might raise SystemExit here
+
+
+# Global Agent Instances (Optional - consider dependency injection for better testability)
+# If these agents are only used by specific routers, they could be instantiated there.
+try:
+    from app.agents.crmagent import CRMConnectorAgent # Assuming path is app/agents/crmagent.py
+    crm_agent_instance = CRMConnectorAgent() # Instantiate if needed globally
+    print("INFO: CRMConnectorAgent instance created.") # For debugging
+except ImportError as e:
+     print(f"WARNING: Could not import or instantiate CRMConnectorAgent: {e}. CRM features might be affected.") # Consider logging
+     crm_agent_instance = None # Define as None so dependent code can check
 
 
 # ==============================================
@@ -67,88 +96,107 @@ try:
     app = FastAPI(
         title=settings.app_name,
         description="API to manage and process sales leads for multiple organizations.",
-        version="0.2.0", # Example version
+        version="0.2.0", # Consider moving version to settings or a __version__.py
+        # openapi_url=f"{settings.api_v1_prefix}/openapi.json" # Example for namespacing docs
     )
-    print(f"FastAPI app created: {settings.app_name}")
-except Exception as e:
-    print(f"ERROR creating FastAPI app instance. Settings loaded?: {'settings' in locals()}. Error: {e}")
-    raise SystemExit("Failed to create FastAPI app.") from e
+    print(f"INFO: FastAPI app '{settings.app_name}' created successfully.") # For debugging
+except AttributeError as e_attr: # If settings or settings.app_name is not found
+    print(f"FATAL ERROR: Missing required attributes in settings (e.g., app_name) for FastAPI app creation: {e_attr}")
+    raise SystemExit("FastAPI app creation failed due to missing settings.") from e_attr
+except Exception as e_app:
+    print(f"FATAL ERROR: Could not create FastAPI app instance: {e_app}") # Consider logging
+    raise SystemExit("FastAPI app creation failed.") from e_app
 
 # ==============================================
 # --- Configure CORS Middleware ---
 # ==============================================
+# Ensure settings.allowed_origins_list is defined in your config (can be empty list)
+if hasattr(settings, 'allowed_origins_list') and settings.allowed_origins_list:
+    origins_to_allow = settings.allowed_origins_list
+    print(f"INFO: Configuring CORS for specified origins: {origins_to_allow}") # For debugging
+else:
+    origins_to_allow = ["*"] # Default to allow all if not specified or empty
+    print("WARNING: ALLOWED_ORIGINS not specified or empty in settings. Defaulting CORS to allow all origins ('*'). This is not recommended for production.") # Consider logging
+
 try:
-    if not settings.allowed_origins_list:
-        print("WARNING: No CORS origins specified via ALLOWED_ORIGINS env var.")
-        origins = ["*"] # Allow all if unset - BE CAREFUL in production
-    else:
-        origins = settings.allowed_origins_list
-    print(f"Configuring CORS for origins: {origins}")
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=origins,
+        allow_origins=origins_to_allow,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["*"], # Or specify ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+        allow_headers=["*"], # Or specify common headers
     )
+    print("INFO: CORS middleware configured.") # For debugging
 except Exception as e:
-    print(f"ERROR configuring CORS middleware: {e}")
+    print(f"ERROR: Failed to configure CORS middleware: {e}") # Consider logging
 
 # ==============================================
 # --- Database Initialization on Startup ---
 # ==============================================
 @app.on_event("startup")
-async def startup_database_initialization():
-    print("Application startup event: Initializing database...")
+async def on_startup():
+    """Actions to perform on application startup."""
+    print("INFO: Application startup event triggered.") # For debugging
     if initialize_db:
+        print("INFO: Attempting database initialization...") # For debugging
         try:
             initialize_db()
-            print("Database initialization logic executed.")
+            print("INFO: Database initialization logic executed successfully.") # For debugging
         except Exception as e:
-            print(f"ERROR DURING DATABASE INITIALIZATION: {e}")
+            print(f"ERROR: An error occurred during database initialization on startup: {e}") # Consider logging
     else:
-        print("WARNING: Database initialization function was not imported correctly.")
-    print("Startup event sequence complete.")
-
+        print("WARNING: 'initialize_db' function not available. Database auto-initialization skipped.") # Consider logging
+    print("INFO: Application startup sequence complete.") # For debugging
 
 # ==============================================
 # --- Include API Routers ---
 # ==============================================
-# Assumes prefixes and tags are defined within each router file's
-# APIRouter() definition for cleaner code organization.
-print("Including API routers...")
-try:
-    app.include_router(auth.router)
-    app.include_router(workflow.router)
-    app.include_router(leadworkflow.router)
-    app.include_router(icp.router)
-    app.include_router(offering.router)
-    app.include_router(crm.router)
-    app.include_router(agents.router)
-    app.include_router(insidesales.router)
-    app.include_router(scheduler.router)
-    app.include_router(leadenrichment.router)
-    app.include_router(icpmatch.router)
-    app.include_router(campaigns.router)
-    app.include_router(email_settings.router)
-    print("Routers included successfully.")
-except Exception as e:
-    print(f"ERROR INCLUDING ROUTERS: {e}")
+print("INFO: Including API routers...") # For debugging
+router_modules_to_include = {
+    # From app.routes
+    "Auth": auth_router_module,
+    "ICP Matching": icp_match_router_module,
+    "Workflow": workflow_router_module,
+    "Lead Workflow": leadworkflow_router_module,
+    "CRM Routes": crm_routes_module,
+    "Agents Routes": agents_router_module, # Assuming this is a router module
+    "Inside Sales": insidesales_router_module,
+    "Scheduler": scheduler_router_module,
+    "Lead Enrichment": leadenrichment_router_module,
+    # From app.routers
+    "ICP CRUD": icp_crud_router_module,
+    "Offerings": offering_router_module,
+    "Campaigns": campaigns_router_module,
+    "Email Settings": email_settings_router_module,
+    "Leads": leads_router_module
+}
+
+for name, module_instance in router_modules_to_include.items():
+    try:
+        if module_instance and hasattr(module_instance, 'router'):
+            app.include_router(module_instance.router)
+            print(f"INFO: Included router for '{name}'.") # For debugging
+        elif module_instance:
+            print(f"WARNING: Module '{name}' imported but does not have a 'router' attribute. Skipping inclusion.") # Consider logging
+        # else: # Module instance itself might be None if import failed and wasn't critical
+            # print(f"DEBUG: Module for '{name}' was not imported, cannot include router.")
+    except Exception as e:
+        print(f"ERROR: Failed to include router for '{name}': {e}") # Consider logging
+        # Decide if this should be a fatal error for critical routers
 
 
 # ==============================================
 # --- Root Endpoint ---
 # ==============================================
-@app.get("/", tags=["Root"], summary="API Root/Health Check") # Added summary
+@app.get("/", tags=["Root"], summary="API Root/Health Check")
 async def read_root():
     """Provides a simple status message indicating the API is live."""
-    # Safely access settings attributes
-    app_name = getattr(settings, 'app_name', 'API')
-    environment = getattr(settings, 'environment', 'unknown')
     return {
-        "status": f"{app_name} backend is live!",
-        "environment": environment,
+        "status": f"{getattr(settings, 'app_name', 'SalesTroopz API')} backend is live!",
+        "environment": getattr(settings, 'environment', 'unknown_environment'),
+        "version": app.version # Access version from the app instance
     }
 
 # --- Final Confirmation Log ---
-print(f"--- {settings.app_name} FastAPI application configuration complete ---")
+# This will print when the module is first loaded by Uvicorn, before startup events for worker processes.
+print(f"--- {getattr(settings, 'app_name', 'SalesTroopz API')} FastAPI application module loading complete. ---")
