@@ -50,20 +50,22 @@ except ImportError as e:
 # It's good practice to have an __init__.py in 'routes' and 'routers' to mark them as packages.
 
 # From app.routes directory
-# try:
+try:
+    print("DEBUG: Attempting to import from app.routes...") # Add this
     from app.routes import auth as auth_router_module
+    print("DEBUG: Imported auth.") # Add this
     from app.routes import icpmatch as icp_match_router_module
-    from app.routes import workflow as workflow_router_module
-    from app.routes import leadworkflow as leadworkflow_router_module
-    from app.routes import crm as crm_routes_module
-    from app.routes import agents as agents_router_module # This should define a router if it's for API endpoints
-    from app.routes import insidesales as insidesales_router_module
-    from app.routes import scheduler as scheduler_router_module
+    print("DEBUG: Imported icpmatch.") # Add this
+    # ... add print statements after each import in this block ...
     from app.routes import leadenrichment as leadenrichment_router_module
-    print("INFO: Successfully imported modules from 'app.routes'.") # For debugging
-except ImportError as e:
-    print(f"ERROR: Could not import one or more modules from 'app.routes': {e}") # Consider logging
-    # Depending on criticality, you might raise SystemExit here
+    print("DEBUG: Imported leadenrichment.") # Add this
+    print("INFO: Successfully imported modules from 'app.routes'.")
+except Exception as e: # CATCH GENERIC Exception temporarily
+    print(f"FATAL ERROR during import from 'app.routes': {type(e).__name__} - {e}")
+    import traceback
+    traceback.print_exc() # Print the full traceback of the actual error
+    # For now, let the program exit if a critical router fails to load
+    raise SystemExit(f"Failed to import a module from app.routes: {e}")
 
 # From app.routers directory
 try:
