@@ -1,21 +1,19 @@
 # app/routers/icpmatch.py
 
 from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException, status
-from typing import List, Dict, Any # Added Dict, Any
-# Assuming LeadInput is for creating leads, you might not need it here if you pass IDs
-# from app.schemas import LeadInput 
+from typing import List, Dict, Any
+from pydantic import BaseModel # 
+
+# Correctly import the agent from its actual location
 from app.agents.icp_matcher import ICPMatcherAgent
-from app.db import database # For DB updates and fetching leads
-from app.auth.dependencies import get_current_user # Your User model from auth
-from app.utils.logger import logger # Assuming you have a logger
+from app.db import database
+from app.auth.dependencies import get_current_user
+from app.utils.logger import logger
 
-router = APIRouter(prefix="/api/v1/icp-matching", tags=["ICP Matching"]) # Standardized prefix
+router = APIRouter(prefix="/api/v1/icp-matching", tags=["ICP Matching"])
+agent = ICPMatcherAgent()
 
-agent = ICPMatcherAgent() # Instantiate agent once
-
-# Define a Pydantic model for the request body if you're sending lead data directly
-# For now, let's assume we will send a list of lead_ids to be processed from the DB
-class LeadMatchRequest(BaseModel):
+class LeadMatchRequest(BaseModel): # Now BaseModel is defined
     lead_ids: List[int]
 
 
