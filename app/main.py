@@ -81,7 +81,7 @@ except Exception as e:  # 'e' is defined for this block
     print(f"FATAL ERROR during import from 'app.routes': {type(e).__name__} - {e}") # Line 69 (example)
     import traceback
     traceback.print_exc() # This will print the REAL traceback
-    raise SystemExit(f"Failed to import a module from app.routes: {e}"))
+    raise SystemExit(f"Failed to import a module from app.routes: {e}")
 
 # From app.routers directory
 try:
