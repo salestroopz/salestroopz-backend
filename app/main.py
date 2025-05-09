@@ -65,7 +65,7 @@ try:
     from app.routes import leadenrichment as leadenrichment_router_module
     print("DEBUG: Imported leadenrichment.") # Add this
     print("INFO: Successfully imported modules from 'app.routes'.")
-except Exception as e: # CATCH GENERIC Exception temporarily
+
     print(f"FATAL ERROR during import from 'app.routes': {type(e).__name__} - {e}")
     import traceback
     traceback.print_exc() # Print the full traceback of the actual error
