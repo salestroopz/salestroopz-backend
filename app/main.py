@@ -50,7 +50,7 @@ except ImportError as e:
 # It's good practice to have an __init__.py in 'routes' and 'routers' to mark them as packages.
 
 # From app.routes directory
-try:
+# try:
     from app.routes import auth as auth_router_module
     from app.routes import icpmatch as icp_match_router_module
     from app.routes import workflow as workflow_router_module
