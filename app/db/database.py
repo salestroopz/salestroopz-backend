@@ -1312,6 +1312,30 @@ def get_org_email_settings_from_db(organization_id: int) -> Optional[Dict]:
         if conn and not getattr(conn, 'closed', True): conn.close()
     return settings_data
 
+def get_leads_by_icp_match(organization_id: int, icp_id: int, limit: int = 1000) -> List[Dict]:
+    """Fetches leads that are marked as matching a specific ICP and are 'matched = TRUE'."""
+    # Added check for matched = TRUE to be explicit
+    sql = """
+        SELECT id, email, name, organization_id, icp_match_id /* add other fields you might need for logging/checks */
+        FROM leads 
+        WHERE organization_id = %s AND icp_match_id = %s AND matched = TRUE
+        ORDER BY created_at DESC LIMIT %s;
+    """
+    conn = None; leads_list = []
+    try:
+        conn = get_connection()
+        if not conn: return []
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor: # Use RealDictCursor
+            cursor.execute(sql, (organization_id, icp_id, limit))
+            results = cursor.fetchall()
+            for row in results:
+                leads_list.append(dict(row)) # Ensure rows are dicts
+    except (Exception, psycopg2.Error) as e: # Catch psycopg2.Error specifically
+        logger.error(f"DB Error getting leads by ICP match for Org {organization_id}, ICP {icp_id}: {e}", exc_info=True)
+    finally:
+        if conn and not getattr(conn, 'closed', True): conn.close()
+    return leads_list
+
 # ==========================================
 # Run initialization if script is executed directly
 # ==========================================
