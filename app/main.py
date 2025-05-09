@@ -75,7 +75,8 @@ try:
     print(f"DEBUG: Imported leadworkflow. Type: {type(leadworkflow_router_module)}")
     # ... continue for other imports in this block ...
     print("INFO: Successfully imported modules from 'app.routes'.")
-except Exception as e:
+except ImportError as e:
+    print(f"ERROR: Could not import one or more modules from 'app.routers': {e}")
 
 # From app.routers directory
 try:
