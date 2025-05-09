@@ -51,12 +51,17 @@ except ImportError as e:
 
 # From app.routes directory
 try:
-    print("DEBUG: Attempting to import from app.routes...") # Add this
+    print("DEBUG: Attempting to import from app.routes...")
     from app.routes import auth as auth_router_module
-    print("DEBUG: Imported auth.") # Add this
+    print(f"DEBUG: Imported auth. Type: {type(auth_router_module)}")
     from app.routes import icpmatch as icp_match_router_module
-    print("DEBUG: Imported icpmatch.") # Add this
-    # ... add print statements after each import in this block ...
+    print(f"DEBUG: Imported icpmatch. Type: {type(icp_match_router_module)}")
+    
+    from app.routes import workflow as workflow_router_module # <<< The line in question
+    print(f"DEBUG: Imported workflow. workflow_router_module IS DEFINED HERE. Type: {type(workflow_router_module)}") # <<< ADD THIS
+    
+    from app.routes import leadworkflow as leadworkflow_router_module
+    print(f"DEBUG: Imported leadworkflow. Type: {type(leadworkflow_router_module)}")
     from app.routes import leadenrichment as leadenrichment_router_module
     print("DEBUG: Imported leadenrichment.") # Add this
     print("INFO: Successfully imported modules from 'app.routes'.")
@@ -66,8 +71,6 @@ except Exception as e: # CATCH GENERIC Exception temporarily
     traceback.print_exc() # Print the full traceback of the actual error
     # For now, let the program exit if a critical router fails to load
     raise SystemExit(f"Failed to import a module from app.routes: {e}")
-    from app.routes import workflow as workflow_router_module
-    print(f"DEBUG: Imported workflow. workflow_router_module IS DEFINED HERE. Type: {type(workflow_router_module)}") # <<< ADD THIS
     from app.routes import leadworkflow as leadworkflow_router_module
     print(f"DEBUG: Imported leadworkflow. Type: {type(leadworkflow_router_module)}")
     # ... continue for other imports in this block ...
