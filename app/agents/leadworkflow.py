@@ -19,7 +19,7 @@ class LeadWorkflowAgent:
     def __init__(self):
         self.enrichment_agent = LeadEnrichmentAgent()
         self.matcher_agent = ICPMatcherAgent()
-        self.email_crafter = EmailCraftingAgent() # <--- INSTANTIATE EMAIL CRAFTER
+        # self.email_crafter = EmailCraftingAgent() # <--- INSTANTIATE EMAIL CRAFTER
         # self.crm_agent = CRMConnectorAgent()
         # self.appointment_agent = AppointmentAgent()
         logger.info("LeadWorkflowAgent initialized (including EmailCrafter).")
