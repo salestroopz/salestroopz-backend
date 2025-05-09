@@ -904,17 +904,15 @@ else:
                                 st.session_state.lead_action_error = "Failed to save lead."; st.rerun()
 
     elif page == "Campaigns":
-        st.header("📣 Campaign Management (AI-Powered)") # Updated Title
+        st.header("📣 Campaign Management (AI-Powered)")
         st.caption("Create AI-generated email outreach campaigns, view progress, and manage settings.")
 
         # --- Initialize Session State for Campaigns Page ---
         st.session_state.setdefault('campaigns_list', [])
         st.session_state.setdefault('campaigns_loaded', False)
-        st.session_state.setdefault('show_campaign_create_form', False) # Renamed for clarity
-        # st.session_state.setdefault('campaign_form_data', {}) # Not strictly needed if form clears
-        # st.session_state.setdefault('campaign_being_edited_id', None) # For edit functionality later
-        st.session_state.setdefault('campaign_to_delete', None)
-        st.session_state.setdefault('view_campaign_id', None) # NEW: To store ID of campaign to view details
+        st.session_state.setdefault('show_campaign_create_form', False)
+        st.session_state.setdefault('campaign_to_delete', None) # If you implement delete later
+        st.session_state.setdefault('view_campaign_id', None)
         
         st.session_state.setdefault('available_icps_for_campaign', [])
         st.session_state.setdefault('available_icps_for_campaign_loaded', False)
@@ -929,39 +927,38 @@ else:
             st.error(st.session_state.campaign_action_error)
             del st.session_state['campaign_action_error']
 
-        # --- Conditionally Display Campaign Details & Steps ---
-        
-        if st.session_state.get('view_campaign_id') is not None:
-            campaign_id_to_view = st.session_state.view_campaign_id
-            st.subheader(f"🔍 Campaign Details & AI-Generated Steps")
-        
-        # --- Load Data (Campaigns and ICPs for dropdown) ---
-        # Load Campaigns
+        # --- Load Data needed for the ENTIRE Campaigns Page (List and Create Form Dropdowns) ---
+        # Load Campaigns List for the main display
         if not st.session_state.campaigns_loaded:
-            with st.spinner(f"Loading details for campaign ID {campaign_id_to_view}..."):
-                campaign_details_data = get_campaign_details(campaign_id_to_view, auth_token)
-                # Load all campaigns by default (active_only=None or remove param from helper if not needed)
-                fetched_campaigns = list_campaigns(auth_token, active_only=None)
+            with st.spinner("Loading campaigns list..."):
+                fetched_campaigns = list_campaigns(auth_token, active_only=None) # Fetch all
                 if fetched_campaigns is not None:
                     st.session_state.campaigns_list = fetched_campaigns
                 else:
-                    st.session_state.campaigns_list = []
+                    st.session_state.campaigns_list = [] # Default to empty on error
                 st.session_state.campaigns_loaded = True
         
+        # Load ICPs for the "Create Campaign" form dropdown
         if not st.session_state.available_icps_for_campaign_loaded:
-            with st.spinner("Loading ICPs..."):
-                fetched_icps = list_icps(auth_token) # Your existing helper
+            with st.spinner("Loading ICPs for selection..."):
+                fetched_icps = list_icps(auth_token)
                 if fetched_icps is not None:
                     st.session_state.available_icps_for_campaign = fetched_icps
+                else:
+                    st.session_state.available_icps_for_campaign = []
                 st.session_state.available_icps_for_campaign_loaded = True
 
+        # Load Offerings for the "Create Campaign" form dropdown
         if not st.session_state.available_offerings_for_campaign_loaded:
-            with st.spinner("Loading Offerings..."):
-                fetched_offerings = list_offerings(auth_token) # Your existing helper
+            with st.spinner("Loading Offerings for selection..."):
+                fetched_offerings = list_offerings(auth_token)
                 if fetched_offerings is not None:
                     st.session_state.available_offerings_for_campaign = fetched_offerings
+                else:
+                    st.session_state.available_offerings_for_campaign = []
                 st.session_state.available_offerings_for_campaign_loaded = True
 
+        # Get currently loaded data from session state for use in UI
         campaign_list = st.session_state.get('campaigns_list', [])
         available_icps = st.session_state.get('available_icps_for_campaign', [])
         available_offerings = st.session_state.get('available_offerings_for_campaign', [])
@@ -970,34 +967,34 @@ else:
         st.markdown("---")
         if st.button("🚀 Create New Campaign Goal", key="show_create_campaign_form_button"):
             st.session_state.show_campaign_create_form = not st.session_state.get('show_campaign_create_form', False)
-            # Clear view_campaign_id if create form is opened
             if st.session_state.show_campaign_create_form and 'view_campaign_id' in st.session_state:
-                del st.session_state.view_campaign_id
-
+                del st.session_state.view_campaign_id # Hide details if create form is shown
 
         if st.session_state.get('show_campaign_create_form', False):
             st.subheader("Define New Campaign Goal")
             with st.form("create_campaign_form", clear_on_submit=True):
+                # ... (Your campaign creation form code - this was already well-structured) ...
+                # Ensure it uses `available_icps` and `available_offerings`
                 campaign_name = st.text_input("Campaign Name*", help="A clear, descriptive name for your campaign.")
                 campaign_description = st.text_area("Description (Optional)", help="Briefly describe the goal or purpose of this campaign.")
 
-                icp_options = {icp['id']: icp['name'] for icp in available_icps}
-                offering_options = {offering['id']: offering['name'] for offering in available_offerings}
+                icp_options_map = {icp['id']: icp['name'] for icp in available_icps}
+                offering_options_map = {offering['id']: offering['name'] for offering in available_offerings}
 
                 selected_icp_id = st.selectbox(
                     "Select Ideal Customer Profile (ICP) (Optional)", 
-                    options=[None] + list(icp_options.keys()),
-                    format_func=lambda x: "None" if x is None else icp_options.get(x, "Unknown ICP"),
+                    options=[None] + list(icp_options_map.keys()),
+                    format_func=lambda x: "None" if x is None else icp_options_map.get(x, f"ID: {x}"),
                     key="create_camp_icp_select"
                 )
                 selected_offering_id = st.selectbox(
                     "Select Offering (Optional)", 
-                    options=[None] + list(offering_options.keys()),
-                    format_func=lambda x: "None" if x is None else offering_options.get(x, "Unknown Offering"),
+                    options=[None] + list(offering_options_map.keys()),
+                    format_func=lambda x: "None" if x is None else offering_options_map.get(x, f"ID: {x}"),
                     key="create_camp_offering_select"
                 )
                 
-                is_active = st.checkbox("Activate campaign after AI generates emails?", value=False, help="Activates the campaign once steps are ready.")
+                is_active_on_creation = st.checkbox("Activate campaign after AI generates emails?", value=False, help="Activates the campaign once steps are ready and reviewed.")
 
                 submitted = st.form_submit_button("Create Campaign & Generate Emails")
 
@@ -1010,19 +1007,20 @@ else:
                             "description": campaign_description or None,
                             "icp_id": selected_icp_id,
                             "offering_id": selected_offering_id,
-                            "is_active": is_active
+                            "is_active": is_active_on_creation # Note: AI will generate, then user activates fully
                         }
                         st.info("Creating campaign and triggering AI email generation... This may take a few moments.")
                         created_campaign_response = create_new_campaign(campaign_data, auth_token)
                         if created_campaign_response:
-                            st.session_state.campaign_action_success = f"Campaign '{created_campaign_response.get('name')}' created! AI is generating steps."
-                            st.session_state.campaigns_loaded = False # Force reload list
-                            st.session_state.show_campaign_create_form = False # Hide form
+                            st.session_state.campaign_action_success = f"Campaign '{created_campaign_response.get('name')}' created! AI is generating steps. Refresh the list to see status updates."
+                            st.session_state.campaigns_loaded = False 
+                            st.session_state.show_campaign_create_form = False 
                             st.balloons()
                             st.rerun()
                         else:
-                            st.session_state.campaign_action_error = "Failed to create campaign (see error above if any)."
-                            # No rerun, so error message from helper stays visible
+                            # Error message handled by create_new_campaign helper
+                            st.session_state.campaign_action_error = "Failed to create campaign."
+                            # No rerun to keep form values and show error from helper
 
         # --- Display Campaigns List ---
         st.markdown("---")
@@ -1034,6 +1032,8 @@ else:
         if not campaign_list and st.session_state.campaigns_loaded:
             st.info("No campaigns defined yet. Click 'Create New Campaign Goal' to start.")
         elif campaign_list:
+            # ... (Your campaign list display code - this was also well-structured) ...
+            # Ensure it uses the `campaign_list` loaded above.
             for campaign in campaign_list:
                 camp_id = campaign.get('id')
                 if not camp_id: continue
@@ -1060,48 +1060,47 @@ else:
                     with col_actions:
                         if st.button("👁️ View", key=f"view_camp_{camp_id}", help="View Details & Steps", use_container_width=True):
                             st.session_state.view_campaign_id = camp_id
-                            st.session_state.show_campaign_create_form = False # Hide create form if open
+                            st.session_state.show_campaign_create_form = False 
                             st.rerun()
-                        # Add Edit/Delete buttons later if needed, linked to backend capabilities
-                        # if st.button("✏️", key=f"edit_camp_simple_{camp_id}", help="Edit Basic Info", use_container_width=True):
-                        #    st.warning("Edit campaign (basic info) not yet implemented.")
-                        # if st.button("🗑️", key=f"del_camp_simple_{camp_id}", help="Delete Campaign", use_container_width=True):
-                        #    st.warning("Delete campaign not yet implemented.")
         st.markdown("---")
         
         # --- Conditionally Display Campaign Details & Steps ---
         if st.session_state.get('view_campaign_id') is not None:
-            campaign_id_to_view = st.session_state.view_campaign_id
+            # THIS IS WHERE campaign_id_to_view IS NOW CORRECTLY DEFINED AND USED
+            campaign_id_to_view = st.session_state.view_campaign_id 
             st.subheader(f"🔍 Campaign Details & AI-Generated Steps")
 
+            # Only fetch specific details if view_campaign_id is set
             with st.spinner(f"Loading details for campaign ID {campaign_id_to_view}..."):
                 campaign_details_data = get_campaign_details(campaign_id_to_view, auth_token)
 
             if campaign_details_data:
+                # ... (The rest of your well-structured code for displaying details, steps, and activation buttons) ...
+                # This part was already good and should work now.
                 st.markdown(f"#### {campaign_details_data.get('name')}")
-                st.caption(f"ID: {campaign_details_data.get('id')} | Status: {'Active' if campaign_details_data.get('is_active') else 'Inactive'} | AI: {campaign_details_data.get('ai_status','N/A').replace('_',' ').capitalize()}")
+                st.caption(f"ID: {campaign_details_data.get('id')} | Status: {'✅ Active' if campaign_details_data.get('is_active') else '⏸️ Inactive'} | AI: {campaign_details_data.get('ai_status','N/A').replace('_',' ').capitalize()}")
                 st.markdown(f"**Description:** {campaign_details_data.get('description', '_No description_')}")
                 st.markdown(f"**Linked ICP:** {campaign_details_data.get('icp_name', '_None_')}")
                 st.markdown(f"**Linked Offering:** {campaign_details_data.get('offering_name', '_None_')}")
-                               
-                created_dt = campaign_details_data.get('created_at')
-                if created_dt:
-                    try: # Handle potential Z for UTC
-                        dt_obj = datetime.fromisoformat(created_dt.replace('Z', '+00:00'))
+                
+                created_dt_str = campaign_details_data.get('created_at')
+                if created_dt_str:
+                    try: 
+                        # Ensure datetime import: from datetime import datetime
+                        dt_obj = datetime.fromisoformat(created_dt_str.replace('Z', '+00:00'))
                         st.caption(f"Created: {dt_obj.strftime('%Y-%m-%d %H:%M %Z') if dt_obj.tzinfo else dt_obj.strftime('%Y-%m-%d %H:%M')}")
-                    except ValueError:
-                        st.caption(f"Created: {created_dt} (could not parse date)")
+                    except (ValueError, TypeError) as e: # Catch if created_dt_str is None or bad format
+                        st.caption(f"Created: {created_dt_str} (parse error: {e})")
 
 
                 steps = campaign_details_data.get('steps', [])
-                if not steps and campaign_details_data.get('ai_status') not in ["generating", "pending", "failed", "failed_llm_empty", "failed_config"]: # Added failure states
+                if not steps and campaign_details_data.get('ai_status') not in ["generating", "pending", "failed", "failed_llm_empty", "failed_config"]:
                      st.warning("No steps found for this campaign. AI generation might have failed or produced no steps.", icon="⚠️")
                 elif not steps and campaign_details_data.get('ai_status') in ["generating", "pending"]:
                      st.info(f"AI is currently {campaign_details_data.get('ai_status')} steps. Please refresh or check back soon.", icon="⏳")
                 elif steps:
                     st.markdown("##### ✉️ Email Steps:")
                     for step in sorted(steps, key=lambda x: x.get('step_number', 0)):
-                        # ... (Your existing step expander code) ...
                         exp_title = f"Step {step.get('step_number')}: {step.get('subject_template', 'No Subject')}"
                         exp_title += f" (Delay: {step.get('delay_days')} days)"
                         with st.expander(exp_title):
@@ -1110,23 +1109,23 @@ else:
                             st.code(step.get('subject_template', ''), language='text')
                             st.markdown(f"**Body Template:**")
                             st.text_area(
-                                f"body_display_{campaign_id_to_view}_{step.get('id')}",
-                                value=step.get('body_template', ''),
-                                height=250,
-                                disabled=True,
-                                key=f"body_text_display_{campaign_id_to_view}_{step.get('id')}" # Ensure unique key
+                                f"body_display_{campaign_id_to_view}_{step.get('id')}", 
+                                value=step.get('body_template', ''), 
+                                height=250, 
+                                disabled=True, 
+                                key=f"body_text_display_{campaign_id_to_view}_{step.get('id')}"
                             )
                             st.caption(f"Step ID: {step.get('id')} | AI Crafted: {'Yes' if step.get('is_ai_crafted') else 'No'}")
 
-                  # ***** --- INSERT ACTIVATION CONTROLS HERE --- *****
-                st.markdown("---") # Separator before controls
+                # --- Activation Controls ---
+                st.markdown("---")
                 current_is_active = campaign_details_data.get('is_active', False)
                 current_ai_status = campaign_details_data.get('ai_status')
-
-                # Conditions for activation: AI completed/partial, not already active, and has steps
+                
+                # Ensure 'steps' variable is defined (it is, from campaign_details_data)
                 can_activate = current_ai_status in ["completed", "completed_partial"] and not current_is_active and steps
 
-                col1_act, col2_act, col3_act = st.columns([1,1,2]) # Adjust layout as needed
+                col1_act, col2_act, col3_act = st.columns([1,1,2])
 
                 with col1_act:
                     if can_activate:
@@ -1136,12 +1135,11 @@ else:
                             if success:
                                 st.session_state.campaign_action_success = "Campaign activated successfully!"
                                 st.session_state.campaigns_loaded = False
-                                # Clear view state after action might be good practice
                                 if 'view_campaign_id' in st.session_state: del st.session_state.view_campaign_id
                                 st.rerun()
                             else:
                                 st.session_state.campaign_action_error = "Failed to activate campaign."
-                                st.rerun() # Rerun to show error
+                                st.rerun()
 
                 with col2_act:
                     if current_is_active:
@@ -1155,32 +1153,20 @@ else:
                                  st.rerun()
                              else:
                                 st.session_state.campaign_action_error = "Failed to deactivate campaign."
-                                st.rerun() # Rerun to show error
+                                st.rerun()
 
-                # --- Option for AI Regeneration (Simple Version) ---
-                # Show if generation is completed or failed
                 if current_ai_status in ["completed", "completed_partial", "failed", "failed_llm_empty", "failed_config"]:
-                    with col3_act: # Place in the third column
+                    with col3_act:
                          if st.button("🔄 Ask AI to Regenerate Steps", key=f"regen_camp_{campaign_id_to_view}", help="Delete current steps and ask AI to generate a new sequence."):
-                            # --- TODO: Implement Backend endpoint like POST /campaigns/{id}/regenerate ---
                             st.warning("Regeneration feature is not yet implemented in the backend.")
-                            # Example API call (needs backend endpoint first):
-                            # if trigger_regeneration_in_api(campaign_id_to_view, auth_token):
-                            #    st.info("AI regeneration request sent. Refresh the page in a few moments to see the new status.")
-                            #    # Update status locally or wait for refresh
-                            # else:
-                            #    st.error("Failed to trigger AI regeneration.")
-
-
-                # --- Close Details Button ---
-                st.markdown("---") # Separator before close button
+                
+                st.markdown("---")
                 if st.button("🔙 Close Details", key=f"hide_details_btn_{campaign_id_to_view}"):
                     if 'view_campaign_id' in st.session_state: del st.session_state.view_campaign_id
                     st.rerun()
-            # --- Error Handling for Details Fetch ---
-            else: # campaign_details_data is None
+            else: 
                 st.error(f"Could not load details for campaign ID: {campaign_id_to_view}. It might have been deleted or an error occurred.")
-                if st.button("Return to Campaign List", key="return_from_detail_error"):
+                if st.button("Return to Campaign List", key="return_from_detail_error_btn"):
                     if 'view_campaign_id' in st.session_state: del st.session_state.view_campaign_id
                     st.rerun()
 
