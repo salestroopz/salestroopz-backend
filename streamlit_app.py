@@ -650,6 +650,9 @@ else:
         st.session_state.setdefault('lead_to_delete', None) # Store lead for delete confirmation
         st.session_state.setdefault('lead_to_view_details', None) # Store lead for view details dialog
         st.session_state.setdefault('upload_summary', None) # For storing CSV upload results
+        st.session_state.setdefault('selected_leads_for_enrollment', {}) # New: For checkboxes
+        st.session_state.setdefault('show_enroll_modal', False)
+        st.session_state.setdefault('campaign_to_enroll_in_id', None)
 
         # --- Display Action Messages ---
         if st.session_state.get('lead_action_success', None):
@@ -721,7 +724,20 @@ else:
                 st.session_state.leads_loaded = True
 
         lead_list = st.session_state.get('leads_list', [])
-
+       
+        # --- Enroll Selected Leads Button ---
+        selected_lead_ids = [lead_id for lead_id, is_selected in st.session_state.get('selected_leads_for_enrollment', {}).items() if is_selected]
+        
+        if selected_lead_ids:
+            st.markdown("---")
+            col_enroll_btn, col_enroll_info = st.columns([1,3])
+            with col_enroll_btn:
+                if st.button(f"➡️ Enroll {len(selected_lead_ids)} Selected Lead(s)", key="show_enroll_selected_leads_modal_btn"):
+                    st.session_state.show_enroll_modal = True
+                    st.rerun() # Rerun to show modal/dialog
+            with col_enroll_info:
+                st.caption("Select leads using the checkboxes below to enroll them into an active campaign.")
+        
         # --- Actions and Lead List Display ---
         st.markdown("---")
         col_header_lead1, col_header_lead2 = st.columns([3,1])
@@ -766,6 +782,101 @@ else:
 
         st.markdown("---")
 
+        if not lead_list and st.session_state.leads_loaded:
+            st.info("No leads found. Click 'Add New Lead' or upload a CSV to get started.")
+        elif lead_list:
+            # Display leads
+            for lead_idx, lead in enumerate(lead_list): # Use enumerate for unique checkbox keys if needed
+                lead_id = lead.get('id')
+                if not lead_id: continue
+                
+                with st.container(border=True):
+                    col_select, col_lead_info, col_lead_actions = st.columns([0.5, 4, 1.5]) # Adjusted columns
+                    
+                    with col_select:
+                        is_selected = st.checkbox("", value=st.session_state.get('selected_leads_for_enrollment', {}).get(lead_id, False), key=f"select_lead_cb_{lead_id}")
+                        if is_selected:
+                            st.session_state.setdefault('selected_leads_for_enrollment', {})[lead_id] = True
+                        elif lead_id in st.session_state.get('selected_leads_for_enrollment', {}):
+                            st.session_state.selected_leads_for_enrollment[lead_id] = False # Keep key but set to false, or del
+
+                    with col_lead_info:
+                        st.markdown(f"**{lead.get('name', 'N/A')}** ({lead.get('email')})")
+                        st.caption(f"Company: {lead.get('company', 'N/A')} | Title: {lead.get('title', 'N/A')} | Source: {lead.get('source', 'N/A')}")
+                        # Optionally display ICP match status here
+                        if lead.get('matched') and lead.get('icp_match_id'):
+                            st.caption(f"✅ Matches ICP: {lead.get('reason','Details unavailable')}")
+
+
+                    with col_lead_actions:
+                        # ... (your existing view, edit, delete buttons for leads) ...
+                        sub_col_view, sub_col_edit, sub_col_delete = st.columns(3)
+                        with sub_col_view: st.button("👁️", key=f"view_lead_{lead_id}_act", help="View Details", on_click=lambda l=lead: st.session_state.update({'lead_to_view_details': l}))
+                        with sub_col_edit: st.button("✏️", key=f"edit_lead_{lead_id}_act", help="Edit Lead", on_click=lambda l=lead, lid=lead_id: st.session_state.update({'lead_form_data': l, 'lead_being_edited_id': lid, 'show_lead_form': True}))
+                        with sub_col_delete: st.button("🗑️", key=f"delete_lead_{lead_id}_act", help="Delete Lead", on_click=lambda l=lead: st.session_state.update({'lead_to_delete': l}))
+        
+        # --- Enrollment Modal/Dialog ---
+        if st.session_state.get('show_enroll_modal') and selected_lead_ids:
+            active_campaigns_list = list_campaigns_api(auth_token, active_only=True)
+            active_campaigns_list = active_campaigns_list if active_campaigns_list else [] # Ensure it's a list
+
+            # Filter out campaigns where AI steps are not complete
+            enrollable_campaigns = [
+                c for c in active_campaigns_list 
+                if c.get('ai_status') in ['completed', 'completed_partial'] and c.get('steps') # Assuming list_campaigns_api now also returns steps or get_campaign_details is called
+            ] 
+            # Note: list_campaigns_api response (CampaignResponse) doesn't include steps.
+            # You might need to fetch details for each active campaign to check for steps, or add 'has_steps' to CampaignResponse from backend.
+            # For simplicity now, we'll assume active campaigns are generally ready if AI status is good.
+            # A better check would be `if c.get('ai_status') in ['completed', 'completed_partial']`
+
+            enrollable_campaign_options = {camp['id']: f"{camp['name']} (ICP: {camp.get('icp_name','N/A')}, Offering: {camp.get('offering_name','N/A')})" for camp in active_campaigns_list if camp.get('ai_status') in ['completed', 'completed_partial']}
+
+
+            if not enrollable_campaign_options:
+                st.warning("No active campaigns with completed AI steps found to enroll leads into.")
+                if st.button("Close Enrollment", key="close_no_camp_enroll_modal"):
+                    st.session_state.show_enroll_modal = False
+                    st.rerun()
+            else:
+                with st.form("enroll_leads_form"):
+                    st.subheader(f"Enroll {len(selected_lead_ids)} Lead(s) into Campaign")
+                    st.session_state.campaign_to_enroll_in_id = st.selectbox(
+                        "Select an Active Campaign:",
+                        options=list(enrollable_campaign_options.keys()),
+                        format_func=lambda x: enrollable_campaign_options.get(x, "Unknown Campaign"),
+                        key="select_campaign_for_enrollment"
+                    )
+                    submit_enrollment = st.form_submit_button("Confirm Enrollment")
+                    cancel_enrollment = st.form_submit_button("Cancel")
+
+                    if cancel_enrollment:
+                        st.session_state.show_enroll_modal = False
+                        st.session_state.selected_leads_for_enrollment = {} # Clear selection
+                        st.rerun()
+                    
+                    if submit_enrollment:
+                        campaign_to_enroll = st.session_state.campaign_to_enroll_in_id
+                        if campaign_to_enroll:
+                            with st.spinner(f"Enrolling {len(selected_lead_ids)} leads into campaign..."):
+                                enroll_response = enroll_leads_in_campaign_api(campaign_to_enroll, selected_lead_ids, auth_token)
+                            
+                            if enroll_response:
+                                st.success(f"{enroll_response.get('message', 'Enrollment processed.')} "
+                                           f"Successful: {enroll_response.get('successful_enrollments',0)}, "
+                                           f"Failed/Skipped: {enroll_response.get('failed_enrollments',0)}")
+                                if enroll_response.get('details'):
+                                    with st.expander("See enrollment error details"):
+                                        for err_detail in enroll_response['details']:
+                                            st.error(f"Lead ID {err_detail.get('lead_id')}: {err_detail.get('error')}")
+                                st.session_state.selected_leads_for_enrollment = {} # Clear selection
+                                st.session_state.show_enroll_modal = False
+                                # Optionally refresh lead data if it shows campaign status
+                                st.rerun()
+                            else:
+                                st.error("Failed to process lead enrollment.")
+                        else:
+                            st.error("Please select a campaign.")
         # --- Delete Confirmation Dialog ---
         if st.session_state.get('lead_to_delete') is not None:
             lead_for_deletion = st.session_state.lead_to_delete
