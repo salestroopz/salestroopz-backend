@@ -66,6 +66,13 @@ except Exception as e: # CATCH GENERIC Exception temporarily
     traceback.print_exc() # Print the full traceback of the actual error
     # For now, let the program exit if a critical router fails to load
     raise SystemExit(f"Failed to import a module from app.routes: {e}")
+    from app.routes import workflow as workflow_router_module
+    print(f"DEBUG: Imported workflow. workflow_router_module IS DEFINED HERE. Type: {type(workflow_router_module)}") # <<< ADD THIS
+    from app.routes import leadworkflow as leadworkflow_router_module
+    print(f"DEBUG: Imported leadworkflow. Type: {type(leadworkflow_router_module)}")
+    # ... continue for other imports in this block ...
+    print("INFO: Successfully imported modules from 'app.routes'.")
+except Exception as e:
 
 # From app.routers directory
 try:
