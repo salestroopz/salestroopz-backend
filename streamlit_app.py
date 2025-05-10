@@ -315,16 +315,20 @@ else: # Authenticated User Flow
                         summary = upload_leads_csv_file(uploaded_file_leads, auth_token) # Ensure this helper is robust
                         st.session_state.upload_summary = summary
                         st.session_state.leads_loaded = False; st.rerun()
-        if st.session_state.get('upload_summary'):
-            s = st.session_state.pop('upload_summary') # Pop to show only once
+         if st.session_state.get('upload_summary'):
+            s = st.session_state.pop('upload_summary') 
             st.markdown("---"); st.markdown("#### CSV Import Summary:")
             st.info(f"- Total: {s.get('total_rows_in_file','N/A')}, Attempted: {s.get('rows_attempted','N/A')}, Successful: {s.get('successfully_imported_or_updated','N/A')}, Failed: {s.get('failed_imports','N/A')}")
-            errors_list = s.get('errors', [])
-        if errors_list:
-            with st.expander(f"View {len(errors_list)} Import Errors/Issues"):
-            for i, err in enumerate(errors_list[:15]): # Show up to 15 errors
-            st.error(f"Row {err.get('row_number','?')} (Email: {err.get('email','?')}) {err.get('error')}") # Corrected: Removed stray 'L' and added space
-            if len(errors_list) > 15: st.caption(f"...and {len(errors_list)-15} more issues.")
+            
+            errors_list = s.get('errors', []) # Get the errors list
+            if errors_list:
+                with st.expander(f"View {len(errors_list)} Import Errors/Issues"): 
+                    # --- THIS BLOCK MUST BE INDENTED ---
+                    for i, err in enumerate(errors_list[:15]): 
+                        st.error(f"Row {err.get('row_number','?')} (Email: {err.get('email','?')}) - Error: {err.get('error')}") # INDENTED
+                    
+                    if len(errors_list) > 15: # INDENTED (same level as the for loop)
+                        st.caption(f"...and {len(errors_list)-15} more issues.") 
         
         # --- Load Lead List Data ---
         if not st.session_state.get('leads_loaded', False):
