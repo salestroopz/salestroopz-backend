@@ -320,11 +320,11 @@ else: # Authenticated User Flow
             st.markdown("---"); st.markdown("#### CSV Import Summary:")
             st.info(f"- Total: {s.get('total_rows_in_file','N/A')}, Attempted: {s.get('rows_attempted','N/A')}, Successful: {s.get('successfully_imported_or_updated','N/A')}, Failed: {s.get('failed_imports','N/A')}")
             errors_list = s.get('errors', [])
-            if errors_list:
-                with st.expander(f"View {len(errors_list)} Import Errors/Issues"):
-                    for i, err in enumerate(errors_list[:15]): # Show up to 15 errors
-                        st.error(f"Row {err.get('row_number','?')} (Email: {err.get('email','?') L}): {err.get('error')}")
-                    if len(errors_list) > 15: st.caption(f"...and {len(errors_list)-15} more issues.")
+        if errors_list:
+            with st.expander(f"View {len(errors_list)} Import Errors/Issues"):
+            for i, err in enumerate(errors_list[:15]): # Show up to 15 errors
+            st.error(f"Row {err.get('row_number','?')} (Email: {err.get('email','?')}) {err.get('error')}") # Corrected: Removed stray 'L' and added space
+            if len(errors_list) > 15: st.caption(f"...and {len(errors_list)-15} more issues.")
         
         # --- Load Lead List Data ---
         if not st.session_state.get('leads_loaded', False):
