@@ -383,7 +383,9 @@ else: # Authenticated User Flow
 
 
             for lead_item_data in lead_list_data:
-                lead_id = lead_item_data.get("id"); if not lead_id: continue
+                lead_id = lead_item_data.get("id") # First statement
+                if not lead_id: # Second statement 
+                    continue
                 with st.container(border=True):
                     item_cols_ui = st.columns([0.5, 4, 1.5]) 
                     with item_cols_ui[0]: 
