@@ -6,7 +6,7 @@ from datetime import datetime # Needed for response model
 
 # --- Import necessary project modules ---
 # Assuming these schemas exist and ICPResponseAPI handles potential None values for JSON fields
-from app.schemas import ICPInput, ICPResponseAPI, UserPublic
+from app.schemas import ICPInput, ICPResponse, UserPublic
 from app.db import database
 from app.auth.dependencies import get_current_user
 from app.utils.logger import logger # Assuming logger is setup
@@ -21,7 +21,7 @@ router = APIRouter(
 # --- POST Endpoint to CREATE a new ICP ---
 @router.post(
     "/",
-    response_model=ICPResponseAPI,
+    response_model=ICPResponse,
     status_code=status.HTTP_201_CREATED, # Correct status code for creation
     summary="Create New ICP",
     description="Creates a new Ideal Customer Profile (ICP) for the current user's organization."
@@ -56,7 +56,7 @@ def create_new_icp(
 # --- GET Endpoint to LIST all ICPs for the organization ---
 @router.get(
     "/",
-    response_model=List[ICPResponseAPI], # Returns a list of ICPs
+    response_model=List[ICPResponse], # Returns a list of ICPs
     summary="List Organization's ICPs",
     description="Retrieves all Ideal Customer Profiles (ICPs) defined for the current user's organization."
 )
@@ -78,7 +78,7 @@ def list_organization_icps(
 # --- GET Endpoint to retrieve a SPECIFIC ICP by ID ---
 @router.get(
     "/{icp_id}", # Path parameter for the specific ICP ID
-    response_model=ICPResponseAPI,
+    response_model=ICPResponse,
     summary="Get Specific ICP",
     description="Retrieves a specific Ideal Customer Profile (ICP) by its ID, ensuring it belongs to the current user's organization."
 )
@@ -107,7 +107,7 @@ def get_specific_icp(
 # --- PUT Endpoint to UPDATE a specific ICP by ID ---
 @router.put(
     "/{icp_id}", # Path parameter for the specific ICP ID
-    response_model=ICPResponseAPI,
+    response_model=ICPResponse,
     summary="Update Specific ICP",
     description="Updates an existing Ideal Customer Profile (ICP) by its ID."
 )
