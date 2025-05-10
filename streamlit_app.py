@@ -816,67 +816,91 @@ else:
                         with sub_col_delete: st.button("🗑️", key=f"delete_lead_{lead_id}_act", help="Delete Lead", on_click=lambda l=lead: st.session_state.update({'lead_to_delete': l}))
         
         # --- Enrollment Modal/Dialog ---
-        if st.session_state.get('show_enroll_modal') and selected_lead_ids:
-            active_campaigns_list = list_campaigns_api(auth_token, active_only=True)
-            active_campaigns_list = active_campaigns_list if active_campaigns_list else [] # Ensure it's a list
+        if st.session_state.get('show_enroll_modal') and selected_lead_ids: # `selected_lead_ids` is from checkbox logic
+            with st.spinner("Loading active campaigns for enrollment..."):
+                all_active_campaigns = list_campaigns_api(auth_token, active_only=True)
+            
+            enrollable_campaigns_list = []
+            if all_active_campaigns:
+                enrollable_campaigns_list = [
+                    c for c in all_active_campaigns
+                    if c.get('is_active') and c.get('ai_status') in ['completed', 'completed_partial']
+                    # We assume if ai_status is 'completed' or 'completed_partial', steps exist.
+                    # This avoids N+1 API calls to get details for each campaign just to check for steps.
+                ]
 
-            # Filter out campaigns where AI steps are not complete
-            enrollable_campaigns = [
-                c for c in active_campaigns_list 
-                if c.get('ai_status') in ['completed', 'completed_partial'] and c.get('steps') # Assuming list_campaigns_api now also returns steps or get_campaign_details is called
-            ] 
-            # Note: list_campaigns_api response (CampaignResponse) doesn't include steps.
-            # You might need to fetch details for each active campaign to check for steps, or add 'has_steps' to CampaignResponse from backend.
-            # For simplicity now, we'll assume active campaigns are generally ready if AI status is good.
-            # A better check would be `if c.get('ai_status') in ['completed', 'completed_partial']`
-
-            enrollable_campaign_options = {camp['id']: f"{camp['name']} (ICP: {camp.get('icp_name','N/A')}, Offering: {camp.get('offering_name','N/A')})" for camp in active_campaigns_list if camp.get('ai_status') in ['completed', 'completed_partial']}
-
-
-            if not enrollable_campaign_options:
-                st.warning("No active campaigns with completed AI steps found to enroll leads into.")
-                if st.button("Close Enrollment", key="close_no_camp_enroll_modal"):
+            if not enrollable_campaigns_list:
+                st.warning("No active campaigns with completed AI steps are currently available for enrollment.")
+                if st.button("Close Enrollment Window", key="close_enroll_modal_no_campaigns_leads_page"):
                     st.session_state.show_enroll_modal = False
                     st.rerun()
             else:
-                with st.form("enroll_leads_form"):
-                    st.subheader(f"Enroll {len(selected_lead_ids)} Lead(s) into Campaign")
-                    st.session_state.campaign_to_enroll_in_id = st.selectbox(
-                        "Select an Active Campaign:",
-                        options=list(enrollable_campaign_options.keys()),
-                        format_func=lambda x: enrollable_campaign_options.get(x, "Unknown Campaign"),
-                        key="select_campaign_for_enrollment"
+                campaign_options_for_select = {
+                    camp['id']: f"{camp['name']} (ICP: {camp.get('icp_name','N/A')}, Offering: {camp.get('offering_name','N/A')})" 
+                    for camp in enrollable_campaigns_list
+                }
+                
+                # Using a form within the conditional block for the dialog-like behavior
+                with st.form("enroll_leads_form_on_leads_page_ui"): # Unique form key
+                    st.subheader(f"Enroll {len(selected_lead_ids)} Selected Lead(s) into a Campaign")
+                    
+                    # Use a new session state variable for the selectbox's selection if you want to persist it
+                    # or rely on the selectbox's own state within the form.
+                    # For simplicity, st.selectbox will hold its state until form submission.
+                    chosen_campaign_id = st.selectbox(
+                        "Select an Active & Ready Campaign:",
+                        options=list(campaign_options_for_select.keys()),
+                        format_func=lambda x_id: campaign_options_for_select.get(x_id, f"Unknown Campaign ID: {x_id}"),
+                        key="campaign_select_for_manual_enrollment" # Unique key
                     )
-                    submit_enrollment = st.form_submit_button("Confirm Enrollment")
-                    cancel_enrollment = st.form_submit_button("Cancel")
+                    
+                    col_submit, col_cancel = st.columns(2)
+                    with col_submit:
+                        submit_enrollment_clicked = st.form_submit_button("✅ Confirm & Enroll Leads", use_container_width=True)
+                    with col_cancel:
+                        cancel_enrollment_clicked = st.form_submit_button("✖️ Cancel", type="secondary", use_container_width=True)
 
-                    if cancel_enrollment:
+                    if cancel_enrollment_clicked:
                         st.session_state.show_enroll_modal = False
-                        st.session_state.selected_leads_for_enrollment = {} # Clear selection
+                        # Optionally clear selected_leads_for_enrollment if you want them deselected on cancel
+                        # st.session_state.selected_leads_for_enrollment = {} 
                         st.rerun()
                     
-                    if submit_enrollment:
-                        campaign_to_enroll = st.session_state.campaign_to_enroll_in_id
-                        if campaign_to_enroll:
-                            with st.spinner(f"Enrolling {len(selected_lead_ids)} leads into campaign..."):
-                                enroll_response = enroll_leads_in_campaign_api(campaign_to_enroll, selected_lead_ids, auth_token)
+                    if submit_enrollment_clicked:
+                        if chosen_campaign_id and selected_lead_ids:
+                            with st.spinner(f"Enrolling {len(selected_lead_ids)} leads into campaign '{campaign_options_for_select.get(chosen_campaign_id)}'..."):
+                                enroll_response = enroll_leads_in_campaign_api(
+                                    chosen_campaign_id, 
+                                    selected_lead_ids, # Use the list of IDs directly
+                                    auth_token
+                                )
                             
                             if enroll_response:
-                                st.success(f"{enroll_response.get('message', 'Enrollment processed.')} "
-                                           f"Successful: {enroll_response.get('successful_enrollments',0)}, "
-                                           f"Failed/Skipped: {enroll_response.get('failed_enrollments',0)}")
-                                if enroll_response.get('details'):
-                                    with st.expander("See enrollment error details"):
-                                        for err_detail in enroll_response['details']:
-                                            st.error(f"Lead ID {err_detail.get('lead_id')}: {err_detail.get('error')}")
-                                st.session_state.selected_leads_for_enrollment = {} # Clear selection
+                                st.success(
+                                    f"{enroll_response.get('message', 'Enrollment processed.')} "
+                                    f"Successfully Enrolled: {enroll_response.get('successful_enrollments',0)}. "
+                                    f"Failed/Skipped: {enroll_response.get('failed_enrollments',0)}."
+                                )
+                                # Display specific errors if any
+                                errors_details = enroll_response.get('details', [])
+                                if errors_details and enroll_response.get('failed_enrollments',0) > 0 :
+                                    with st.expander("View Enrollment Errors/Issues"):
+                                        for err_detail in errors_details:
+                                            st.error(f"Lead ID {err_detail.get('lead_id', 'N/A')}: {err_detail.get('error', 'Unknown issue')}")
+                                
+                                # Clear state and refresh
+                                st.session_state.selected_leads_for_enrollment = {} 
                                 st.session_state.show_enroll_modal = False
-                                # Optionally refresh lead data if it shows campaign status
+                                st.session_state.leads_loaded = False # Force refresh of leads list
                                 st.rerun()
                             else:
-                                st.error("Failed to process lead enrollment.")
-                        else:
-                            st.error("Please select a campaign.")
+                                # Error message already shown by enroll_leads_in_campaign_api
+                                st.error("Enrollment process failed to complete due to an API error.")
+                        elif not chosen_campaign_id:
+                            st.error("Please select a campaign to enroll the leads into.")
+                        else: # Should not happen if selected_lead_ids is checked at the top
+                            st.error("No leads selected for enrollment.")
+                            
         # --- Delete Confirmation Dialog ---
         if st.session_state.get('lead_to_delete') is not None:
             lead_for_deletion = st.session_state.lead_to_delete
