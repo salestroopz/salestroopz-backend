@@ -1001,7 +1001,7 @@ with tab_email:
                         # else: error handled by API helper
                         st.rerun()
 
-    elif current_page_selected == "Setup Assistant":
+    elif current_page_selected == "Setup Assistant" :
         st.header("🤖 Setup Assistant")
         st.info("Guided setup and Q&A coming soon!")
 
