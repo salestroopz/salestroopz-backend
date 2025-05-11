@@ -215,6 +215,54 @@ async def read_root():
         "version": app.version # Access version from the app instance
     }
 
+# app/main.py
+# ...
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from app.agents.emailscheduler import EmailSchedulerAgent # Import the agent
+from app.utils.config import settings
+
+scheduler_agent_instance = EmailSchedulerAgent() # Create an instance
+
+async def scheduled_email_task():
+    logger.info("SCHEDULER: Triggering EmailSchedulerAgent cycle.")
+    try:
+        # Since run_scheduler_cycle is synchronous, run it in a thread pool
+        # if the scheduler itself is async to avoid blocking the event loop.
+        # For simplicity, if your agent's DB calls are blocking, this might be okay,
+        # but for true async, the agent's methods would need to be async.
+        # For now, let's assume it's okay to call synchronously from the job.
+        scheduler_agent_instance.run_scheduler_cycle()
+    except Exception as e:
+        logger.error(f"SCHEDULER: Error in scheduled_email_task: {e}", exc_info=True)
+
+scheduler = None
+
+@app.on_event("startup")
+async def on_startup():
+    global scheduler
+    # ... (your existing startup code like initialize_db) ...
+    if getattr(settings, "ENABLE_EMAIL_SCHEDULER", False):
+        scheduler = AsyncIOScheduler(timezone="UTC")
+        scheduler.add_job(
+            scheduled_email_task, # The wrapper function
+            "interval",
+            minutes=int(getattr(settings, "EMAIL_SCHEDULER_INTERVAL_MINUTES", 10))
+        )
+        scheduler.start()
+        logger.info(f"Email sending scheduler started. Interval: {settings.EMAIL_SCHEDULER_INTERVAL_MINUTES} mins.")
+    else:
+        logger.info("Email sending scheduler is disabled via settings.")
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    global scheduler
+    if scheduler and scheduler.running:
+        scheduler.shutdown(wait=False)
+        logger.info("Email sending scheduler shut down.")
+    # ...
+
 # --- Final Confirmation Log ---
 # This will print when the module is first loaded by Uvicorn, before startup events for worker processes.
 print(f"--- {getattr(settings, 'app_name', 'SalesTroopz API')} FastAPI application module loading complete. ---")
+
+
