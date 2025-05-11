@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
-
+from typing import Any, List, Optional, Dict
 # Import project modules
 from app.auth.dependencies import get_current_user # Secure the endpoint (optional, could be admin-only)
 from app.schemas import UserPublic # For type hinting current_user
