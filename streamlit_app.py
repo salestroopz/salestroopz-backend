@@ -870,7 +870,9 @@ with tab_offering:
             if not off_list_cfg and st.session_state.get('offerings_loaded_config_tab'): st.info("No offerings defined.")
             elif off_list_cfg:
                 for off in off_list_cfg:
-                    off_id=off.get('id');if not off_id:continue
+                    off_id=off.get('id');
+                    if not off_id:
+                        continue
                     with st.container(border=True):
                         c=st.columns([4,1,1]); c[0].markdown(f"{'✅' if off.get('is_active') else '⏸️'} **{off.get('name','N/A')}** (ID:{off_id})"); c[0].caption(f"{off.get('description','')[:70]}...")
                         if c[1].button("Edit",key=f"ed_off_{off_id}",type="secondary",use_container_width=True): st.session_state.update(offering_form_data_config_tab=off,offering_being_edited_id_config_tab=off_id,show_offering_form_config_tab=True);st.rerun()
