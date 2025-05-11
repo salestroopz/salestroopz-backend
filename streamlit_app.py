@@ -848,7 +848,7 @@ with tab_icp:
                     if c_btn.form_submit_button("✖️ Cancel",type="secondary"): st.session_state.show_icp_form_config_tab=False; st.rerun()
 
         # --- Offerings Tab ---
-        with tab_offering:
+with tab_offering:
             # ... (Full Offerings Tab Logic - This was provided completely in the previous response) ...
             # Ensure it uses session state variables with '_config_tab' suffix.
             # Example: st.session_state.offerings_list_config_tab, show_offering_form_config_tab etc.
@@ -916,7 +916,7 @@ with tab_icp:
 
 
         # --- Email Sending Tab ---
-        with tab_email:
+with tab_email:
             st.subheader("📧 Email Sending Setup")
             st.caption("Configure how SalesTroopz will send emails.")
 
