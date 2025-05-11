@@ -768,10 +768,10 @@ else: # Authenticated User Flow
         if not auth_token: # Should be caught earlier, but good check
             st.error("Authentication token not found."); logout_user(); st.stop()
         # exec(Path("streamlit_pages/config_email_tab.py").read_text())
-tab_icp, tab_offering, tab_email = st.tabs(["🎯 ICP Definition", "💡 Offerings", "📧 Email Sending"])
+        tab_icp, tab_offering, tab_email = st.tabs(["🎯 ICP Definition", "💡 Offerings", "📧 Email Sending"])
 
         # --- ICP Definition Tab ---
-with tab_icp:
+        with tab_icp:
             st.subheader("Ideal Customer Profiles (ICPs)")
             st.caption("Define different target customer segments for your campaigns.")
 
@@ -848,7 +848,7 @@ with tab_icp:
                     if c_btn.form_submit_button("✖️ Cancel",type="secondary"): st.session_state.show_icp_form_config_tab=False; st.rerun()
 
         # --- Offerings Tab ---
-with tab_offering:
+        with tab_offering:
             # ... (Full Offerings Tab Logic - This was provided completely in the previous response) ...
             # Ensure it uses session state variables with '_config_tab' suffix.
             # Example: st.session_state.offerings_list_config_tab, show_offering_form_config_tab etc.
@@ -918,7 +918,7 @@ with tab_offering:
 
 
         # --- Email Sending Tab ---
-with tab_email:
+        with tab_email:
             st.subheader("📧 Email Sending Setup")
             st.caption("Configure how SalesTroopz will send emails.")
 
@@ -1001,9 +1001,9 @@ with tab_email:
                         # else: error handled by API helper
                         st.rerun()
 
-#    elif current_page_selected == "Setup Assistant" :
- #      st.header("🤖 Setup Assistant")
-  #     st.info("Guided setup and Q&A coming soon!")
+    elif current_page_selected == "Setup Assistant" :
+        st.header("🤖 Setup Assistant")
+        st.info("Guided setup and Q&A coming soon!")
 
-  #  else:
-   #    st.error("Page not found.")
+    else:
+        st.error("Page not found.")
