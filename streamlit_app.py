@@ -792,7 +792,9 @@ with tab_icp:
             if not icp_list_cfg and st.session_state.get('icps_loaded_config_tab'): st.info("No ICPs defined yet.")
             elif icp_list_cfg:
                 for icp in icp_list_cfg:
-                    icp_id = icp.get('id'); if not icp_id: continue
+                    icp_id = icp.get('id')
+                    if not icp_id:
+                        continue
                     with st.container(border=True):
                         cols = st.columns([4,1,1]); cols[0].markdown(f"**{icp.get('name','N/A')}** (ID: {icp_id})")
                         # Add more summary here if desired (e.g., count of keywords)
