@@ -771,7 +771,7 @@ else: # Authenticated User Flow
 tab_icp, tab_offering, tab_email = st.tabs(["🎯 ICP Definition", "💡 Offerings", "📧 Email Sending"])
 
         # --- ICP Definition Tab ---
-    with tab_icp:
+with tab_icp:
             st.subheader("Ideal Customer Profiles (ICPs)")
             st.caption("Define different target customer segments for your campaigns.")
 
