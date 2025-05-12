@@ -1597,6 +1597,81 @@ def get_leads_with_positive_status_for_dashboard(organization_id: int, limit: in
     finally:
         if conn and not getattr(conn, 'closed', True): conn.close()
     return results_list
+    
+def get_organizations_with_imap_enabled(limit: int = 1000) -> List[Dict]:
+    """Fetches organization email settings where IMAP reply detection is enabled and configured."""
+    sql = """
+        SELECT 
+            oes.organization_id, oes.provider_type,
+            oes.imap_host, oes.imap_port, oes.imap_username, oes.encrypted_imap_password, oes.imap_use_ssl
+            -- Add other fields from organization_email_settings if needed by _process_single_inbox
+        FROM organization_email_settings oes
+        WHERE oes.is_configured = TRUE AND oes.enable_reply_detection = TRUE 
+          AND oes.imap_host IS NOT NULL AND oes.imap_username IS NOT NULL 
+          -- AND (oes.encrypted_imap_password IS NOT NULL OR oes.imap_password IS NOT NULL) -- If you add plain imap_password
+        LIMIT %s;
+    """
+    # Note: The above query assumes 'imap_host', 'imap_port', 'imap_username', 'encrypted_imap_password', 'imap_use_ssl', 'enable_reply_detection'
+    # are columns in your 'organization_email_settings' table.
+    # You need to add these columns in initialize_db() if they don't exist.
+
+    conn = None; org_settings_list = []
+    try:
+        conn = get_connection()
+        if not conn: return []
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(sql, (limit,))
+            results = cursor.fetchall()
+            if results:
+                org_settings_list = [dict(row) for row in results]
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error fetching organizations with IMAP enabled: {e}", exc_info=True)
+    finally:
+        if conn and not getattr(conn, 'closed', True): conn.close()
+    return org_settings_list
+
+def update_organization_email_settings_field(organization_id: int, updates: Dict[str, Any]) -> bool:
+    """Updates specific fields in the organization_email_settings table."""
+    if not updates:
+        logger.warning(f"No updates provided for organization_email_settings for org {organization_id}")
+        return False
+    
+    # Only allow updating specific, safe fields like last_imap_poll_uid
+    allowed_fields_to_update = {"last_imap_poll_uid", "last_imap_poll_timestamp"} # Add more if needed
+    
+    valid_updates = {k: v for k, v in updates.items() if k in allowed_fields_to_update}
+    if not valid_updates:
+        logger.warning(f"No valid fields to update in organization_email_settings for org {organization_id}. Updates: {updates}")
+        return False
+
+    set_parts = [f"{key} = %({key})s" for key in valid_updates.keys()]
+    # Always update 'updated_at'
+    valid_updates["updated_at"] = datetime.now(timezone.utc)
+    set_parts.append("updated_at = %(updated_at)s")
+    
+    set_clause = ", ".join(set_parts)
+    params_for_exec = valid_updates.copy()
+    params_for_exec["organization_id"] = organization_id
+
+    sql = f"UPDATE organization_email_settings SET {set_clause} WHERE organization_id = %(organization_id)s RETURNING id;"
+    
+    conn = None
+    success = False
+    try:
+        conn = get_connection()
+        if not conn: return False
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, params_for_exec)
+                if cursor.fetchone():
+                    success = True
+                    logger.info(f"Updated organization_email_settings for org {organization_id} with: {valid_updates}")
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error updating organization_email_settings for org {organization_id}: {e}", exc_info=True)
+    finally:
+        if conn and not getattr(conn, 'closed', True): conn.close()
+    return success
+
 
 # ==========================================
 # Run initialization if script is executed directly
