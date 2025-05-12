@@ -48,7 +48,10 @@ class Settings(BaseSettings):
     DEFAULT_SENDER_NAME: str = os.getenv("DEFAULT_SENDER_NAME", "SalesTroopz Platform")
     # --- === End AWS SES Settings === ---
 
-
+    ENABLE_EMAIL_SCHEDULER: bool = Field(True, description="Enable the periodic email sending worker")
+    EMAIL_SCHEDULER_INTERVAL_MINUTES: int = Field(5, gt=0, description="How often the email sender runs")
+    ENABLE_IMAP_REPLY_POLLER: bool = Field(True, description="Enable the periodic IMAP reply poller")
+    IMAP_POLLER_INTERVAL_MINUTES: int = Field(10, gt=0, description="How often the IMAP poller runs")
 
     @property
     def allowed_origins_list(self) -> List[str]: # Changed return type hint
