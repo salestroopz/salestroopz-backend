@@ -1672,6 +1672,58 @@ def update_organization_email_settings_field(organization_id: int, updates: Dict
         if conn and not getattr(conn, 'closed', True): conn.close()
     return success
 
+def get_leads_with_positive_status_for_dashboard(organization_id: int, limit: int = 100) -> List[Dict]:
+    actionable_statuses = (
+        'positive_reply_ai_flagged', 'question_ai_flagged',
+        'appointment_manually_set', # Keep this for now, UI can filter or highlight
+        'positive_reply_received',
+        'manual_follow_up_needed'
+    )
+    sql = """
+        SELECT 
+            lcs.id as lead_campaign_status_id, lcs.lead_id, lcs.campaign_id, lcs.organization_id,
+            lcs.status as lead_campaign_status, lcs.last_response_type, lcs.last_response_at,
+            lcs.user_notes, lcs.updated_at as status_updated_at,
+            l.name as lead_name, l.email as lead_email, l.company as lead_company,
+            ec.name as campaign_name,
+            er.id as latest_reply_id, 
+            SUBSTRING(er.cleaned_reply_text FROM 1 FOR 250) as latest_reply_snippet, -- Increased snippet length
+            er.ai_summary as latest_reply_ai_summary,
+            er.ai_classification as latest_reply_ai_classification,
+            er.received_at as latest_reply_received_at -- Make sure this is selected
+        FROM lead_campaign_status lcs
+        JOIN leads l ON lcs.lead_id = l.id
+        JOIN email_campaigns ec ON lcs.campaign_id = ec.id
+        LEFT JOIN ( 
+            SELECT DISTINCT ON (er_sub.lead_campaign_status_id)
+                   er_sub.id, er_sub.lead_campaign_status_id,
+                   er_sub.cleaned_reply_text, er_sub.ai_summary,
+                   er_sub.ai_classification, er_sub.received_at -- Ensure received_at is here
+            FROM email_replies er_sub
+            WHERE er_sub.organization_id = %s 
+            ORDER BY er_sub.lead_campaign_status_id, er_sub.received_at DESC
+        ) er ON lcs.id = er.lead_campaign_status_id
+        WHERE lcs.organization_id = %s 
+          AND lcs.status IN %s
+          -- AND er.is_actioned_by_user = FALSE -- Add this if you only want unactioned items
+        ORDER BY lcs.updated_at DESC
+        LIMIT %s;
+    """
+    # ... (rest of the function: connection, execution, error handling) ...
+    conn = None; results_list = []
+    try:
+        conn = get_connection()
+        if not conn: return []
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            # Pass organization_id twice: once for subquery, once for main query
+            cursor.execute(sql, (organization_id, organization_id, actionable_statuses, limit))
+            results = cursor.fetchall()
+            if results: results_list = [dict(row) for row in results]
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB error fetching positive engagement for dashboard (Org {organization_id}): {e}", exc_info=True)
+    finally:
+        if conn and not getattr(conn, 'closed', True): conn.close()
+    return results_list
 
 # ==========================================
 # Run initialization if script is executed directly
