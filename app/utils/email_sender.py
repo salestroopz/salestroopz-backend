@@ -4,6 +4,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Dict, Optional
+from dataclasses import dataclass
 
 # Import logger
 from app.utils.logger import logger
@@ -148,6 +149,11 @@ def _send_with_smtp(recipient_email: str, subject: str, html_body: str, sender_a
              except: pass
     return False
 
+@dataclass
+class EmailSendingResult:
+    success: bool
+    message_id: Optional[str] = None # e.g., "<unique-id@yourdomain.com>"
+    error_message: Optional[str] = None
 
 # --- Placeholder for AWS SES API Sending Logic ---
 def _send_with_ses_api(recipient_email: str, subject: str, html_body: str, sender_address: str, sender_name: str, **kwargs) -> bool:
