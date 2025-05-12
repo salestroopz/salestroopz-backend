@@ -5,6 +5,7 @@ from pydantic_settings import BaseSettings
 from dotenv import load_dotenv # Keep if using .env for local dev
 from pathlib import Path
 import warnings
+from pydantic import Field
 from typing import Optional, List # Added Optional, List for type hints
 
 # Determine the base directory of the project
