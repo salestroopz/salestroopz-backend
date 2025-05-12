@@ -83,6 +83,7 @@ try:
     from app.routers import campaigns as campaigns_router_module
     from app.routers import email_settings as email_settings_router_module
     from app.routers import leads as leads_router_module
+    from app.routers import dashboard as dashboard_router_module
     # Add your new dashboard router if you create one
     # from app.routers import dashboard as dashboard_router_module
     logger.info("Successfully imported modules from 'app.routers'.")
@@ -237,7 +238,7 @@ router_modules_to_include = {
     "ICP CRUD": icp_crud_router_module, "Offerings": offering_router_module,
     "Campaigns": campaigns_router_module, "Email Settings": email_settings_router_module,
     "Leads": leads_router_module,
-    # "Dashboard Data": dashboard_router_module # Add when you create it
+    "Dashboard Data": dashboard_router_module,
 }
 
 for name, module_instance in router_modules_to_include.items():
