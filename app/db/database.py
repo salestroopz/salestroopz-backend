@@ -71,25 +71,36 @@ def get_connection():
 
 # --- Database Initialization (PostgreSQL Syntax) ---
 def initialize_db():
-    """Creates/updates tables and indexes for PostgreSQL if they don't exist."""
-    logger.info("Initializing PostgreSQL database schema...")
+    logger.info("Initializing PostgreSQL database schema (with reply handling tables)...")
     conn = None
     tables = {
         "organizations": """CREATE TABLE IF NOT EXISTS organizations ( id SERIAL PRIMARY KEY, name TEXT NOT NULL UNIQUE, created_at TIMESTAMPTZ DEFAULT timezone('utc', now()) );""",
         "users": """CREATE TABLE IF NOT EXISTS users ( id SERIAL PRIMARY KEY, email TEXT NOT NULL UNIQUE, hashed_password TEXT NOT NULL, organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, created_at TIMESTAMPTZ DEFAULT timezone('utc', now()) );""",
-        "leads": """CREATE TABLE IF NOT EXISTS leads ( id SERIAL PRIMARY KEY, organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, name TEXT, email TEXT NOT NULL, company TEXT, title TEXT, source TEXT, linkedin_profile TEXT, company_size TEXT, industry TEXT, location TEXT, matched BOOLEAN DEFAULT FALSE, reason TEXT, crm_status TEXT DEFAULT 'pending', appointment_confirmed BOOLEAN DEFAULT FALSE, created_at TIMESTAMPTZ DEFAULT timezone('utc', now()), updated_at TIMESTAMPTZ DEFAULT timezone('utc', now()), UNIQUE (organization_id, email) );""", # Added updated_at
         "icps": """CREATE TABLE IF NOT EXISTS icps ( id SERIAL PRIMARY KEY, organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, name TEXT NOT NULL DEFAULT 'Default ICP', title_keywords JSONB, industry_keywords JSONB, company_size_rules JSONB, location_keywords JSONB, created_at TIMESTAMPTZ DEFAULT timezone('utc', now()), updated_at TIMESTAMPTZ DEFAULT timezone('utc', now()) );""",
         "offerings": """CREATE TABLE IF NOT EXISTS offerings ( id SERIAL PRIMARY KEY, organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, name TEXT NOT NULL, description TEXT, key_features JSONB, target_pain_points JSONB, call_to_action TEXT, is_active BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT timezone('utc', now()), updated_at TIMESTAMPTZ DEFAULT timezone('utc', now()), UNIQUE (organization_id, name) );""",
+        "leads": """
+            CREATE TABLE IF NOT EXISTS leads ( 
+                id SERIAL PRIMARY KEY, 
+                organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, 
+                name TEXT, email TEXT NOT NULL, company TEXT, title TEXT, source TEXT, 
+                linkedin_profile TEXT, company_size TEXT, industry TEXT, location TEXT, 
+                matched BOOLEAN DEFAULT FALSE, 
+                reason TEXT, 
+                crm_status TEXT DEFAULT 'pending', 
+                appointment_confirmed BOOLEAN DEFAULT FALSE,
+                icp_match_id INTEGER REFERENCES icps(id) ON DELETE SET NULL, -- ADDED FOR ICP MATCHING
+                created_at TIMESTAMPTZ DEFAULT timezone('utc', now()), 
+                updated_at TIMESTAMPTZ DEFAULT timezone('utc', now()), 
+                UNIQUE (organization_id, email) 
+            );""",
         "email_campaigns": """
             CREATE TABLE IF NOT EXISTS email_campaigns (
                 id SERIAL PRIMARY KEY,
                 organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
                 icp_id INTEGER REFERENCES icps(id) ON DELETE SET NULL,
-                offering_id INTEGER REFERENCES offerings(id) ON DELETE SET NULL, -- NEW
-                name TEXT NOT NULL,
-                description TEXT,
-                is_active BOOLEAN DEFAULT TRUE,
-                ai_status TEXT DEFAULT 'pending', -- NEW (e.g., "pending", "generating", "completed", "failed")
+                offering_id INTEGER REFERENCES offerings(id) ON DELETE SET NULL,
+                name TEXT NOT NULL, description TEXT, is_active BOOLEAN DEFAULT FALSE, -- Default is_active to FALSE
+                ai_status TEXT DEFAULT 'pending',
                 created_at TIMESTAMPTZ DEFAULT timezone('utc', now()),
                 updated_at TIMESTAMPTZ DEFAULT timezone('utc', now())
             );""",
@@ -98,54 +109,133 @@ def initialize_db():
                 id SERIAL PRIMARY KEY,
                 campaign_id INTEGER NOT NULL REFERENCES email_campaigns(id) ON DELETE CASCADE,
                 organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-                step_number INTEGER NOT NULL,
-                delay_days INTEGER DEFAULT 1,
-                subject_template TEXT,
-                body_template TEXT,
-                is_ai_crafted BOOLEAN DEFAULT FALSE, -- Kept from original
-                follow_up_angle TEXT, -- NEW
+                step_number INTEGER NOT NULL, delay_days INTEGER DEFAULT 1,
+                subject_template TEXT, body_template TEXT,
+                is_ai_crafted BOOLEAN DEFAULT FALSE, follow_up_angle TEXT,
                 created_at TIMESTAMPTZ DEFAULT timezone('utc', now()),
                 updated_at TIMESTAMPTZ DEFAULT timezone('utc', now()),
                 UNIQUE (campaign_id, step_number)
             );""",
-        "lead_campaign_status": """CREATE TABLE IF NOT EXISTS lead_campaign_status ( id SERIAL PRIMARY KEY, lead_id INTEGER NOT NULL REFERENCES leads(id) ON DELETE CASCADE, campaign_id INTEGER NOT NULL REFERENCES email_campaigns(id) ON DELETE CASCADE, organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, current_step_number INTEGER DEFAULT 0, status TEXT NOT NULL DEFAULT 'pending', last_email_sent_at TIMESTAMPTZ, next_email_due_at TIMESTAMPTZ, last_response_type TEXT, last_response_at TIMESTAMPTZ, error_message TEXT, created_at TIMESTAMPTZ DEFAULT timezone('utc', now()), updated_at TIMESTAMPTZ DEFAULT timezone('utc', now()), UNIQUE (lead_id) );""", # Note: UNIQUE(lead_id) means a lead can only be in one campaign at a time. Revisit if a lead can be in multiple.
-        "organization_email_settings": """CREATE TABLE IF NOT EXISTS organization_email_settings ( id SERIAL PRIMARY KEY, organization_id INTEGER NOT NULL UNIQUE REFERENCES organizations(id) ON DELETE CASCADE, provider_type TEXT, smtp_host TEXT, smtp_port INTEGER, smtp_username TEXT, encrypted_smtp_password TEXT, encrypted_api_key TEXT, encrypted_access_token TEXT, encrypted_refresh_token TEXT, token_expiry TIMESTAMPTZ, verified_sender_email TEXT NOT NULL, sender_name TEXT, is_configured BOOLEAN DEFAULT FALSE, created_at TIMESTAMPTZ DEFAULT timezone('utc', now()), updated_at TIMESTAMPTZ DEFAULT timezone('utc', now()) );"""
+        "lead_campaign_status": """
+            CREATE TABLE IF NOT EXISTS lead_campaign_status ( 
+                id SERIAL PRIMARY KEY, 
+                lead_id INTEGER NOT NULL REFERENCES leads(id) ON DELETE CASCADE, 
+                campaign_id INTEGER NOT NULL REFERENCES email_campaigns(id) ON DELETE CASCADE, 
+                organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE, 
+                current_step_number INTEGER DEFAULT 0, 
+                status VARCHAR(255) NOT NULL DEFAULT 'pending', -- Increased length
+                last_email_sent_at TIMESTAMPTZ, 
+                next_email_due_at TIMESTAMPTZ, 
+                last_response_type VARCHAR(255), -- Increased length
+                last_response_at TIMESTAMPTZ, 
+                error_message TEXT, 
+                user_notes TEXT, -- NEW field for user notes
+                created_at TIMESTAMPTZ DEFAULT timezone('utc', now()), 
+                updated_at TIMESTAMPTZ DEFAULT timezone('utc', now()), 
+                UNIQUE (lead_id) 
+            );""",
+        "organization_email_settings": """CREATE TABLE IF NOT EXISTS organization_email_settings ( id SERIAL PRIMARY KEY, organization_id INTEGER NOT NULL UNIQUE REFERENCES organizations(id) ON DELETE CASCADE, provider_type TEXT, smtp_host TEXT, smtp_port INTEGER, smtp_username TEXT, encrypted_smtp_password TEXT, encrypted_api_key TEXT, encrypted_access_token TEXT, encrypted_refresh_token TEXT, token_expiry TIMESTAMPTZ, verified_sender_email TEXT NOT NULL, sender_name TEXT, is_configured BOOLEAN DEFAULT FALSE, created_at TIMESTAMPTZ DEFAULT timezone('utc', now()), updated_at TIMESTAMPTZ DEFAULT timezone('utc', now()) );""",
+        # --- NEW TABLES FOR REPLY HANDLING ---
+        "outgoing_email_log": """
+            CREATE TABLE IF NOT EXISTS outgoing_email_log (
+                id SERIAL PRIMARY KEY,
+                lead_campaign_status_id INTEGER REFERENCES lead_campaign_status(id) ON DELETE SET NULL,
+                organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                lead_id INTEGER NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+                campaign_id INTEGER NOT NULL REFERENCES email_campaigns(id) ON DELETE CASCADE,
+                campaign_step_id INTEGER REFERENCES campaign_steps(id) ON DELETE SET NULL,
+                message_id_header VARCHAR(512) NOT NULL, 
+                sent_at TIMESTAMPTZ DEFAULT timezone('utc', now()),
+                to_email VARCHAR(255) NOT NULL,
+                subject TEXT,
+                CONSTRAINT uq_org_message_id UNIQUE (organization_id, message_id_header) -- Message-ID should be unique per org
+            );""",
+        "email_replies": """
+            CREATE TABLE IF NOT EXISTS email_replies (
+                id SERIAL PRIMARY KEY,
+                outgoing_email_log_id INTEGER REFERENCES outgoing_email_log(id) ON DELETE SET NULL,
+                lead_campaign_status_id INTEGER REFERENCES lead_campaign_status(id) ON DELETE CASCADE,
+                organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                lead_id INTEGER NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+                campaign_id INTEGER NOT NULL REFERENCES email_campaigns(id) ON DELETE CASCADE,
+                received_at TIMESTAMPTZ NOT NULL,
+                from_email VARCHAR(255) NOT NULL,
+                reply_subject TEXT,
+                raw_body_text TEXT,
+                cleaned_reply_text TEXT,
+                ai_classification VARCHAR(100),
+                ai_summary TEXT,
+                ai_extracted_entities JSONB,
+                is_actioned_by_user BOOLEAN DEFAULT FALSE,
+                user_action_notes TEXT, -- Notes specific to action on this reply
+                created_at TIMESTAMPTZ DEFAULT timezone('utc', now())
+            );"""
     }
     indexes = {
         "users": ["CREATE INDEX IF NOT EXISTS idx_user_email ON users (email);", "CREATE INDEX IF NOT EXISTS idx_user_organization ON users (organization_id);"],
-        "leads": ["CREATE INDEX IF NOT EXISTS idx_lead_organization ON leads (organization_id);", "CREATE INDEX IF NOT EXISTS idx_lead_org_email ON leads (organization_id, email);"],
+        "leads": [
+            "CREATE INDEX IF NOT EXISTS idx_lead_organization ON leads (organization_id);", 
+            "CREATE INDEX IF NOT EXISTS idx_lead_org_email ON leads (organization_id, email);",
+            "CREATE INDEX IF NOT EXISTS idx_lead_icp_match ON leads (icp_match_id);" # ADDED
+            ],
         "icps": ["CREATE INDEX IF NOT EXISTS idx_icp_organization ON icps (organization_id);"],
         "offerings": ["CREATE INDEX IF NOT EXISTS idx_offering_organization ON offerings (organization_id);", "CREATE INDEX IF NOT EXISTS idx_offering_org_name ON offerings (organization_id, name);"],
         "email_campaigns": [
             "CREATE INDEX IF NOT EXISTS idx_campaign_organization ON email_campaigns (organization_id);",
             "CREATE INDEX IF NOT EXISTS idx_campaign_icp ON email_campaigns (icp_id);",
-            "CREATE INDEX IF NOT EXISTS idx_campaign_offering ON email_campaigns (offering_id);", # NEW
-            "CREATE INDEX IF NOT EXISTS idx_campaign_ai_status ON email_campaigns (ai_status);" # NEW
+            "CREATE INDEX IF NOT EXISTS idx_campaign_offering ON email_campaigns (offering_id);",
+            "CREATE INDEX IF NOT EXISTS idx_campaign_ai_status ON email_campaigns (ai_status);"
         ],
         "campaign_steps": ["CREATE INDEX IF NOT EXISTS idx_step_campaign ON campaign_steps (campaign_id);", "CREATE INDEX IF NOT EXISTS idx_step_organization ON campaign_steps (organization_id);"],
-        "lead_campaign_status": ["CREATE INDEX IF NOT EXISTS idx_status_lead ON lead_campaign_status (lead_id);", "CREATE INDEX IF NOT EXISTS idx_status_campaign ON lead_campaign_status (campaign_id);", "CREATE INDEX IF NOT EXISTS idx_status_organization ON lead_campaign_status (organization_id);", "CREATE INDEX IF NOT EXISTS idx_status_status ON lead_campaign_status (status);", "CREATE INDEX IF NOT EXISTS idx_status_due ON lead_campaign_status (next_email_due_at);"],
-        "organization_email_settings": ["CREATE INDEX IF NOT EXISTS idx_email_settings_organization ON organization_email_settings (organization_id);"]
+        "lead_campaign_status": [
+            "CREATE INDEX IF NOT EXISTS idx_lcs_lead ON lead_campaign_status (lead_id);", # Renamed for consistency
+            "CREATE INDEX IF NOT EXISTS idx_lcs_campaign ON lead_campaign_status (campaign_id);",
+            "CREATE INDEX IF NOT EXISTS idx_lcs_organization ON lead_campaign_status (organization_id);",
+            "CREATE INDEX IF NOT EXISTS idx_lcs_status ON lead_campaign_status (status);",
+            "CREATE INDEX IF NOT EXISTS idx_lcs_due ON lead_campaign_status (next_email_due_at);"
+        ],
+        "organization_email_settings": ["CREATE INDEX IF NOT EXISTS idx_email_settings_organization ON organization_email_settings (organization_id);"],
+        # --- NEW INDEXES ---
+        "outgoing_email_log": [
+            "CREATE INDEX IF NOT EXISTS idx_oel_lcs_id ON outgoing_email_log (lead_campaign_status_id);",
+            "CREATE INDEX IF NOT EXISTS idx_oel_org_msg_id ON outgoing_email_log (organization_id, message_id_header);", # For unique constraint
+            "CREATE INDEX IF NOT EXISTS idx_oel_lead_id ON outgoing_email_log (lead_id);",
+            "CREATE INDEX IF NOT EXISTS idx_oel_sent_at ON outgoing_email_log (sent_at);"
+        ],
+        "email_replies": [
+            "CREATE INDEX IF NOT EXISTS idx_er_oel_id ON email_replies (outgoing_email_log_id);",
+            "CREATE INDEX IF NOT EXISTS idx_er_lcs_id ON email_replies (lead_campaign_status_id);",
+            "CREATE INDEX IF NOT EXISTS idx_er_org_id_class_actioned ON email_replies (organization_id, ai_classification, is_actioned_by_user);", # For dashboard
+            "CREATE INDEX IF NOT EXISTS idx_er_received_at ON email_replies (received_at);"
+        ]
     }
     try:
         conn = get_connection()
         if not conn:
             logger.error("DATABASE ERROR during initialization: Could not establish connection.")
             return
-        with conn: # Auto-commit context manager
+        with conn:
             with conn.cursor() as cursor:
                 logger.info("Executing CREATE TABLE IF NOT EXISTS statements...")
                 for table_name, sql_create in tables.items():
-                    cursor.execute(sql_create)
-                    logger.debug(f" -> {table_name.capitalize()} table checked/created.")
-
+                    try:
+                        cursor.execute(sql_create)
+                        logger.debug(f" -> Table '{table_name}' DDL executed.")
+                    except Exception as table_e:
+                        logger.error(f"Failed to execute DDL for table '{table_name}': {table_e}", exc_info=True)
+                        raise # Re-raise to stop initialization if a table fails
                 logger.info("Executing CREATE INDEX IF NOT EXISTS statements...")
                 for table_name, index_sqls in indexes.items():
                      for sql_index in index_sqls:
-                         cursor.execute(sql_index)
-                     logger.debug(f" -> {table_name.capitalize()} indexes checked/created.")
+                         try:
+                            cursor.execute(sql_index)
+                         except Exception as index_e:
+                             logger.error(f"Failed to execute DDL for index on table '{table_name}': {sql_index}. Error: {index_e}", exc_info=True)
+                             # Decide if you want to raise here or just log and continue
+                     logger.debug(f" -> Indexes for '{table_name}' DDL executed.")
         logger.info("Database initialization sequence complete.")
     except (Exception, psycopg2.DatabaseError) as error:
-        logger.error(f"DATABASE ERROR during initialization: {error}", exc_info=True)
+        logger.error(f"DATABASE ERROR during initialization (outer try): {error}", exc_info=True)
     finally:
          if conn and not getattr(conn, 'closed', True): conn.close()
 
@@ -1335,6 +1425,178 @@ def get_leads_by_icp_match(organization_id: int, icp_id: int, limit: int = 1000)
     finally:
         if conn and not getattr(conn, 'closed', True): conn.close()
     return leads_list
+
+# --- NEW/MODIFIED CRUD FUNCTIONS for reply handling ---
+
+def log_sent_email(
+    lead_campaign_status_id: int,
+    organization_id: int,
+    lead_id: int,
+    campaign_id: int,
+    campaign_step_id: int,
+    message_id_header: str,
+    to_email: str,
+    subject: str
+) -> Optional[Dict]:
+    """Logs a sent email into the outgoing_email_log table."""
+    sql = """
+        INSERT INTO outgoing_email_log 
+        (lead_campaign_status_id, organization_id, lead_id, campaign_id, campaign_step_id, 
+         message_id_header, to_email, subject, sent_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, timezone('utc', now()))
+        RETURNING id, message_id_header, sent_at; 
+    """
+    params = (
+        lead_campaign_status_id, organization_id, lead_id, campaign_id, campaign_step_id,
+        message_id_header, to_email, subject
+    )
+    conn = None; new_log_entry = None
+    try:
+        conn = get_connection()
+        if not conn: return None
+        with conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(sql, params)
+                result = cursor.fetchone()
+                if result:
+                    new_log_entry = dict(result)
+                    logger.info(f"Logged sent email: LCS_ID {lead_campaign_status_id}, Message-ID: {message_id_header}")
+                else:
+                    logger.error(f"Failed to log sent email for LCS_ID {lead_campaign_status_id}, no ID returned.")
+    except psycopg2.IntegrityError as ie:
+        logger.error(f"DB Integrity Error logging sent email (likely duplicate Message-ID '{message_id_header}' for org {organization_id}): {ie}", exc_info=False) # Keep exc_info False if too noisy
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error logging sent email for LCS_ID {lead_campaign_status_id}: {e}", exc_info=True)
+    finally:
+        if conn and not getattr(conn, 'closed', True): conn.close()
+    return new_log_entry
+
+def store_email_reply(reply_data: Dict[str, Any]) -> Optional[Dict]:
+    """Stores an incoming email reply and its AI classification."""
+    required_fields = ["lead_campaign_status_id", "organization_id", "lead_id", "campaign_id", "received_at", "from_email"]
+    if not all(field in reply_data and reply_data[field] is not None for field in required_fields): # Ensure values are not None
+        logger.error(f"Missing or None values in required fields for storing email reply. Data: {reply_data}")
+        return None
+
+    sql = """
+        INSERT INTO email_replies 
+        (outgoing_email_log_id, lead_campaign_status_id, organization_id, lead_id, campaign_id, 
+         received_at, from_email, reply_subject, raw_body_text, cleaned_reply_text,
+         ai_classification, ai_summary, ai_extracted_entities, user_action_notes, is_actioned_by_user, created_at)
+        VALUES (%(outgoing_email_log_id)s, %(lead_campaign_status_id)s, %(organization_id)s, %(lead_id)s, %(campaign_id)s,
+                %(received_at)s, %(from_email)s, %(reply_subject)s, %(raw_body_text)s, %(cleaned_reply_text)s,
+                %(ai_classification)s, %(ai_summary)s, %(ai_extracted_entities_json)s, %(user_action_notes)s, %(is_actioned_by_user)s, timezone('utc', now()))
+        RETURNING id;
+    """
+    params = reply_data.copy() # Work on a copy
+    # Ensure ai_extracted_entities is passed as a JSON string
+    if isinstance(params.get("ai_extracted_entities"), dict):
+        params["ai_extracted_entities_json"] = json.dumps(params["ai_extracted_entities"])
+    elif params.get("ai_extracted_entities") is None: # Handle explicit None
+         params["ai_extracted_entities_json"] = None
+    else: # If it's already a string or other, pass as is or nullify if invalid
+        params["ai_extracted_entities_json"] = str(params.get("ai_extracted_entities")) if params.get("ai_extracted_entities") else None
+
+
+    # Set defaults for optional fields if not present in reply_data
+    defaults = {
+        "outgoing_email_log_id": None, "reply_subject": None, "raw_body_text": None,
+        "cleaned_reply_text": None, "ai_classification": None, "ai_summary": None,
+        "ai_extracted_entities_json": params.get("ai_extracted_entities_json"), # Use the processed one
+        "user_action_notes": None, "is_actioned_by_user": False
+    }
+    final_params = {**defaults, **params} # Merge, params will overwrite defaults
+
+    conn = None; new_reply_dict = None
+    try:
+        conn = get_connection()
+        if not conn: return None
+        with conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(sql, final_params)
+                result = cursor.fetchone()
+                if result:
+                    # Construct a more complete dict to return, useful for caller
+                    new_reply_dict = {"id": result["id"], **final_params} 
+                    # Remove json helper field if it was added
+                    if "ai_extracted_entities_json" in new_reply_dict and "ai_extracted_entities" in new_reply_dict :
+                        del new_reply_dict["ai_extracted_entities_json"]
+
+                    logger.info(f"Stored email reply ID {result['id']} from {final_params.get('from_email')} for lead {final_params.get('lead_id')}")
+                else:
+                    logger.error(f"Failed to store email reply, no ID returned. From: {final_params.get('from_email')}, Lead: {final_params.get('lead_id')}")
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error storing email reply: {e}", exc_info=True)
+    finally:
+        if conn and not getattr(conn, 'closed', True): conn.close()
+    return new_reply_dict
+
+
+def get_outgoing_email_log_by_message_id(organization_id: int, message_id_header: str) -> Optional[Dict]:
+    sql = "SELECT * FROM outgoing_email_log WHERE organization_id = %s AND message_id_header = %s;"
+    conn = None; log_entry = None
+    try:
+        conn = get_connection()
+        if not conn: return None
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(sql, (organization_id, message_id_header))
+            result = cursor.fetchone()
+            if result: log_entry = dict(result)
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB Error fetching outgoing log by Message-ID {message_id_header} for Org {organization_id}: {e}", exc_info=True)
+    finally:
+        if conn and not getattr(conn, 'closed', True): conn.close()
+    return log_entry
+
+def get_leads_with_positive_status_for_dashboard(organization_id: int, limit: int = 100) -> List[Dict]:
+    actionable_statuses = ( # Use a tuple for IN operator
+        'positive_reply_ai_flagged', 'question_ai_flagged',
+        'appointment_manually_set', 'positive_reply_received',
+        'manual_follow_up_needed'
+    )
+    sql = """
+        SELECT 
+            lcs.id as lead_campaign_status_id, lcs.lead_id, lcs.campaign_id, lcs.organization_id,
+            lcs.status as lead_campaign_status, lcs.last_response_type, lcs.last_response_at,
+            lcs.user_notes, lcs.updated_at as status_updated_at,
+            l.name as lead_name, l.email as lead_email, l.company as lead_company,
+            ec.name as campaign_name,
+            er.id as latest_reply_id, 
+            SUBSTRING(er.cleaned_reply_text FROM 1 FOR 150) as latest_reply_snippet, -- Get a snippet
+            er.ai_summary as latest_reply_ai_summary,
+            er.ai_classification as latest_reply_ai_classification,
+            er.received_at as latest_reply_received_at
+        FROM lead_campaign_status lcs
+        JOIN leads l ON lcs.lead_id = l.id
+        JOIN email_campaigns ec ON lcs.campaign_id = ec.id
+        LEFT JOIN ( 
+            SELECT DISTINCT ON (er_sub.lead_campaign_status_id) -- Get only the latest reply
+                   er_sub.id, er_sub.lead_campaign_status_id,
+                   er_sub.cleaned_reply_text, er_sub.ai_summary,
+                   er_sub.ai_classification, er_sub.received_at
+            FROM email_replies er_sub
+            WHERE er_sub.organization_id = %s -- Filter subquery by org_id for efficiency
+            ORDER BY er_sub.lead_campaign_status_id, er_sub.received_at DESC
+        ) er ON lcs.id = er.lead_campaign_status_id
+        WHERE lcs.organization_id = %s 
+          AND lcs.status IN %s
+        ORDER BY lcs.updated_at DESC
+        LIMIT %s;
+    """
+    conn = None; results_list = []
+    try:
+        conn = get_connection()
+        if not conn: return []
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            # Pass organization_id twice: once for subquery, once for main query
+            cursor.execute(sql, (organization_id, organization_id, actionable_statuses, limit))
+            results = cursor.fetchall()
+            if results: results_list = [dict(row) for row in results]
+    except (Exception, psycopg2.Error) as e:
+        logger.error(f"DB error fetching positive engagement for dashboard (Org {organization_id}): {e}", exc_info=True)
+    finally:
+        if conn and not getattr(conn, 'closed', True): conn.close()
+    return results_list
 
 # ==========================================
 # Run initialization if script is executed directly
