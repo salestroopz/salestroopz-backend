@@ -328,6 +328,15 @@ def enroll_leads_in_campaign_api(campaign_id: int, lead_ids: List[int]) -> Optio
 def enroll_matched_icp_leads_api(campaign_id: int) -> Optional[Dict]:
     return make_api_request("POST", f"{CAMPAIGNS_ENDPOINT}/{campaign_id}/enroll_matched_icp_leads")
 
+# --- NEW API Helper for Dashboard ---
+def get_actionable_replies_api(token: str, limit: int = 50) -> Optional[List[Dict]]:
+    """Fetches a list of actionable email replies for the dashboard."""
+    endpoint = f"{BACKEND_URL}/api/v1/dashboard/actionable_replies" # Use your defined endpoint
+    params = {"limit": limit}
+    response_data = get_authenticated_request(endpoint, token, params=params)
+    if isinstance(response_data, list):
+        return response_data
+    return None
 
 # --- UI Helper/Callback Functions for Leads Page ---
 # Moved outside the loop for clarity and efficiency
@@ -357,6 +366,233 @@ def render_dashboard_page():
     st.header("📊 Dashboard")
     st.write("Welcome to SalesTroopz! Key metrics and insights will appear here.")
     st.info("Dashboard content (appointment funnel, campaign summaries) to be implemented.")
+
+# --- Section: Actionable Email Replies ---
+    st.markdown("---")
+    st.subheader("🔥 Actionable Email Replies")
+    st.caption("These replies have been AI-classified as needing your attention for follow-up or appointment scheduling.")
+
+    # Initialize/Load Actionable Replies
+    # Use a unique session state key for dashboard-specific loading if needed, or just rely on the general one.
+    if 'dashboard_actionable_replies_loaded' not in st.session_state or \
+       not st.session_state.dashboard_actionable_replies_loaded or \
+       st.session_state.get('force_dashboard_refresh', False): # Add a way to force refresh
+        
+        with st.spinner("Loading actionable replies..."):
+            fetched_actionable_replies = get_actionable_replies_api(auth_token) # Use your API helper
+            st.session_state.actionable_replies_list_dashboard = fetched_actionable_replies if fetched_actionable_replies is not None else []
+            st.session_state.dashboard_actionable_replies_loaded = True
+            if 'force_dashboard_refresh' in st.session_state:
+                del st.session_state.force_dashboard_refresh
+
+    actionable_replies = st.session_state.get('actionable_replies_list_dashboard', [])
+
+    if st.button("🔄 Refresh Actionable Replies", key="refresh_actionable_replies_dashboard_btn"):
+        st.session_state.dashboard_actionable_replies_loaded = False # Force reload on next run
+        st.rerun()
+
+    if not actionable_replies and st.session_state.dashboard_actionable_replies_loaded: # Check loaded flag
+        st.info("🎉 No new actionable replies to review at this time. Great job, or keep those campaigns running!")
+    elif actionable_replies:
+        st.markdown(f"You have **{len(actionable_replies)}** AI-flagged replies requiring your action:")
+        
+        # Using st.columns for a more structured layout
+        # Define column headers (optional, but good for clarity)
+        # cols_header = st.columns([2, 2, 2, 3, 1.5])
+        # with cols_header[0]: st.caption("**Lead Name**")
+        # with cols_header[1]: st.caption("**Company**")
+        # with cols_header[2]: st.caption("**Campaign**")
+        # with cols_header[3]: st.caption("**AI Classification & Summary**")
+        # with cols_header[4]: st.caption("**Action**")
+        # st.markdown("---")
+
+
+        for reply_item in actionable_replies:
+            # Display the reply item
+            # lead_campaign_status_id is the primary key of the lead_campaign_status table
+            # latest_reply_id is the primary key of the email_replies table
+            # We need lead_id for the perform_lead_campaign_action_api
+            
+            lcs_id = reply_item.get('lead_campaign_status_id') 
+            reply_db_id = reply_item.get('latest_reply_id') # This ID is for the email_replies table
+            lead_id_for_action = reply_item.get('lead_id') # Needed for the action API
+
+            if not lcs_id or not lead_id_for_action: 
+                logger.warning(f"Dashboard: Skipping actionable reply due to missing lcs_id or lead_id: {reply_item}")
+                continue 
+
+            with st.container(border=True):
+                col_info, col_summary, col_actions_dash = st.columns([2.5, 3, 1]) # Adjusted for button size
+                
+                with col_info:
+                    st.markdown(f"**Lead:** {reply_item.get('lead_name', 'N/A')}")
+                    st.caption(f"Email: {reply_item.get('lead_email', 'N/A')}")
+                    st.caption(f"Company: {reply_item.get('lead_company', 'N/A')}")
+                    st.markdown(f"**Campaign:** `{reply_item.get('campaign_name', 'N/A')}`")
+                    
+                    received_at_str = reply_item.get('latest_reply_received_at')
+                    if received_at_str:
+                        try:
+                            received_dt = datetime.fromisoformat(received_at_str.replace('Z', '+00:00'))
+                            st.caption(f"Reply Received: {received_dt.strftime('%Y-%m-%d %H:%M')}")
+                        except:
+                            st.caption(f"Reply Received: {received_at_str}")
+                    else:
+                        st.caption("Reply Received: N/A")
+
+
+                with col_summary:
+                    classification = str(reply_item.get('latest_reply_ai_classification', 'N/A')).replace('_', ' ').capitalize()
+                    classification_icon = "⭐" if "Positive" in classification else \
+                                          "❓" if "Question" in classification else \
+                                          "⛔" if "Negative" in classification else \
+                                          "➡️" # Default for other types
+                    st.markdown(f"**AI Classification:** {classification_icon} `{classification}`")
+                    st.markdown(f"**AI Summary:**")
+                    st.caption(f"{reply_item.get('latest_reply_ai_summary', '_No AI summary available._')}")
+                    
+                    # Snippet of the actual reply
+                    if reply_item.get('latest_reply_snippet'):
+                        with st.expander("View Reply Snippet (AI Cleaned)"):
+                            st.code(reply_item.get('latest_reply_snippet'), language='text')
+
+                with col_actions_dash:
+                    # This button will set session state to show the detailed "Review & Act" dialog
+                    # We pass reply_item itself, as the dialog might need multiple fields from it.
+                    def set_review_state(item_data):
+                        st.session_state.reply_item_to_review = item_data # Store the whole item
+                        st.session_state.show_reply_review_dialog = True
+                        # No st.rerun() here, dialog will show conditionally in the same script run
+                    
+                    if st.button("Review & Act", key=f"review_act_dashboard_btn_{reply_db_id if reply_db_id else lcs_id}", type="primary", use_container_width=True):
+                        # Store the entire reply_item dict in session_state for the dialog to use
+                        st.session_state.reply_item_to_review = reply_item 
+                        st.session_state.show_reply_review_dialog = True
+                        st.rerun() # Rerun to make the dialog appear immediately
+
+        st.markdown("---")
+
+    # --- Main Dashboard Metrics (Placeholder for now) ---
+    st.subheader("📊 Overall Campaign Performance")
+    # This section will be populated once you have data from campaign execution and appointment marking
+    # Example placeholders:
+    # total_appointments = get_total_appointments_api(auth_token) # New API helper needed
+    # active_campaign_count = get_active_campaign_count_api(auth_token) # New API helper needed
+    
+    # st.metric("Total Appointments Set", total_appointments.get('count', 0) if total_appointments else "N/A")
+    # st.metric("Active Campaigns", active_campaign_count.get('count', 0) if active_campaign_count else "N/A")
+    st.info("Overall performance metrics (e.g., total appointments, campaign success rates) will be displayed here once campaigns are running and responses are processed.")
+
+
+# --- The "Review & Act" Dialog (MUST be defined globally in streamlit_app.py, not inside a function) ---
+# This ensures it can be shown as an overlay regardless of the current page.
+# It uses st.session_state.show_reply_review_dialog and st.session_state.reply_item_to_review
+
+if st.session_state.get('show_reply_review_dialog') and st.session_state.get('reply_item_to_review') is not None:
+    reply_details_from_dashboard = st.session_state.reply_item_to_review # This dict comes from actionable_replies_list
+    auth_token_for_dialog = st.session_state.get("auth_token") # Get token for API calls
+
+    # Extract necessary IDs and info
+    lead_id_for_action = reply_details_from_dashboard.get('lead_id')
+    # lead_campaign_status_id_for_action = reply_details_from_dashboard.get('lead_campaign_status_id') # This ID is for lead_campaign_status table
+    # reply_db_id_for_action = reply_details_from_dashboard.get('latest_reply_id') # This ID is for email_replies table
+
+    # For the dialog title and some displayed info:
+    lead_name_for_dialog = reply_details_from_dashboard.get('lead_name', 'N/A')
+    campaign_name_for_dialog = reply_details_from_dashboard.get('campaign_name', 'N/A')
+    ai_classification_for_dialog = str(reply_details_from_dashboard.get('latest_reply_ai_classification', 'N/A')).replace('_',' ').capitalize()
+    ai_summary_for_dialog = reply_details_from_dashboard.get('latest_reply_ai_summary', 'N/A')
+    
+    # Fetch full cleaned reply text - this might require another API call if snippet is not enough
+    # For now, we use the snippet.
+    # Ideally: full_cleaned_reply_text = get_full_reply_text_api(reply_db_id_for_action, auth_token_for_dialog)
+    cleaned_reply_text_for_dialog = reply_details_from_dashboard.get('latest_reply_snippet', "Full reply text not available in this view. (TODO: Fetch full text).")
+
+
+    # Using st.dialog if available and suitable, or a custom modal-like container
+    # For simplicity, we'll use a conditional container block
+    with st.container(border=True): # This will appear as a distinct block on the page
+        st.subheader(f"📧 Review & Act on Reply from: {lead_name_for_dialog}")
+        st.caption(f"Campaign: `{campaign_name_for_dialog}` | Current AI Classification: `{ai_classification_for_dialog}`")
+        st.markdown(f"**AI Summary:** {ai_summary_for_dialog}")
+        
+        st.markdown("##### Full Reply Text (Cleaned Snippet):")
+        st.text_area("Reply Content", value=cleaned_reply_text_for_dialog, height=200, disabled=True, key=f"reply_text_dialog_{lead_id_for_action}")
+
+        st.markdown("---")
+        st.markdown("##### **Your Action:**")
+        
+        with st.form(key=f"reply_action_form_{lead_id_for_action}"):
+            action_notes_for_dialog = st.text_area("Your Notes for this action (optional):", key=f"dialog_action_notes_{lead_id_for_action}", height=75)
+            
+            # Appointment Setting
+            st.markdown("**Appointment Management:**")
+            appointment_details_for_dialog = st.text_input("Appointment Reference Details (if set manually):", 
+                                                           placeholder="e.g., May 25th 2pm via Google Cal, invite sent", 
+                                                           key=f"dialog_appt_details_{lead_id_for_action}")
+            
+            col_appt_set, col_positive_other = st.columns(2)
+            with col_appt_set:
+                if st.form_submit_button("🗓️ Mark Appointment Set", type="primary", use_container_width=True):
+                    if not appointment_details_for_dialog: # Check if input has value
+                        st.warning("Please enter appointment details before marking as set.")
+                    else:
+                        with st.spinner("Marking appointment..."):
+                            response = perform_lead_campaign_action_api(
+                                lead_id_for_action, LeadCampaignActionType.APPOINTMENT_SET, 
+                                action_notes_for_dialog, appointment_details_for_dialog, auth_token_for_dialog
+                            )
+                        if response: 
+                            st.success("Appointment marked. Lead paused in campaign.")
+                            st.session_state.show_reply_review_dialog = False; st.session_state.actionable_replies_loaded = False
+                            st.rerun()
+                        # API helper shows error
+
+            with col_positive_other:
+                if st.form_submit_button("⭐ Positive Reply (No Appt Yet)", use_container_width=True):
+                    with st.spinner("Marking positive reply..."):
+                        response = perform_lead_campaign_action_api(
+                            lead_id_for_action, LeadCampaignActionType.POSITIVE_REPLY, 
+                            action_notes_for_dialog, None, auth_token_for_dialog
+                        )
+                    if response: 
+                        st.success("Marked as positive reply. Lead paused in campaign for manual follow-up.")
+                        st.session_state.show_reply_review_dialog = False; st.session_state.actionable_replies_loaded = False
+                        st.rerun()
+            
+            st.markdown("---")
+            st.markdown("**Other Actions:**")
+            col_manual, col_unsub, col_ignore = st.columns(3)
+            with col_manual:
+                if st.form_submit_button("🗣️ Needs Manual Follow-Up", use_container_width=True):
+                    with st.spinner("Marking for manual follow-up..."):
+                        response = perform_lead_campaign_action_api(lead_id_for_action, LeadCampaignActionType.MANUAL_PAUSE, action_notes_for_dialog, None, auth_token_for_dialog)
+                    if response: st.success("Marked for manual follow-up. Campaign paused for this lead."); st.session_state.show_reply_review_dialog = False; st.session_state.actionable_replies_loaded = False; st.rerun()
+            
+            with col_unsub:
+                if st.form_submit_button("🛑 Mark Unsubscribed", type="secondary", use_container_width=True):
+                    with st.spinner("Marking unsubscribed..."):
+                        response = perform_lead_campaign_action_api(lead_id_for_action, LeadCampaignActionType.MARK_UNSUBSCRIBED, action_notes_for_dialog, None, auth_token_for_dialog)
+                    if response: st.success("Marked unsubscribed. Lead removed from sequence."); st.session_state.show_reply_review_dialog = False; st.session_state.actionable_replies_loaded = False; st.rerun()
+
+            with col_ignore: # Placeholder for "Incorrect Classification / Ignore"
+                if st.form_submit_button("⚠️ Ignore/Dismiss AI Flag", use_container_width=True):
+                    # This action might just mark the email_reply as actioned or change LCS status if AI paused it.
+                    # Requires specific backend logic for "ignore" if it means more than just closing this dialog.
+                    st.info("Action: 'Ignore AI Flag' - This would typically mark the reply as reviewed.")
+                    st.session_state.show_reply_review_dialog = False; st.session_state.actionable_replies_loaded = False
+                    st.rerun()
+        
+        st.markdown("---")
+        st.info(f"Reminder: Send calendar invites or reply manually from your configured email account.")
+        if st.button("🔙 Close Review Dialog", key="close_review_dialog_main_btn"):
+            st.session_state.show_reply_review_dialog = False
+            st.session_state.actionable_replies_loaded = False # To refresh dashboard list
+            st.rerun()
+    elif st.session_state.get('show_reply_review_dialog'): # If flag is true but no data (should not happen)
+        st.error("Error: Could not load reply details for review.")
+        st.session_state.show_reply_review_dialog = False # Reset
+        st.rerun()
 
 def render_leads_page():
     st.header("👤 Leads Management")
