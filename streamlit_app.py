@@ -590,8 +590,8 @@ if st.session_state.get('show_reply_review_dialog') and st.session_state.get('re
             st.session_state.actionable_replies_loaded = False # To refresh dashboard list
             st.rerun()
     elif st.session_state.get('show_reply_review_dialog'): # If flag is true but no data (should not happen)
-        st.error("Error: Could not load reply details for review.")
-        st.session_state.show_reply_review_dialog = False # Reset
+         st.error("Error: Could not load reply details for review.")
+         st.session_state.show_reply_review_dialog = False # Reset
         st.rerun()
 
 def render_leads_page():
