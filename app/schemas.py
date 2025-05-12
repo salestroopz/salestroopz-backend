@@ -297,6 +297,22 @@ class BulkImportSummary(BaseModel):
     successfully_imported_or_updated: int
     failed_imports: int
     errors: List[BulkImportErrorDetail] = Field(default_factory=list)
+
+class LeadCampaignStatusResponse(BaseModel):
+    # ... (core lcs fields) ...
+    lead_name: Optional[str] = None
+    lead_email: Optional[EmailStr] = None
+    lead_company: Optional[str] = None
+    campaign_name: Optional[str] = None
+    # Fields from the latest email_reply JOIN
+    latest_reply_id: Optional[int] = None
+    latest_reply_snippet: Optional[str] = None
+    latest_reply_ai_summary: Optional[str] = None
+    latest_reply_ai_classification: Optional[str] = None
+    latest_reply_received_at: Optional[datetime] = None # Added from the email_replies table
+
+class Config:
+    from_attributes = True
     successfully_imported_or_updated: int
     failed_imports: int
     errors: List[BulkImportErrorDetail] = Field(default_factory=list)
