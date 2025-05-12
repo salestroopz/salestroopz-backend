@@ -4,6 +4,7 @@
 import sys
 import os
 from pathlib import Path
+from app.utils.logger import logger
 # import warnings # Not used, can be removed
 
 # --- sys.path modification (Consider alternatives if possible) ---
