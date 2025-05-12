@@ -362,7 +362,7 @@ def _set_lead_delete_state(lead_data: Dict):
 
 # --- Page Rendering Functions ---
 
-def render_dashboard_page():
+def render_dashboard_page(auth_token: str):
     st.header("📊 Dashboard")
     st.write("Welcome to SalesTroopz! Key metrics and insights will appear here.")
     st.info("Dashboard content (appointment funnel, campaign summaries) to be implemented.")
@@ -1440,9 +1440,9 @@ else:  # Authenticated User Flow
     current_page_selected = st.session_state.nav_radio
 
     if current_page_selected == "Dashboard":
-        render_dashboard_page()
+        render_dashboard_page(auth_token)
     elif current_page_selected == "Leads":
-        render_leads_page()
+        render_dashboard_page(auth_token)
     elif current_page_selected == "Campaigns":
         render_campaigns_page()
     elif current_page_selected == "Configuration":
