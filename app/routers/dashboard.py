@@ -15,17 +15,25 @@ from app.db.models import User as UserModel
 from app.schemas import AppointmentStatsResponse, RecentAppointment 
 
 
-
-router = APIRouter(
-    prefix="/api/v1/dashboard",
-    tags=["Dashboard Data"]
+# Your database functions and get_db dependency
+from app.db.database import (
+    get_db,
+    count_appointments_set,
+    count_positive_replies_status,
+    get_recent_appointments_list
+    # get_actionable_email_replies, # if you have this endpoint here too
+    # get_campaign_performance_summary_db # if this endpoint is here
 )
 
-@router.get("/actionable_replies", response_model=List[schemas.LeadCampaignStatusResponse]) # Using existing for now
-async def get_actionable_email_replies(
-    current_user: schemas.UserPublic = Depends(get_current_user),
-    limit: int = 50 # Add pagination if list can be very long
-):
+# Your User model and auth dependency (if these routes are protected)
+from app.db.models import User as UserModel
+from app.core.security import get_current_active_user # Or get_current_user
+
+router = APIRouter(
+    prefix="/api/v1/dashboard", # Prefix for all routes in this file
+    tags=["dashboard"],         # Tag for OpenAPI docs
+    dependencies=[Depends(get_current_active_user)] # Uncomment to protect all routes in this router
+)
     """
     Fetches lead campaign statuses that indicate recent positive AI-classified replies
     or other statuses requiring user action, for the current user's organization.
