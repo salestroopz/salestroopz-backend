@@ -7,7 +7,7 @@ from typing import Optional, List, Dict, Any
 import json
 from datetime import datetime, timezone, timedelta # Use timezone for UTC
 from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy import func, and_, or_
+from sqlalchemy import create_engine,func, and_, or_
 from .models import Lead, LeadCampaignStatus, EmailCampaign # Add EmailCampaign if not already imported
 from app.schemas import LeadStatusEnum
 import os
