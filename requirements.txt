@@ -46,5 +46,6 @@ psycopg2-binary>=2.9.0
 # sqlalchemy>=2.0.0
 
 APScheduler
+SQLAlchemy 
 
 # Add any other specific libraries YOUR agents or utilities require
