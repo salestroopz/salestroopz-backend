@@ -182,6 +182,77 @@ def get_auth_headers() -> Dict[str, str]:
         st.stop() # Stop execution for this request
     return {"Authorization": f"Bearer {token}"}
 
+def get_auth_headers(token: Optional[str]) -> Optional[Dict[str, str]]:
+    """Helper to create authentication headers."""
+    if not token:
+        # This case should ideally be handled before calling functions that need auth
+        # st.error("Authentication token is missing.") # Or log
+        return None
+    return {"Authorization": f"Bearer {token}"}
+
+# --- DEFINE get_authenticated_request HERE ---
+def get_authenticated_request(endpoint: str, token: str, params: Optional[Dict[str, Any]] = None) -> Optional[Any]:
+    """
+    Makes an authenticated GET request to the specified endpoint.
+
+    Args:
+        endpoint (str): The full API endpoint URL.
+        token (str): The JWT authentication token.
+        params (Optional[Dict[str, Any]]): Optional dictionary of query parameters.
+
+    Returns:
+        Optional[Any]: The JSON response from the API on success, or None on error.
+                       Errors are displayed in the Streamlit UI.
+    """
+    headers = get_auth_headers(token)
+    if not headers: # Token was missing or invalid from get_auth_headers perspective
+        st.error("Authentication required. Please log in again.")
+        # Optionally trigger logout if appropriate here, though usually handled by the caller
+        # logout_user() 
+        return None
+
+    try:
+        # st.write(f"DEBUG: Making GET request to {endpoint} with params {params}") # For debugging
+        response = requests.get(endpoint, headers=headers, params=params, timeout=15)
+        response.raise_for_status() # Raises an HTTPError for bad responses (4xx or 5xx)
+        return response.json()  # Return the parsed JSON data
+    
+    except requests.exceptions.HTTPError as http_err:
+        if http_err.response is not None:
+            status_code = http_err.response.status_code
+            if status_code == 401: # Unauthorized
+                st.error("Authentication failed or session expired. Please log in again.")
+                logout_user() # Force logout on 401 as token is likely invalid
+            elif status_code == 403: # Forbidden
+                st.error("Forbidden: You do not have permission to access this resource.")
+            elif status_code == 404: # Not Found
+                st.warning(f"Resource not found at {endpoint.replace(str(BACKEND_URL), '')}.") # Show relative path
+            else:
+                # Try to get detailed error message from backend response
+                try:
+                    error_detail = http_err.response.json().get("detail", http_err.response.text)
+                except json.JSONDecodeError:
+                    error_detail = http_err.response.text
+                st.error(f"HTTP Error {status_code} fetching data from {endpoint.replace(str(BACKEND_URL), '')}: {error_detail[:200]}...") # Truncate long messages
+        else: # If response is None for some reason
+            st.error(f"HTTP Error occurred: {http_err}")
+        return None # Indicate failure
+        
+    except requests.exceptions.ConnectionError as conn_err:
+        st.error(f"Connection Error: Could not connect to the backend at {endpoint}. Please check if the server is running. Details: {conn_err}")
+        return None
+    except requests.exceptions.Timeout as timeout_err:
+        st.error(f"Request Timed Out: The request to {endpoint} took too long to respond. Details: {timeout_err}")
+        return None
+    except requests.exceptions.RequestException as req_err: # Catch other requests-related errors
+        st.error(f"Request Error: An issue occurred while making the request to {endpoint}. Details: {req_err}")
+        return None
+    except Exception as e: # Catch any other unexpected errors
+        st.error(f"An unexpected error occurred while fetching data from {endpoint}: {e}")
+        # import traceback # For more detailed debugging if needed
+        # st.error(traceback.format_exc())
+        return None
+
 # --- Generic API Helper Functions ---
 def _handle_api_error(e: Exception, action: str = "perform action"):
     """Generic error handler for API calls."""
@@ -327,6 +398,8 @@ def enroll_leads_in_campaign_api(campaign_id: int, lead_ids: List[int]) -> Optio
 
 def enroll_matched_icp_leads_api(campaign_id: int) -> Optional[Dict]:
     return make_api_request("POST", f"{CAMPAIGNS_ENDPOINT}/{campaign_id}/enroll_matched_icp_leads")
+
+
 
 # --- NEW API Helper for Dashboard ---
 def get_actionable_replies_api(token: str, limit: int = 50) -> Optional[List[Dict]]:
