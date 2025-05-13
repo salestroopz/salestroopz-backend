@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.db.database import get_db, count_appointments_set, count_positive_replies_status, get_recent_appointments_list 
 from app.core.security import get_current_user 
-from app.models import User as UserModel 
+from app.db.models import User as UserModel
 from app.schemas import AppointmentStatsResponse, RecentAppointment 
 
 
