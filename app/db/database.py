@@ -1770,23 +1770,29 @@ def count_positive_replies_status(db: Session, organization_id: int, start_date:
 
 # --- Potentially needed later, but implement the basics first ---
 
+
 def get_recent_appointments_list(db: Session, organization_id: int, limit: int = 5) -> List[Dict]:
     """Fetches the most recent leads marked with an appointment."""
-    results = db.query(
-        Lead.first_name,
-        Lead.last_name,
-        Lead.company_name,
-        EmailCampaign.name.label("campaign_name"),
-        LeadCampaignStatus.last_response_at.label("action_date") # Or Lead.updated_at
-    ).join(LeadCampaignStatus, Lead.id == LeadCampaignStatus.lead_id)\
-     .join(EmailCampaign, LeadCampaignStatus.campaign_id == EmailCampaign.id)\
-     .filter(
-         Lead.organization_id == organization_id,
-         Lead.appointment_confirmed == True # Or use LeadCampaignStatus.status == LeadStatusEnum.appointment_manually_set
-     )\
-     .order_by(LeadCampaignStatus.last_response_at.desc()) # Or Lead.updated_at.desc()
-     .limit(limit)
-     .all()
+    results = (
+        db.query(
+            Lead.first_name,
+            Lead.last_name,
+            Lead.company_name,
+            EmailCampaign.name.label("campaign_name"),
+            LeadCampaignStatus.last_response_at.label("action_date")  # Or Lead.updated_at
+        )
+        .join(LeadCampaignStatus, Lead.id == LeadCampaignStatus.lead_id)
+        .join(EmailCampaign, LeadCampaignStatus.campaign_id == EmailCampaign.id)
+        .filter(
+            Lead.organization_id == organization_id,
+            Lead.appointment_confirmed == True  # Or use LeadCampaignStatus.status == LeadStatusEnum.appointment_manually_set
+        )
+        .order_by(LeadCampaignStatus.last_response_at.desc())  # Or Lead.updated_at.desc()
+        .limit(limit)
+        .all()
+    )
+    return results
+
 
     # Convert results to list of dicts for easier JSON serialization
     appointments = [
