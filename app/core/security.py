@@ -2,7 +2,7 @@
 
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Any
+from typing import Optional, Any, Dict, List
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
