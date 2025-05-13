@@ -1736,9 +1736,9 @@ def count_appointments_set(db: Session, organization_id: int, start_date: Option
     Lead.appointment_confirmed == True
 )
     if start_date:
-    base_query = base_query.filter(Lead.updated_at >= start_date)
+        base_query = base_query.filter(Lead.updated_at >= start_date)
     if end_date:
-    base_query = base_query.filter(Lead.updated_at <= end_date)
+        base_query = base_query.filter(Lead.updated_at <= end_date)
     count = base_query.scalar()
     return count if count else 0
 
