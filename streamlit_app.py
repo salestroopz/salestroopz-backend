@@ -1422,32 +1422,37 @@ if not st.session_state["authenticated"]:
             if st.button("Already have an account? Login", key="go_to_login_btn", use_container_width=True):
                 st.session_state["view"] = "Login"
                 st.rerun()
+
 else:  # Authenticated User Flow
+    auth_token = st.session_state.get("auth_token")
+    if not auth_token:
+        st.error("Critical: Authenticated but no auth token found. Logging out.")
+        logout_user()
+        st.stop() 
     with st.sidebar:
         st.image("https://salestroopz.com/wp-content/uploads/2024/01/cropped-SalesTroopz-Logos-1536x515.png", width=200)
         st.write(f"User: {st.session_state.get('user_email', 'N/A')}")
         st.divider()
         page_options = ["Dashboard", "Leads", "Campaigns", "Configuration", "Setup Assistant"]
-        # Ensure nav_radio default is one of these options
-        st.session_state.nav_radio = st.radio(
+        st.session_state.nav_radio = st.radio( # Storing selection back into session_state.nav_radio
             "Navigate", page_options, key="main_nav_radio_sidebar",
-            index=page_options.index(st.session_state.get("nav_radio", "Dashboard"))
+            index=page_options.index(st.session_state.get("nav_radio", "Dashboard")) # Get default from session state
         )
         st.divider()
-        if st.button("Logout", key="logout_button_sidebar", use_container_width=True):
-            logout_user() # This will rerun
+        if st.button("Logout", key="logout_button_sidebar_main", use_container_width=True): # Unique key
+            logout_user() 
 
     current_page_selected = st.session_state.nav_radio
 
     if current_page_selected == "Dashboard":
         render_dashboard_page(auth_token)
     elif current_page_selected == "Leads":
-        render_dashboard_page(auth_token)
+        render_leads_page(auth_token) # <<< CORRECTED: Call render_leads_page
     elif current_page_selected == "Campaigns":
-        render_campaigns_page()
+        render_campaigns_page(auth_token) # <<< Assume this also needs auth_token
     elif current_page_selected == "Configuration":
-        render_config_page()
+        render_config_page(auth_token) # <<< Assume this also needs auth_token
     elif current_page_selected == "Setup Assistant":
-        render_setup_assistant_page()
+        render_setup_assistant_page(auth_token) # <<< Assume this also needs auth_token
     else:
         st.error("Page not found.")
