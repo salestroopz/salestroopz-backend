@@ -9,6 +9,7 @@ pydantic-settings>=2.0.0
 # Authentication (JWT & Password Hashing)
 python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4
+bcrypt>=3.2.0,<4.0.0
 
 # OpenAI API Client (for Email Crafting)
 openai>=1.0.0
