@@ -11,9 +11,18 @@ from sqlalchemy import create_engine,func, and_, or_
 from .models import Lead, LeadCampaignStatus, EmailCampaign # Add EmailCampaign if not already imported
 from app.schemas import LeadStatusEnum
 import os
-SQLALCHEMY_DATABASE_URL = os.getenv("postgresql://salestroopz:H5MukOboRytrSQJIKNq7yqaWPlT2z8XK@dpg-d09t6e0dl3ps73frg2t0-a/salestroopz")
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
+if not SQLALCHEMY_DATABASE_URL:
+    raise ValueError("FATAL ERROR: DATABASE_URL environment variable is not set.")
 
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
+try:
+    engine = create_engine(SQLALCHEMY_DATABASE_URL)
+except Exception as e:
+    print(f"ERROR: Could not create database engine with URL: {SQLALCHEMY_DATABASE_URL}")
+    print(f"SQLAlchemy create_engine error: {e}")
+    raise # Re-raise the exception to stop the app if engine creation fails
+
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def get_db():
     """
@@ -27,11 +36,13 @@ def get_db():
         db.close() # Closes the session after the request is done
 
 def create_db_and_tables():
-    """
-    Creates all database tables defined in models.py.
-    Call this once when your application starts if you're not using migrations.
-    """
-    Base.metadata.create_all(bind=engine)
+    """Creates all database tables defined in models.py inheriting from Base."""
+    print("Attempting to create database tables...")
+    try:
+        Base.metadata.create_all(bind=engine)
+        print("Database tables checked/created successfully.")
+    except Exception as e:
+        print(f"ERROR: Could not create database tables: {e}")
 
 # Import logger (assuming configured elsewhere or basic setup)
 try:
