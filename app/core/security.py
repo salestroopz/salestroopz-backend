@@ -24,12 +24,13 @@ from app.db.models import User as UserModel # Your SQLAlchemy User model
 # JWT Secret Key: Generate a strong random key (e.g., using openssl rand -hex 32)
 # and store it in an environment variable like JWT_SECRET_KEY.
 SECRET_KEY = os.getenv("JWT_SECRET_KEY")
-if not SECRET_KEY:
-    # Fallback for local development only - DO NOT USE THIS IN PRODUCTION
- #  print("WARNING: JWT_SECRET_KEY not set, using a default insecure key. SET THIS IN PRODUCTION!")
- #  SECRET_KEY = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7" # Example, replace
-raise ValueError("FATAL: JWT_SECRET_KEY environment variable is not set or is empty. Application cannot start.")
-ALGORITHM = "HS256" # Algorithm for signing the JWT
+SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+if not SECRET_KEY: # This is line 27 (or whatever line number it actually is)
+    # This is the indented block for the 'if' statement
+    raise ValueError("FATAL: JWT_SECRET_KEY environment variable is not set or is empty. Application cannot start.")
+# <<<< NO MORE INDENTATION HERE FOR THE FOLLOWING LINES >>>>
+
+ALGORITHM = "HS256" # Algorithm for signing the JWT (This should be at the module's top level of indentation)
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30")) # Default to 30 minutes
 # --- Password Hashing ---
 # Uses bcrypt as the hashing scheme
