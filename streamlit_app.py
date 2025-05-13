@@ -594,7 +594,7 @@ if st.session_state.get('show_reply_review_dialog') and st.session_state.get('re
              st.session_state.show_reply_review_dialog = False # Reset
              st.rerun()
 
-def render_leads_page():
+def render_leads_page(auth_token: str): # Add auth_token parameter
     st.header("👤 Leads Management")
     st.caption("View, add, and manage your sales leads. Select leads to enroll them into campaigns.")
 
@@ -852,7 +852,7 @@ def render_leads_page():
                         st.rerun()
                     # else: error is handled by _handle_api_error
 
-def render_campaigns_page():
+def render_campaigns_page(auth_token: str):
     st.header("📣 Campaign Management (AI-Powered)")
     st.caption("Create AI-generated email outreach campaigns, review steps, activate, and enroll leads.")
 
@@ -1354,7 +1354,7 @@ def render_config_page_email_tab():
                     st.rerun()
                 # else: error handled by API helper
 
-def render_config_page():
+def render_config_page(auth_token: str):
     st.header("⚙️ Configuration")
     st.caption("Manage your core sales assets: Ideal Customer Profiles (ICPs), Offerings, and Email Sending settings.")
 
@@ -1368,7 +1368,7 @@ def render_config_page():
     with tab_email:
         render_config_page_email_tab()
 
-def render_setup_assistant_page():
+def render_setup_assistant_page(auth_token: str):
     st.header("🤖 Setup Assistant")
     st.info("Guided setup and Q&A coming soon!")
 
