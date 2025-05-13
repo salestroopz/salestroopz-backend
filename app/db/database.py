@@ -6,10 +6,32 @@ from urllib.parse import urlparse # For parsing DATABASE_URL
 from typing import Optional, List, Dict, Any
 import json
 from datetime import datetime, timezone, timedelta # Use timezone for UTC
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy import func, and_, or_
 from .models import Lead, LeadCampaignStatus, EmailCampaign # Add EmailCampaign if not already imported
 from app.schemas import LeadStatusEnum
+import os
+SQLALCHEMY_DATABASE_URL = os.getenv("postgresql://salestroopz:H5MukOboRytrSQJIKNq7yqaWPlT2z8XK@dpg-d09t6e0dl3ps73frg2t0-a/salestroopz")
+
+engine = create_engine(SQLALCHEMY_DATABASE_URL)
+
+def get_db():
+    """
+    FastAPI dependency to get a database session.
+    Ensures the session is closed after the request.
+    """
+    db = SessionLocal()
+    try:
+        yield db  # Provides the session to the route
+    finally:
+        db.close() # Closes the session after the request is done
+
+def create_db_and_tables():
+    """
+    Creates all database tables defined in models.py.
+    Call this once when your application starts if you're not using migrations.
+    """
+    Base.metadata.create_all(bind=engine)
 
 # Import logger (assuming configured elsewhere or basic setup)
 try:
