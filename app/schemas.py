@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, List, Dict, Any, Literal
 from enum import Enum
 from datetime import datetime
+from app.db.models import LeadStatusEnum
 
 # --- Authentication & User Schemas ---
 class UserBase(BaseModel):
