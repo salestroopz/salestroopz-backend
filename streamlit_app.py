@@ -338,6 +338,24 @@ def get_dashboard_stats_api() -> Optional[Dict]:
 
 def get_recent_appointments_api(limit: int = 5) -> Optional[List[Dict]]:
     """Fetches recent appointments for the dashboard."""
+    
+    # --- START TEMPORARY DEBUG ---
+    actual_endpoint_url = f"{DASHBOARD_RECENT_APPOINTMENTS_ENDPOINT}" # Use the constant
+    current_auth_token = st.session_state.get("auth_token")
+
+    print("--- STREAMLIT API CALL DEBUG: get_recent_appointments_api ---")
+    print(f"1. BACKEND_URL from env: '{BACKEND_URL}'")
+    print(f"2. DASHBOARD_RECENT_APPOINTMENTS_ENDPOINT constant: '{DASHBOARD_RECENT_APPOINTMENTS_ENDPOINT}'")
+    print(f"3. Calculated Endpoint for this call (before params): '{actual_endpoint_url}'")
+    print(f"4. Params for this call: {{'limit': {limit}}}")
+    print(f"5. Auth Token from st.session_state.auth_token: '{current_auth_token}'")
+    print("---------------------------------------------------------------")
+    # --- END TEMPORARY DEBUG ---
+
+    if not current_auth_token:
+        st.error("DEBUG: No auth token found in session state when calling get_recent_appointments_api.")
+        # This would lead make_api_request to fail auth_required if get_auth_headers returns None
+    
     return make_api_request("GET", DASHBOARD_RECENT_APPOINTMENTS_ENDPOINT, params={"limit": limit})
 
 def get_campaign_performance_summary_api() -> Optional[List[Dict]]:
