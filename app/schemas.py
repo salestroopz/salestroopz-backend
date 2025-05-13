@@ -311,6 +311,20 @@ class LeadCampaignStatusResponse(BaseModel):
     latest_reply_ai_classification: Optional[str] = None
     latest_reply_received_at: Optional[datetime] = None # Added from the email_replies table
 
+# --- DEFINE LeadStatusEnum HERE ---
+class LeadStatusEnum(str, enum.Enum):
+    pending_enrollment = "pending_enrollment"
+    enrolled_active = "enrolled_active"
+    sequence_step_1_sent = "sequence_step_1_sent"
+    # ... other steps
+    positive_reply_ai_flagged = "positive_reply_ai_flagged"
+    positive_reply_received = "positive_reply_received" # Manually confirmed
+    appointment_manually_set = "appointment_manually_set"
+    needs_manual_followup = "needs_manual_followup"
+    unsubscribed = "unsubscribed"
+    sequence_completed = "sequence_completed"
+    error_sending = "error_sending"
+
 class Config:
     from_attributes = True
     successfully_imported_or_updated: int
