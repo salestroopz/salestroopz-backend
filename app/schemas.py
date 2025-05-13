@@ -327,6 +327,62 @@ class LeadStatusEnum(str, enum.Enum):
     sequence_completed = "sequence_completed"
     error_sending = "error_sending"
 
+# --- ADD/ENSURE THESE DASHBOARD RESPONSE MODELS ARE DEFINED ---
+
+class AppointmentStatsResponse(BaseModel):
+    """
+    Pydantic model for the response of the /dashboard/appointment_stats endpoint.
+    """
+    total_appointments_set: int
+    total_positive_replies: int
+    conversion_rate_percent: Optional[float] = None # Can be None if positive_replies is 0
+
+    class Config:
+        from_attributes = True # For Pydantic v2+ (replaces orm_mode)
+
+
+class RecentAppointment(BaseModel):
+    """
+    Pydantic model for a single item in the recent appointments list.
+    """
+    lead_name: str
+    company_name: Optional[str] = None
+    campaign_name: str
+    date_marked: str # Or datetime if you prefer to format on frontend
+
+    class Config:
+        from_attributes = True
+
+
+class ActionableReply(BaseModel): # Assuming you have a schema for actionable replies
+    reply_id: int
+    lead_id: int
+    lead_name: str
+    lead_email: EmailStr
+    lead_company: Optional[str] = None
+    campaign_id: int
+    campaign_name: str
+    latest_reply_received_at: Optional[datetime] = None # Or received_at
+    latest_reply_ai_classification: Optional[str] = None # Or use your AIClassificationEnum
+    latest_reply_ai_summary: Optional[str] = None
+    latest_reply_snippet: Optional[str] = None
+    # Add full_reply_body if you pass it from backend
+    # full_reply_body: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class CampaignPerformanceSummaryItem(BaseModel): # For campaign performance snippets
+    campaign_id: int
+    campaign_name: str
+    leads_enrolled: int
+    emails_sent: Optional[int] = None # This might be tricky to get accurately without specific logging
+    positive_replies: int
+    appointments_set: int
+    # conversion_rate: Optional[float] = None # (appointments / positive_replies)
+
+    
 class Config:
     from_attributes = True
     successfully_imported_or_updated: int
