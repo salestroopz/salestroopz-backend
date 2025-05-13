@@ -4,9 +4,18 @@
 import os
 import streamlit as st
 import requests
-import time # json is not explicitly used for parsing if requests.json() is preferred
+import time
+import json # Added for explicit JSON handling if needed
+import pandas as pd # Added for st.dataframe if used for tables
+import logging # Added for logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone, timedelta
+
+# --- Setup Logger ---
+logger = logging.getLogger(__name__)
+# You might want to configure the logger further (e.g., level, handler)
+# logging.basicConfig(level=logging.INFO)
+
 
 # --- Page Configuration (Call ONCE at the top) ---
 st.set_page_config(
@@ -29,12 +38,25 @@ ICPS_ENDPOINT = f"{BACKEND_URL}/api/v1/icps"
 OFFERINGS_ENDPOINT = f"{BACKEND_URL}/api/v1/offerings"
 CAMPAIGNS_ENDPOINT = f"{BACKEND_URL}/api/v1/campaigns"
 EMAIL_SETTINGS_ENDPOINT = f"{BACKEND_URL}/api/v1/email-settings"
-ICP_MATCHING_ENDPOINT = f"{BACKEND_URL}/api/v1/icp-matching" # Added for completeness
+ICP_MATCHING_ENDPOINT = f"{BACKEND_URL}/api/v1/icp-matching"
+
+# New Dashboard API Endpoints
+DASHBOARD_ACTIONABLE_REPLIES_ENDPOINT = f"{BACKEND_URL}/api/v1/dashboard/actionable_replies"
+DASHBOARD_APPOINTMENT_STATS_ENDPOINT = f"{BACKEND_URL}/api/v1/dashboard/appointment_stats"
+DASHBOARD_RECENT_APPOINTMENTS_ENDPOINT = f"{BACKEND_URL}/api/v1/dashboard/recent_appointments"
+DASHBOARD_CAMPAIGN_PERFORMANCE_ENDPOINT = f"{BACKEND_URL}/api/v1/dashboard/campaign_performance_summary"
+LEAD_CAMPAIGN_ACTION_ENDPOINT = f"{BACKEND_URL}/api/v1/leads" # Base for /leads/{id}/campaign_action
 
 # Default Timeout for API requests
 API_TIMEOUT_SECONDS = 20
 LONG_API_TIMEOUT_SECONDS = 120 # For uploads or long processes
 
+# Action Types (as strings, consistent with backend expectations)
+ACTION_APPOINTMENT_SET = "appointment_manually_set"
+ACTION_NEEDS_MANUAL_FOLLOWUP = "needs_manual_followup" # Or your preferred string
+ACTION_UNSUBSCRIBE_LEAD = "unsubscribe_lead"
+ACTION_POSITIVE_REPLY = "positive_reply_manual_confirm" # If you have a specific status for this
+ACTION_DISMISS_AI_FLAG = "dismiss_ai_flag" # For ignoring/dismissing
 
 # --- Session State Initialization ---
 def initialize_session_state():
@@ -43,60 +65,43 @@ def initialize_session_state():
         "authenticated": False,
         "auth_token": None,
         "user_email": None,
-        "view": "Login",  # Controls Login/Sign Up/Main App view
-        "nav_radio": "Dashboard",  # For sidebar navigation
+        "view": "Login",
+        "nav_radio": "Dashboard",
 
-        # Leads Page State
-        "leads_list": [],
-        "leads_loaded": False,
-        "show_lead_form": False,
-        "lead_form_data": {},
-        "lead_being_edited_id": None,
-        "lead_to_delete": None,
-        "lead_to_view_details": None,
-        "upload_summary": None,
-        "selected_leads_for_enrollment": {},
-        "show_enroll_leads_dialog": False,
-        "lead_action_success": None,
-        "lead_action_error": None,
+        "leads_list": [], "leads_loaded": False, "show_lead_form": False, "lead_form_data": {},
+        "lead_being_edited_id": None, "lead_to_delete": None, "lead_to_view_details": None,
+        "upload_summary": None, "selected_leads_for_enrollment": {}, "show_enroll_leads_dialog": False,
+        "lead_action_success": None, "lead_action_error": None,
 
-        # Campaign Page State
-        "campaigns_list": [],
-        "campaigns_loaded": False,
-        "show_campaign_create_form": False,
-        "view_campaign_id": None,
-        "available_icps_for_campaign": [],
-        "available_icps_for_campaign_loaded": False,
-        "available_offerings_for_campaign": [],
-        "available_offerings_for_campaign_loaded": False,
-        "campaign_action_success": None,
-        "campaign_action_error": None,
+        "campaigns_list": [], "campaigns_loaded": False, "show_campaign_create_form": False,
+        "view_campaign_id": None, "available_icps_for_campaign": [], "available_icps_for_campaign_loaded": False,
+        "available_offerings_for_campaign": [], "available_offerings_for_campaign_loaded": False,
+        "campaign_action_success": None, "campaign_action_error": None,
 
-        # Config Page - ICP Tab State
-        "icps_list_config_tab": [],
-        "icps_loaded_config_tab": False,
-        "show_icp_form_config_tab": False,
-        "icp_form_data_config_tab": {},
-        "icp_being_edited_id_config_tab": None,
-        "icp_to_delete_config_tab": None,
-        "icp_action_success_config_tab": None,
-        "icp_action_error_config_tab": None,
+        "icps_list_config_tab": [], "icps_loaded_config_tab": False, "show_icp_form_config_tab": False,
+        "icp_form_data_config_tab": {}, "icp_being_edited_id_config_tab": None, "icp_to_delete_config_tab": None,
+        "icp_action_success_config_tab": None, "icp_action_error_config_tab": None,
 
-        # Config Page - Offerings Tab State
-        "offerings_list_config_tab": [],
-        "offerings_loaded_config_tab": False,
-        "show_offering_form_config_tab": False,
-        "offering_form_data_config_tab": {},
-        "offering_being_edited_id_config_tab": None,
-        "offering_to_delete_config_tab": None,
-        "offering_action_success_config_tab": None,
+        "offerings_list_config_tab": [], "offerings_loaded_config_tab": False, "show_offering_form_config_tab": False,
+        "offering_form_data_config_tab": {}, "offering_being_edited_id_config_tab": None,
+        "offering_to_delete_config_tab": None, "offering_action_success_config_tab": None,
         "offering_action_error_config_tab": None,
 
-        # Config Page - Email Settings Tab State
-        "email_settings_current_config_tab": None,
-        "email_settings_loaded_config_tab": False,
-        "email_settings_save_success_config_tab": None,
-        "email_settings_save_error_config_tab": None,
+        "email_settings_current_config_tab": None, "email_settings_loaded_config_tab": False,
+        "email_settings_save_success_config_tab": None, "email_settings_save_error_config_tab": None,
+
+        # Dashboard specific state
+        "dashboard_actionable_replies_loaded": False,
+        "actionable_replies_list_dashboard": [],
+        "dashboard_stats_loaded": False,
+        "dashboard_stats_data": None,
+        "dashboard_recent_appointments_loaded": False,
+        "dashboard_recent_appointments_data": [],
+        "dashboard_campaign_performance_loaded": False,
+        "dashboard_campaign_performance_data": [],
+        "show_reply_review_dialog": False,
+        "reply_item_to_review": None,
+        "force_dashboard_refresh": False,
     }
     for key, value in defaults.items():
         st.session_state.setdefault(key, value)
@@ -154,122 +159,77 @@ def register_user(org_name, email, password) -> bool:
         return False
 
 def logout_user():
-    # More targeted clearing of session state
     keys_to_reset = [
         "authenticated", "auth_token", "user_email",
         "leads_list", "leads_loaded", "campaigns_list", "campaigns_loaded",
-        # Add other data-specific keys if they should be cleared on logout
+        # Clear dashboard specific data too
+        "dashboard_actionable_replies_loaded", "actionable_replies_list_dashboard",
+        "dashboard_stats_loaded", "dashboard_stats_data",
+        "dashboard_recent_appointments_loaded", "dashboard_recent_appointments_data",
+        "dashboard_campaign_performance_loaded", "dashboard_campaign_performance_data",
+        "show_reply_review_dialog", "reply_item_to_review",
     ]
     for key in keys_to_reset:
         if key in st.session_state:
-            del st.session_state[key] # Or set to default if preferred
+            del st.session_state[key]
 
-    initialize_session_state() # Re-initialize to defaults, ensures 'view' goes to 'Login'
+    initialize_session_state()
     st.session_state["authenticated"] = False
     st.session_state["auth_token"] = None
     st.session_state["user_email"] = None
     st.session_state["view"] = "Login"
-
     st.success("Logged out successfully.")
     time.sleep(0.5)
     st.rerun()
 
-def get_auth_headers() -> Dict[str, str]:
-    token = st.session_state.get("auth_token")
-    if not token:
-        st.error("Authentication token is missing. Please log in again.")
-        logout_user() # Force logout
-        st.stop() # Stop execution for this request
-    return {"Authorization": f"Bearer {token}"}
-
-def get_auth_headers(token: Optional[str]) -> Optional[Dict[str, str]]:
-    """Helper to create authentication headers."""
+def get_auth_headers(token: Optional[str] = None) -> Optional[Dict[str, str]]:
+    """Helper to create authentication headers. Uses session state token if not provided."""
+    if token is None:
+        token = st.session_state.get("auth_token")
+    
     if not token:
         # This case should ideally be handled before calling functions that need auth
-        # st.error("Authentication token is missing.") # Or log
+        # Do not call st.error or logout_user here directly, let the caller handle it.
+        logger.warning("get_auth_headers called but no token found.")
         return None
     return {"Authorization": f"Bearer {token}"}
 
-# --- DEFINE get_authenticated_request HERE ---
-def get_authenticated_request(endpoint: str, token: str, params: Optional[Dict[str, Any]] = None) -> Optional[Any]:
-    """
-    Makes an authenticated GET request to the specified endpoint.
-
-    Args:
-        endpoint (str): The full API endpoint URL.
-        token (str): The JWT authentication token.
-        params (Optional[Dict[str, Any]]): Optional dictionary of query parameters.
-
-    Returns:
-        Optional[Any]: The JSON response from the API on success, or None on error.
-                       Errors are displayed in the Streamlit UI.
-    """
-    headers = get_auth_headers(token)
-    if not headers: # Token was missing or invalid from get_auth_headers perspective
-        st.error("Authentication required. Please log in again.")
-        # Optionally trigger logout if appropriate here, though usually handled by the caller
-        # logout_user() 
-        return None
-
-    try:
-        # st.write(f"DEBUG: Making GET request to {endpoint} with params {params}") # For debugging
-        response = requests.get(endpoint, headers=headers, params=params, timeout=15)
-        response.raise_for_status() # Raises an HTTPError for bad responses (4xx or 5xx)
-        return response.json()  # Return the parsed JSON data
-    
-    except requests.exceptions.HTTPError as http_err:
-        if http_err.response is not None:
-            status_code = http_err.response.status_code
-            if status_code == 401: # Unauthorized
-                st.error("Authentication failed or session expired. Please log in again.")
-                logout_user() # Force logout on 401 as token is likely invalid
-            elif status_code == 403: # Forbidden
-                st.error("Forbidden: You do not have permission to access this resource.")
-            elif status_code == 404: # Not Found
-                st.warning(f"Resource not found at {endpoint.replace(str(BACKEND_URL), '')}.") # Show relative path
-            else:
-                # Try to get detailed error message from backend response
-                try:
-                    error_detail = http_err.response.json().get("detail", http_err.response.text)
-                except json.JSONDecodeError:
-                    error_detail = http_err.response.text
-                st.error(f"HTTP Error {status_code} fetching data from {endpoint.replace(str(BACKEND_URL), '')}: {error_detail[:200]}...") # Truncate long messages
-        else: # If response is None for some reason
-            st.error(f"HTTP Error occurred: {http_err}")
-        return None # Indicate failure
-        
-    except requests.exceptions.ConnectionError as conn_err:
-        st.error(f"Connection Error: Could not connect to the backend at {endpoint}. Please check if the server is running. Details: {conn_err}")
-        return None
-    except requests.exceptions.Timeout as timeout_err:
-        st.error(f"Request Timed Out: The request to {endpoint} took too long to respond. Details: {timeout_err}")
-        return None
-    except requests.exceptions.RequestException as req_err: # Catch other requests-related errors
-        st.error(f"Request Error: An issue occurred while making the request to {endpoint}. Details: {req_err}")
-        return None
-    except Exception as e: # Catch any other unexpected errors
-        st.error(f"An unexpected error occurred while fetching data from {endpoint}: {e}")
-        # import traceback # For more detailed debugging if needed
-        # st.error(traceback.format_exc())
-        return None
 
 # --- Generic API Helper Functions ---
-def _handle_api_error(e: Exception, action: str = "perform action"):
+def _handle_api_error(e: Exception, action: str = "perform action", endpoint: str = "unknown endpoint"):
     """Generic error handler for API calls."""
+    relative_endpoint = endpoint.replace(str(BACKEND_URL), '')
     if isinstance(e, requests.exceptions.HTTPError):
-        if e.response.status_code == 401:
-            st.error("Authentication failed or session expired. Please log in again.")
-            logout_user() # This will rerun and stop
-        else:
+        if e.response is not None:
+            status_code = e.response.status_code
             try:
                 detail = e.response.json().get('detail', e.response.text)
             except requests.exceptions.JSONDecodeError:
                 detail = e.response.text
-            st.error(f"Failed to {action}: HTTP {e.response.status_code} - {detail[:250]}")
+
+            if status_code == 401:
+                st.error(f"Authentication failed or session expired while trying to {action} at {relative_endpoint}. Please log in again.")
+                logout_user() # This will rerun and stop
+            elif status_code == 403:
+                st.error(f"Forbidden: You do not have permission to {action} at {relative_endpoint}. Error: {detail[:250]}")
+            elif status_code == 404:
+                st.warning(f"Resource not found (404) when trying to {action} at {relative_endpoint}. Error: {detail[:250]}")
+            elif status_code == 422: # Unprocessable Entity (Validation Error)
+                st.error(f"Validation Error (422) when trying to {action} at {relative_endpoint}. Please check your inputs. Details: {detail[:300]}")
+            else:
+                st.error(f"Failed to {action} at {relative_endpoint}: HTTP {status_code} - {detail[:250]}")
+        else: # If response is None
+             st.error(f"HTTP Error occurred while trying to {action} at {relative_endpoint}: {e}")
+    elif isinstance(e, requests.exceptions.ConnectionError):
+        st.error(f"Failed to {action}: Connection error to {relative_endpoint} - {e}")
+    elif isinstance(e, requests.exceptions.Timeout):
+        st.error(f"Failed to {action}: Request to {relative_endpoint} timed out - {e}")
     elif isinstance(e, requests.exceptions.RequestException):
-        st.error(f"Failed to {action}: Connection error - {e}")
+        st.error(f"Failed to {action}: Network request error for {relative_endpoint} - {e}")
     else:
-        st.error(f"Failed to {action}: An unexpected error occurred - {e}")
+        st.error(f"Failed to {action} at {relative_endpoint}: An unexpected error occurred - {e}")
+    logger.error(f"API Error during '{action}' at '{endpoint}': {e}", exc_info=True)
+
 
 def make_api_request(
     method: str,
@@ -282,12 +242,23 @@ def make_api_request(
     timeout: int = API_TIMEOUT_SECONDS,
     custom_headers: Optional[Dict] = None
 ) -> Optional[Any]:
-    """Makes an authenticated API request."""
+    """Makes an API request and handles common errors."""
+    action_description = f"{method.lower()} data at {endpoint.replace(BACKEND_URL, '')}"
     try:
-        headers = get_auth_headers() if auth_required else {}
+        headers = {}
+        if auth_required:
+            auth_hdrs = get_auth_headers()
+            if not auth_hdrs: # Token missing or problem getting it
+                st.error(f"Authentication required for {action_description}, but token is missing. Please log in.")
+                # logout_user() # Optionally force logout
+                return None
+            headers.update(auth_hdrs)
+
         if custom_headers:
             headers.update(custom_headers)
 
+        # logger.debug(f"Making API {method} request to {endpoint} with params={params}, json={json_payload is not None}, data={data_payload is not None}")
+        
         response = requests.request(
             method,
             endpoint,
@@ -298,374 +269,375 @@ def make_api_request(
             params=params,
             timeout=timeout
         )
-        response.raise_for_status()
+        response.raise_for_status() # Raises HTTPError for 4xx/5xx
+        
         if response.status_code == 204:  # No Content
-            return True # Indicates success for operations like DELETE
+            return True # Indicates success for operations like DELETE or some PUTs
+        
+        # Check if response content is empty before trying to parse JSON
+        if not response.content:
+            return True # Treat empty response (e.g. some 200 OK with no body) as success
+
         return response.json()
-    except Exception as e:
-        action_description = f"{method.lower()} data at {endpoint.replace(BACKEND_URL, '')}"
-        _handle_api_error(e, action_description)
+    
+    except Exception as e: # Catches HTTPError from raise_for_status and other exceptions
+        _handle_api_error(e, action_description, endpoint)
         return None
 
-# --- Specific API Service Functions ---
+# --- Specific API Service Functions (keeping existing structure, adding new ones) ---
 
-# Leads
+# Leads (existing)
 def list_leads_api(skip: int = 0, limit: int = 100) -> Optional[List[Dict]]:
     return make_api_request("GET", f"{LEADS_ENDPOINT}/", params={"skip": skip, "limit": limit})
-
 def create_lead_api(payload: Dict) -> Optional[Dict]:
     return make_api_request("POST", f"{LEADS_ENDPOINT}/", json_payload=payload)
-
-def get_lead_details_api(lead_id: int) -> Optional[Dict]: # Added stub
+def get_lead_details_api(lead_id: int) -> Optional[Dict]:
     return make_api_request("GET", f"{LEADS_ENDPOINT}/{lead_id}")
-
 def update_lead_api(lead_id: int, payload: Dict) -> Optional[Dict]:
     return make_api_request("PUT", f"{LEADS_ENDPOINT}/{lead_id}", json_payload=payload)
-
 def delete_lead_api(lead_id: int) -> bool:
-    return make_api_request("DELETE", f"{LEADS_ENDPOINT}/{lead_id}") is not None
-
+    return make_api_request("DELETE", f"{LEADS_ENDPOINT}/{lead_id}") is True # Check for explicit True
 def upload_leads_csv_api(uploaded_file) -> Optional[Dict[str, Any]]:
-    endpoint = f"{LEADS_ENDPOINT}/bulk_upload/" # Ensure this endpoint exists
+    endpoint = f"{LEADS_ENDPOINT}/bulk_upload/"
     files_data = {'file': (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
-    return make_api_request(
-        "POST",
-        endpoint,
-        files_payload=files_data,
-        timeout=LONG_API_TIMEOUT_SECONDS
-    )
+    return make_api_request("POST", endpoint, files_payload=files_data, timeout=LONG_API_TIMEOUT_SECONDS)
 
-# ICPs
-def list_icps_api() -> Optional[List[Dict]]:
-    return make_api_request("GET", f"{ICPS_ENDPOINT}/")
+# ICPs (existing)
+def list_icps_api() -> Optional[List[Dict]]: return make_api_request("GET", f"{ICPS_ENDPOINT}/")
+def create_icp_api(payload: Dict) -> Optional[Dict]: return make_api_request("POST", f"{ICPS_ENDPOINT}/", json_payload=payload)
+def update_icp_api(icp_id: int, payload: Dict) -> Optional[Dict]: return make_api_request("PUT", f"{ICPS_ENDPOINT}/{icp_id}", json_payload=payload)
+def delete_icp_api(icp_id: int) -> bool: return make_api_request("DELETE", f"{ICPS_ENDPOINT}/{icp_id}") is True
 
-def create_icp_api(payload: Dict) -> Optional[Dict]: # Added stub
-    return make_api_request("POST", f"{ICPS_ENDPOINT}/", json_payload=payload)
+# Offerings (existing)
+def list_offerings_api() -> Optional[List[Dict]]: return make_api_request("GET", f"{OFFERINGS_ENDPOINT}/")
+def create_offering_api(payload: Dict) -> Optional[Dict]: return make_api_request("POST", f"{OFFERINGS_ENDPOINT}/", json_payload=payload)
+def update_offering_api(offering_id: int, payload: Dict) -> Optional[Dict]: return make_api_request("PUT", f"{OFFERINGS_ENDPOINT}/{offering_id}", json_payload=payload)
+def delete_offering_api(offering_id: int) -> bool: return make_api_request("DELETE", f"{OFFERINGS_ENDPOINT}/{offering_id}") is True
 
-def update_icp_api(icp_id: int, payload: Dict) -> Optional[Dict]: # Added stub
-    return make_api_request("PUT", f"{ICPS_ENDPOINT}/{icp_id}", json_payload=payload)
+# Email Settings (existing)
+def get_email_settings_api() -> Optional[Dict]: return make_api_request("GET", f"{EMAIL_SETTINGS_ENDPOINT}/")
+def save_email_settings_api(payload: Dict) -> Optional[Dict]: return make_api_request("PUT", f"{EMAIL_SETTINGS_ENDPOINT}/", json_payload=payload)
 
-def delete_icp_api(icp_id: int) -> bool: # Added stub
-    return make_api_request("DELETE", f"{ICPS_ENDPOINT}/{icp_id}") is not None
-
-# Offerings
-def list_offerings_api() -> Optional[List[Dict]]:
-    return make_api_request("GET", f"{OFFERINGS_ENDPOINT}/")
-
-def create_offering_api(payload: Dict) -> Optional[Dict]: # Added stub
-    return make_api_request("POST", f"{OFFERINGS_ENDPOINT}/", json_payload=payload)
-
-def update_offering_api(offering_id: int, payload: Dict) -> Optional[Dict]: # Added stub
-    return make_api_request("PUT", f"{OFFERINGS_ENDPOINT}/{offering_id}", json_payload=payload)
-
-def delete_offering_api(offering_id: int) -> bool: # Added stub
-    return make_api_request("DELETE", f"{OFFERINGS_ENDPOINT}/{offering_id}") is not None
-
-# Email Settings
-def get_email_settings_api() -> Optional[Dict]:
-    return make_api_request("GET", f"{EMAIL_SETTINGS_ENDPOINT}/")
-
-def save_email_settings_api(payload: Dict) -> Optional[Dict]: # Added stub
-    return make_api_request("PUT", f"{EMAIL_SETTINGS_ENDPOINT}/", json_payload=payload)
-
-
-# Campaigns
+# Campaigns (existing)
 def list_campaigns_api(active_only: Optional[bool] = None) -> Optional[List[Dict]]:
     params = {}
-    if active_only is not None:
-        params["active_only"] = active_only
+    if active_only is not None: params["active_only"] = active_only
     return make_api_request("GET", f"{CAMPAIGNS_ENDPOINT}/", params=params)
-
-def create_campaign_api(campaign_payload: Dict[str, Any]) -> Optional[Dict]:
-    return make_api_request("POST", f"{CAMPAIGNS_ENDPOINT}/", json_payload=campaign_payload)
-
-def get_campaign_details_api(campaign_id: int) -> Optional[Dict]:
-    return make_api_request("GET", f"{CAMPAIGNS_ENDPOINT}/{campaign_id}")
-
-def update_campaign_api(campaign_id: int, campaign_payload: Dict[str, Any]) -> Optional[Dict]:
-    return make_api_request("PUT", f"{CAMPAIGNS_ENDPOINT}/{campaign_id}", json_payload=campaign_payload)
-
-def activate_deactivate_campaign_api(campaign_id: int, is_active_status: bool) -> bool:
-    return update_campaign_api(campaign_id, {"is_active": is_active_status}) is not None
-
-def enroll_leads_in_campaign_api(campaign_id: int, lead_ids: List[int]) -> Optional[Dict]:
-    return make_api_request(
-        "POST",
-        f"{CAMPAIGNS_ENDPOINT}/{campaign_id}/enroll_leads",
-        json_payload={"lead_ids": lead_ids},
-        timeout=LONG_API_TIMEOUT_SECONDS / 2 # e.g., 60 seconds
-    )
-
-def enroll_matched_icp_leads_api(campaign_id: int) -> Optional[Dict]:
-    return make_api_request("POST", f"{CAMPAIGNS_ENDPOINT}/{campaign_id}/enroll_matched_icp_leads")
+def create_campaign_api(payload: Dict[str, Any]) -> Optional[Dict]: return make_api_request("POST", f"{CAMPAIGNS_ENDPOINT}/", json_payload=payload)
+def get_campaign_details_api(campaign_id: int) -> Optional[Dict]: return make_api_request("GET", f"{CAMPAIGNS_ENDPOINT}/{campaign_id}")
+def update_campaign_api(campaign_id: int, payload: Dict[str, Any]) -> Optional[Dict]: return make_api_request("PUT", f"{CAMPAIGNS_ENDPOINT}/{campaign_id}", json_payload=payload)
+def activate_deactivate_campaign_api(campaign_id: int, is_active: bool) -> bool: return update_campaign_api(campaign_id, {"is_active": is_active}) is not None
+def enroll_leads_in_campaign_api(campaign_id: int, lead_ids: List[int]) -> Optional[Dict]: return make_api_request("POST", f"{CAMPAIGNS_ENDPOINT}/{campaign_id}/enroll_leads", json_payload={"lead_ids": lead_ids}, timeout=LONG_API_TIMEOUT_SECONDS / 2)
+def enroll_matched_icp_leads_api(campaign_id: int) -> Optional[Dict]: return make_api_request("POST", f"{CAMPAIGNS_ENDPOINT}/{campaign_id}/enroll_matched_icp_leads")
 
 
+# --- NEW/UPDATED Dashboard API Service Functions ---
+def get_dashboard_stats_api() -> Optional[Dict]:
+    """Fetches appointment and positive reply stats for the dashboard."""
+    return make_api_request("GET", DASHBOARD_APPOINTMENT_STATS_ENDPOINT)
 
-# --- NEW API Helper for Dashboard ---
-def get_actionable_replies_api(token: str, limit: int = 50) -> Optional[List[Dict]]:
+def get_recent_appointments_api(limit: int = 5) -> Optional[List[Dict]]:
+    """Fetches recent appointments for the dashboard."""
+    return make_api_request("GET", DASHBOARD_RECENT_APPOINTMENTS_ENDPOINT, params={"limit": limit})
+
+def get_campaign_performance_summary_api() -> Optional[List[Dict]]:
+    """Fetches campaign performance summaries for the dashboard."""
+    # This might be a more complex call or multiple calls later
+    st.session_state.dashboard_campaign_performance_data = [{"campaign_name": "Test Campaign Alpha", "leads_enrolled": 100, "emails_sent": 300, "positive_replies": 10, "appointments_set": 2}] # Placeholder data
+    return st.session_state.dashboard_campaign_performance_data
+    # return make_api_request("GET", DASHBOARD_CAMPAIGN_PERFORMANCE_ENDPOINT) # Uncomment when backend is ready
+
+def get_actionable_replies_api(limit: int = 50) -> Optional[List[Dict]]:
     """Fetches a list of actionable email replies for the dashboard."""
-    endpoint = f"{BACKEND_URL}/api/v1/dashboard/actionable_replies" # Use your defined endpoint
-    params = {"limit": limit}
-    response_data = get_authenticated_request(endpoint, token, params=params)
-    if isinstance(response_data, list):
-        return response_data
-    return None
+    # This function was already defined, just ensuring it uses make_api_request
+    return make_api_request("GET", DASHBOARD_ACTIONABLE_REPLIES_ENDPOINT, params={"limit": limit})
 
-# --- UI Helper/Callback Functions for Leads Page ---
-# Moved outside the loop for clarity and efficiency
-def _set_lead_view_state(lead_data: Dict):
-    st.session_state.lead_to_view_details = lead_data
-    st.session_state.show_lead_form = False
-    st.session_state.show_enroll_leads_dialog = False
-    st.rerun()
+def post_lead_campaign_action_api(
+    lead_id: int,
+    action_type: str,
+    details: Optional[str] = None,
+    reply_id: Optional[int] = None # Added reply_id
+) -> Optional[Dict]:
+    """
+    Posts an action for a lead (e.g., mark appointment, unsubscribe) from the dashboard/dialog.
+    """
+    endpoint = f"{LEAD_CAMPAIGN_ACTION_ENDPOINT}/{lead_id}/campaign_action"
+    payload: Dict[str, Any] = {"action_type": action_type}
+    if details:
+        payload["details"] = details
+    if reply_id:
+        payload["reply_id"] = reply_id
 
-def _set_lead_edit_state(lead_data: Dict, lead_id: int):
-    st.session_state.lead_form_data = lead_data
-    st.session_state.lead_being_edited_id = lead_id
-    st.session_state.show_lead_form = True
-    st.session_state.show_enroll_leads_dialog = False
-    st.session_state.lead_to_view_details = None # Clear other views
-    st.rerun()
+    # logger.debug(f"Posting lead action: lead_id={lead_id}, action_type='{action_type}', details='{details}', reply_id={reply_id}")
+    return make_api_request("POST", endpoint, json_payload=payload)
 
-def _set_lead_delete_state(lead_data: Dict):
-    st.session_state.lead_to_delete = lead_data
-    st.session_state.show_lead_form = False
-    st.session_state.show_enroll_leads_dialog = False
-    st.rerun()
+
+# --- UI Helper/Callback Functions for Leads Page (existing) ---
+def _set_lead_view_state(lead_data: Dict): st.session_state.lead_to_view_details = lead_data; st.session_state.show_lead_form = False; st.session_state.show_enroll_leads_dialog = False; st.rerun()
+def _set_lead_edit_state(lead_data: Dict, lead_id: int): st.session_state.lead_form_data = lead_data; st.session_state.lead_being_edited_id = lead_id; st.session_state.show_lead_form = True; st.session_state.show_enroll_leads_dialog = False; st.session_state.lead_to_view_details = None; st.rerun()
+def _set_lead_delete_state(lead_data: Dict): st.session_state.lead_to_delete = lead_data; st.session_state.show_lead_form = False; st.session_state.show_enroll_leads_dialog = False; st.rerun()
+
 
 # --- Page Rendering Functions ---
 
-def render_dashboard_page(auth_token: str):
+def render_dashboard_page(auth_token: str): # auth_token is implicitly used by make_api_request
     st.header("📊 Dashboard")
-    st.write("Welcome to SalesTroopz! Key metrics and insights will appear here.")
-    st.info("Dashboard content (appointment funnel, campaign summaries) to be implemented.")
+    st.caption("Key metrics, actionable insights, and campaign performance at a glance.")
 
-# --- Section: Actionable Email Replies ---
+    # --- Key Performance Indicators ---
+    st.subheader("🚀 Performance Overview")
+    if not st.session_state.get('dashboard_stats_loaded') or st.session_state.get('force_dashboard_refresh'):
+        with st.spinner("Loading performance metrics..."):
+            st.session_state.dashboard_stats_data = get_dashboard_stats_api()
+            st.session_state.dashboard_stats_loaded = True
+            if st.session_state.get('force_dashboard_refresh'):
+                st.session_state.force_dashboard_refresh = False # Reset flag
+
+    stats = st.session_state.get('dashboard_stats_data')
+    if stats:
+        col1, col2, col3 = st.columns(3)
+        col1.metric(
+            "Appointments Set",
+            stats.get("total_appointments_set", "N/A"),
+            # delta="1.2% from last week" # Example delta
+        )
+        col2.metric(
+            "Positive Replies Flagged",
+            stats.get("total_positive_replies", "N/A")
+        )
+        conv_rate = stats.get("conversion_rate_percent")
+        col3.metric(
+            "Conversion Rate (Appt./Positive)",
+            f"{conv_rate:.1f}%" if conv_rate is not None else "N/A"
+        )
+    else:
+        st.info("Performance metrics are loading or not yet available.")
     st.markdown("---")
+
+    # --- Recent Appointments ---
+    st.subheader("📅 Recent Appointments")
+    if not st.session_state.get('dashboard_recent_appointments_loaded') or st.session_state.get('force_dashboard_refresh'):
+        with st.spinner("Loading recent appointments..."):
+            st.session_state.dashboard_recent_appointments_data = get_recent_appointments_api(limit=5)
+            st.session_state.dashboard_recent_appointments_loaded = True
+
+    recent_appts = st.session_state.get('dashboard_recent_appointments_data')
+    if recent_appts:
+        # df_recent_appts = pd.DataFrame(recent_appts) # Using Pandas for nice table
+        # st.dataframe(
+        #     df_recent_appts[['date_marked', 'lead_name', 'company_name', 'campaign_name']], # Select and order columns
+        #     hide_index=True, use_container_width=True
+        # )
+        for appt in recent_appts:
+            st.markdown(f"- **{appt.get('lead_name', 'N/A')}** ({appt.get('company_name', 'N/A')}) - Campaign: *{appt.get('campaign_name', 'N/A')}* on {appt.get('date_marked', 'N/A')}")
+    elif recent_appts == []: # Explicitly check for empty list after loading
+        st.info("No recent appointments to show.")
+    else: # Loading or error
+        st.caption("Recent appointments are loading or not available.")
+    st.markdown("---")
+
+    # --- Actionable Email Replies (existing logic, adapted) ---
     st.subheader("🔥 Actionable Email Replies")
-    st.caption("These replies have been AI-classified as needing your attention for follow-up or appointment scheduling.")
+    st.caption("These replies have been AI-classified as needing your attention.")
 
-    # Initialize/Load Actionable Replies
-    # Use a unique session state key for dashboard-specific loading if needed, or just rely on the general one.
-    if 'dashboard_actionable_replies_loaded' not in st.session_state or \
-       not st.session_state.dashboard_actionable_replies_loaded or \
-       st.session_state.get('force_dashboard_refresh', False): # Add a way to force refresh
-        
+    if not st.session_state.get('dashboard_actionable_replies_loaded') or st.session_state.get('force_dashboard_refresh'):
         with st.spinner("Loading actionable replies..."):
-            fetched_actionable_replies = get_actionable_replies_api(auth_token) # Use your API helper
-            st.session_state.actionable_replies_list_dashboard = fetched_actionable_replies if fetched_actionable_replies is not None else []
+            fetched_replies = get_actionable_replies_api()
+            st.session_state.actionable_replies_list_dashboard = fetched_replies if fetched_replies is not None else []
             st.session_state.dashboard_actionable_replies_loaded = True
-            if 'force_dashboard_refresh' in st.session_state:
-                del st.session_state.force_dashboard_refresh
 
-    actionable_replies = st.session_state.get('actionable_replies_list_dashboard', [])
+    actionable_replies_list = st.session_state.get('actionable_replies_list_dashboard', [])
 
-    if st.button("🔄 Refresh Actionable Replies", key="refresh_actionable_replies_dashboard_btn"):
-        st.session_state.dashboard_actionable_replies_loaded = False # Force reload on next run
+    if st.button("🔄 Refresh Dashboard Data", key="refresh_dashboard_all_btn"):
+        st.session_state.dashboard_stats_loaded = False
+        st.session_state.dashboard_recent_appointments_loaded = False
+        st.session_state.dashboard_actionable_replies_loaded = False
+        st.session_state.dashboard_campaign_performance_loaded = False # For future
+        st.session_state.force_dashboard_refresh = True # General refresh signal
         st.rerun()
 
-    if not actionable_replies and st.session_state.dashboard_actionable_replies_loaded: # Check loaded flag
-        st.info("🎉 No new actionable replies to review at this time. Great job, or keep those campaigns running!")
-    elif actionable_replies:
-        st.markdown(f"You have **{len(actionable_replies)}** AI-flagged replies requiring your action:")
-        
-        # Using st.columns for a more structured layout
-        # Define column headers (optional, but good for clarity)
-        # cols_header = st.columns([2, 2, 2, 3, 1.5])
-        # with cols_header[0]: st.caption("**Lead Name**")
-        # with cols_header[1]: st.caption("**Company**")
-        # with cols_header[2]: st.caption("**Campaign**")
-        # with cols_header[3]: st.caption("**AI Classification & Summary**")
-        # with cols_header[4]: st.caption("**Action**")
-        # st.markdown("---")
+    if not actionable_replies_list and st.session_state.dashboard_actionable_replies_loaded:
+        st.success("🎉 No new actionable replies to review at this time!")
+    elif actionable_replies_list:
+        st.markdown(f"You have **{len(actionable_replies_list)}** AI-flagged replies requiring your action:")
+        for reply_item in actionable_replies_list:
+            reply_db_id = reply_item.get('latest_reply_id') or reply_item.get('reply_id') # Backend might use different keys
+            lcs_id = reply_item.get('lead_campaign_status_id')
+            unique_key_part = reply_db_id if reply_db_id else lcs_id if lcs_id else reply_item.get('lead_id', 'unknown_reply')
 
-
-        for reply_item in actionable_replies:
-            # Display the reply item
-            # lead_campaign_status_id is the primary key of the lead_campaign_status table
-            # latest_reply_id is the primary key of the email_replies table
-            # We need lead_id for the perform_lead_campaign_action_api
-            
-            lcs_id = reply_item.get('lead_campaign_status_id') 
-            reply_db_id = reply_item.get('latest_reply_id') # This ID is for the email_replies table
-            lead_id_for_action = reply_item.get('lead_id') # Needed for the action API
-
-            if not lcs_id or not lead_id_for_action: 
-                logger.warning(f"Dashboard: Skipping actionable reply due to missing lcs_id or lead_id: {reply_item}")
-                continue 
+            if not reply_item.get('lead_id'):
+                logger.warning(f"Dashboard: Skipping actionable reply due to missing lead_id: {reply_item}")
+                continue
 
             with st.container(border=True):
-                col_info, col_summary, col_actions_dash = st.columns([2.5, 3, 1]) # Adjusted for button size
-                
+                col_info, col_summary, col_actions_dash = st.columns([2.5, 3, 1.5])
                 with col_info:
                     st.markdown(f"**Lead:** {reply_item.get('lead_name', 'N/A')}")
                     st.caption(f"Email: {reply_item.get('lead_email', 'N/A')}")
-                    st.caption(f"Company: {reply_item.get('lead_company', 'N/A')}")
+                    st.caption(f"Company: {reply_item.get('lead_company', reply_item.get('company_name', 'N/A'))}") # Check both keys
                     st.markdown(f"**Campaign:** `{reply_item.get('campaign_name', 'N/A')}`")
-                    
-                    received_at_str = reply_item.get('latest_reply_received_at')
+                    received_at_str = reply_item.get('latest_reply_received_at') or reply_item.get('received_at')
                     if received_at_str:
                         try:
-                            received_dt = datetime.fromisoformat(received_at_str.replace('Z', '+00:00'))
+                            received_dt = datetime.fromisoformat(str(received_at_str).replace('Z', '+00:00'))
                             st.caption(f"Reply Received: {received_dt.strftime('%Y-%m-%d %H:%M')}")
-                        except:
-                            st.caption(f"Reply Received: {received_at_str}")
-                    else:
-                        st.caption("Reply Received: N/A")
-
+                        except: st.caption(f"Reply Received: {received_at_str}")
 
                 with col_summary:
-                    classification = str(reply_item.get('latest_reply_ai_classification', 'N/A')).replace('_', ' ').capitalize()
-                    classification_icon = "⭐" if "Positive" in classification else \
-                                          "❓" if "Question" in classification else \
-                                          "⛔" if "Negative" in classification else \
-                                          "➡️" # Default for other types
-                    st.markdown(f"**AI Classification:** {classification_icon} `{classification}`")
+                    classification = str(reply_item.get('latest_reply_ai_classification', reply_item.get('classification', 'N/A'))).replace('_', ' ').capitalize()
+                    icon = "⭐" if "Positive" in classification else "❓" if "Question" in classification else "⛔" if "Negative" in classification else "➡️"
+                    st.markdown(f"**AI Classification:** {icon} `{classification}`")
                     st.markdown(f"**AI Summary:**")
-                    st.caption(f"{reply_item.get('latest_reply_ai_summary', '_No AI summary available._')}")
-                    
-                    # Snippet of the actual reply
-                    if reply_item.get('latest_reply_snippet'):
-                        with st.expander("View Reply Snippet (AI Cleaned)"):
-                            st.code(reply_item.get('latest_reply_snippet'), language='text')
+                    st.caption(f"{reply_item.get('latest_reply_ai_summary', reply_item.get('summary', '_No AI summary_'))}")
+                    if reply_item.get('latest_reply_snippet') or reply_item.get('body_preview'):
+                        with st.expander("View Reply Snippet"):
+                            st.code(reply_item.get('latest_reply_snippet') or reply_item.get('body_preview'), language='text')
 
                 with col_actions_dash:
-                    # This button will set session state to show the detailed "Review & Act" dialog
-                    # We pass reply_item itself, as the dialog might need multiple fields from it.
-                    def set_review_state(item_data):
-                        st.session_state.reply_item_to_review = item_data # Store the whole item
+                    if st.button("Review & Act", key=f"review_act_dashboard_btn_{unique_key_part}", type="primary", use_container_width=True):
+                        st.session_state.reply_item_to_review = reply_item
                         st.session_state.show_reply_review_dialog = True
-                        # No st.rerun() here, dialog will show conditionally in the same script run
-                    
-                    if st.button("Review & Act", key=f"review_act_dashboard_btn_{reply_db_id if reply_db_id else lcs_id}", type="primary", use_container_width=True):
-                        # Store the entire reply_item dict in session_state for the dialog to use
-                        st.session_state.reply_item_to_review = reply_item 
-                        st.session_state.show_reply_review_dialog = True
-                        st.rerun() # Rerun to make the dialog appear immediately
-
-        st.markdown("---")
-
-    # --- Main Dashboard Metrics (Placeholder for now) ---
-    st.subheader("📊 Overall Campaign Performance")
-    # This section will be populated once you have data from campaign execution and appointment marking
-    # Example placeholders:
-    # total_appointments = get_total_appointments_api(auth_token) # New API helper needed
-    # active_campaign_count = get_active_campaign_count_api(auth_token) # New API helper needed
-    
-    # st.metric("Total Appointments Set", total_appointments.get('count', 0) if total_appointments else "N/A")
-    # st.metric("Active Campaigns", active_campaign_count.get('count', 0) if active_campaign_count else "N/A")
-    st.info("Overall performance metrics (e.g., total appointments, campaign success rates) will be displayed here once campaigns are running and responses are processed.")
-
-
-# --- The "Review & Act" Dialog (MUST be defined globally in streamlit_app.py, not inside a function) ---
-# This ensures it can be shown as an overlay regardless of the current page.
-# It uses st.session_state.show_reply_review_dialog and st.session_state.reply_item_to_review
-
-if st.session_state.get('show_reply_review_dialog') and st.session_state.get('reply_item_to_review') is not None:
-    reply_details_from_dashboard = st.session_state.reply_item_to_review # This dict comes from actionable_replies_list
-    auth_token_for_dialog = st.session_state.get("auth_token") # Get token for API calls
-
-    # Extract necessary IDs and info
-    lead_id_for_action = reply_details_from_dashboard.get('lead_id')
-    # lead_campaign_status_id_for_action = reply_details_from_dashboard.get('lead_campaign_status_id') # This ID is for lead_campaign_status table
-    # reply_db_id_for_action = reply_details_from_dashboard.get('latest_reply_id') # This ID is for email_replies table
-
-    # For the dialog title and some displayed info:
-    lead_name_for_dialog = reply_details_from_dashboard.get('lead_name', 'N/A')
-    campaign_name_for_dialog = reply_details_from_dashboard.get('campaign_name', 'N/A')
-    ai_classification_for_dialog = str(reply_details_from_dashboard.get('latest_reply_ai_classification', 'N/A')).replace('_',' ').capitalize()
-    ai_summary_for_dialog = reply_details_from_dashboard.get('latest_reply_ai_summary', 'N/A')
-    
-    # Fetch full cleaned reply text - this might require another API call if snippet is not enough
-    # For now, we use the snippet.
-    # Ideally: full_cleaned_reply_text = get_full_reply_text_api(reply_db_id_for_action, auth_token_for_dialog)
-    cleaned_reply_text_for_dialog = reply_details_from_dashboard.get('latest_reply_snippet', "Full reply text not available in this view. (TODO: Fetch full text).")
-
-
-    # Using st.dialog if available and suitable, or a custom modal-like container
-    # For simplicity, we'll use a conditional container block
-    with st.container(border=True): # This will appear as a distinct block on the page
-        st.subheader(f"📧 Review & Act on Reply from: {lead_name_for_dialog}")
-        st.caption(f"Campaign: `{campaign_name_for_dialog}` | Current AI Classification: `{ai_classification_for_dialog}`")
-        st.markdown(f"**AI Summary:** {ai_summary_for_dialog}")
-        
-        st.markdown("##### Full Reply Text (Cleaned Snippet):")
-        st.text_area("Reply Content", value=cleaned_reply_text_for_dialog, height=200, disabled=True, key=f"reply_text_dialog_{lead_id_for_action}")
-
-        st.markdown("---")
-        st.markdown("##### **Your Action:**")
-        
-        with st.form(key=f"reply_action_form_{lead_id_for_action}"):
-            action_notes_for_dialog = st.text_area("Your Notes for this action (optional):", key=f"dialog_action_notes_{lead_id_for_action}", height=75)
-            
-            # Appointment Setting
-            st.markdown("**Appointment Management:**")
-            appointment_details_for_dialog = st.text_input("Appointment Reference Details (if set manually):", 
-                                                           placeholder="e.g., May 25th 2pm via Google Cal, invite sent", 
-                                                           key=f"dialog_appt_details_{lead_id_for_action}")
-            
-            col_appt_set, col_positive_other = st.columns(2)
-            with col_appt_set:
-                if st.form_submit_button("🗓️ Mark Appointment Set", type="primary", use_container_width=True):
-                    if not appointment_details_for_dialog: # Check if input has value
-                        st.warning("Please enter appointment details before marking as set.")
-                    else:
-                        with st.spinner("Marking appointment..."):
-                            response = perform_lead_campaign_action_api(
-                                lead_id_for_action, LeadCampaignActionType.APPOINTMENT_SET, 
-                                action_notes_for_dialog, appointment_details_for_dialog, auth_token_for_dialog
-                            )
-                        if response: 
-                            st.success("Appointment marked. Lead paused in campaign.")
-                            st.session_state.show_reply_review_dialog = False; st.session_state.actionable_replies_loaded = False
-                            st.rerun()
-                        # API helper shows error
-
-            with col_positive_other:
-                if st.form_submit_button("⭐ Positive Reply (No Appt Yet)", use_container_width=True):
-                    with st.spinner("Marking positive reply..."):
-                        response = perform_lead_campaign_action_api(
-                            lead_id_for_action, LeadCampaignActionType.POSITIVE_REPLY, 
-                            action_notes_for_dialog, None, auth_token_for_dialog
-                        )
-                    if response: 
-                        st.success("Marked as positive reply. Lead paused in campaign for manual follow-up.")
-                        st.session_state.show_reply_review_dialog = False; st.session_state.actionable_replies_loaded = False
                         st.rerun()
+    st.markdown("---")
+
+    # --- Campaign Performance Snippets ---
+    st.subheader("📊 Campaign Performance Snippets")
+    if not st.session_state.get('dashboard_campaign_performance_loaded') or st.session_state.get('force_dashboard_refresh'):
+        with st.spinner("Loading campaign performance..."):
+            st.session_state.dashboard_campaign_performance_data = get_campaign_performance_summary_api() # Using placeholder for now
+            st.session_state.dashboard_campaign_performance_loaded = True
+
+    campaign_perf = st.session_state.get('dashboard_campaign_performance_data')
+    if campaign_perf:
+        # Create a DataFrame for better display
+        try:
+            df_campaign_perf = pd.DataFrame(campaign_perf)
+            if not df_campaign_perf.empty:
+                # Define desired columns and their order
+                cols_to_show = ['campaign_name', 'leads_enrolled', 'emails_sent', 'positive_replies', 'appointments_set']
+                # Filter df to only include existing columns to prevent KeyErrors
+                existing_cols_in_df = [col for col in cols_to_show if col in df_campaign_perf.columns]
+                
+                st.dataframe(
+                    df_campaign_perf[existing_cols_in_df],
+                    column_config={ # Example of renaming columns for display
+                        "campaign_name": "Campaign",
+                        "leads_enrolled": "Enrolled",
+                        "emails_sent": "Sent",
+                        "positive_replies": "Positive Replies",
+                        "appointments_set": "Appointments"
+                    },
+                    hide_index=True, use_container_width=True
+                )
+            else:
+                st.info("No campaign performance data to display yet.")
+        except Exception as e:
+            logger.error(f"Error creating DataFrame for campaign performance: {e}")
+            st.error("Could not display campaign performance data.")
+            st.write(campaign_perf) # Show raw data for debugging
             
+    elif campaign_perf == []:
+         st.info("No campaign performance data available yet.")
+    else:
+        st.caption("Campaign performance summary is loading or not available.")
+
+
+# --- "Review & Act" Dialog (Global) ---
+if st.session_state.get('show_reply_review_dialog') and st.session_state.get('reply_item_to_review') is not None:
+    reply_data = st.session_state.reply_item_to_review
+    lead_id = reply_data.get('lead_id')
+    # Use latest_reply_id if available, otherwise reply_id, or lcs_id as a fallback for keying,
+    # but the actual reply_id sent to backend should be specific to the email_replies table.
+    reply_db_id_for_action = reply_data.get('latest_reply_id') or reply_data.get('reply_id')
+
+    if not lead_id:
+        st.error("Cannot perform action: Lead ID is missing from reply data.")
+        st.session_state.show_reply_review_dialog = False
+        st.rerun()
+    else:
+        with st.dialog("Review & Act on Reply",  dismissible=True): # Using st.dialog for modal effect
+            st.subheader(f"Reply from: {reply_data.get('lead_name', 'N/A')}")
+            st.caption(f"Campaign: `{reply_data.get('campaign_name', 'N/A')}`")
+            st.caption(f"AI Classification: `{str(reply_data.get('latest_reply_ai_classification', reply_data.get('classification', 'N/A'))).replace('_',' ').capitalize()}`")
+            st.markdown(f"**AI Summary:** {reply_data.get('latest_reply_ai_summary', reply_data.get('summary', 'N/A'))}")
+
+            full_reply_text = reply_data.get('full_reply_body') or reply_data.get('latest_reply_snippet') or reply_data.get('body_preview', "Full reply text not available.")
+            st.text_area("Full Reply Text:", value=full_reply_text, height=150, disabled=True, key=f"dialog_reply_text_{lead_id}")
+
+            st.markdown("---")
+            action_notes = st.text_area("Notes (optional, for your reference or backend):", key=f"dialog_action_notes_{lead_id}")
+
+            # Appointment Setting Section
+            st.markdown("**Mark Appointment:**")
+            appointment_details = st.text_input("Appointment Reference Details (e.g., Date, Time, Meeting Link):", key=f"dialog_appt_details_{lead_id}")
+
+            if st.button("✅ Mark Appointment Set", type="primary", key=f"dialog_mark_appt_btn_{lead_id}"):
+                if not appointment_details.strip():
+                    st.warning("Please provide appointment reference details.")
+                else:
+                    with st.spinner("Marking appointment..."):
+                        response = post_lead_campaign_action_api(
+                            lead_id, ACTION_APPOINTMENT_SET,
+                            details=f"{appointment_details} (Notes: {action_notes})" if action_notes else appointment_details,
+                            reply_id=reply_db_id_for_action
+                        )
+                    if response:
+                        st.success("Appointment marked successfully!")
+                        st.session_state.show_reply_review_dialog = False
+                        st.session_state.force_dashboard_refresh = True # Signal to refresh all dashboard data
+                        st.rerun()
+                    # API helper will show error
+
             st.markdown("---")
             st.markdown("**Other Actions:**")
-            col_manual, col_unsub, col_ignore = st.columns(3)
-            with col_manual:
-                if st.form_submit_button("🗣️ Needs Manual Follow-Up", use_container_width=True):
+            col_actions1, col_actions2 = st.columns(2)
+            with col_actions1:
+                if st.button("🗣️ Needs Manual Follow-Up", key=f"dialog_manual_followup_btn_{lead_id}"):
                     with st.spinner("Marking for manual follow-up..."):
-                        response = perform_lead_campaign_action_api(lead_id_for_action, LeadCampaignActionType.MANUAL_PAUSE, action_notes_for_dialog, None, auth_token_for_dialog)
-                    if response: st.success("Marked for manual follow-up. Campaign paused for this lead."); st.session_state.show_reply_review_dialog = False; st.session_state.actionable_replies_loaded = False; st.rerun()
-            
-            with col_unsub:
-                if st.form_submit_button("🛑 Mark Unsubscribed", type="secondary", use_container_width=True):
-                    with st.spinner("Marking unsubscribed..."):
-                        response = perform_lead_campaign_action_api(lead_id_for_action, LeadCampaignActionType.MARK_UNSUBSCRIBED, action_notes_for_dialog, None, auth_token_for_dialog)
-                    if response: st.success("Marked unsubscribed. Lead removed from sequence."); st.session_state.show_reply_review_dialog = False; st.session_state.actionable_replies_loaded = False; st.rerun()
+                        response = post_lead_campaign_action_api(
+                            lead_id, ACTION_NEEDS_MANUAL_FOLLOWUP,
+                            details=f"Manual follow-up needed. (Notes: {action_notes})" if action_notes else "Manual follow-up needed.",
+                            reply_id=reply_db_id_for_action
+                        )
+                    if response:
+                        st.success("Marked for manual follow-up.")
+                        st.session_state.show_reply_review_dialog = False
+                        st.session_state.force_dashboard_refresh = True
+                        st.rerun()
 
-            with col_ignore: # Placeholder for "Incorrect Classification / Ignore"
-                if st.form_submit_button("⚠️ Ignore/Dismiss AI Flag", use_container_width=True):
-                    # This action might just mark the email_reply as actioned or change LCS status if AI paused it.
-                    # Requires specific backend logic for "ignore" if it means more than just closing this dialog.
-                    st.info("Action: 'Ignore AI Flag' - This would typically mark the reply as reviewed.")
-                    st.session_state.show_reply_review_dialog = False; st.session_state.actionable_replies_loaded = False
-                    st.rerun()
-        
-        st.markdown("---")
-        st.info(f"Reminder: Send calendar invites or reply manually from your configured email account.")
-        if st.button("🔙 Close Review Dialog", key="close_review_dialog_main_btn"):
-            st.session_state.show_reply_review_dialog = False
-            st.session_state.actionable_replies_loaded = False # To refresh dashboard list
-            st.rerun()
-        elif st.session_state.get('show_reply_review_dialog'): # If flag is true but no data (should not happen)
-             st.error("Error: Could not load reply details for review.")
-             st.session_state.show_reply_review_dialog = False # Reset
-             st.rerun()
+            with col_actions2:
+                if st.button("🛑 Unsubscribe Lead", key=f"dialog_unsubscribe_btn_{lead_id}"): # type="secondary" removed as st.dialog buttons don't have it
+                    with st.spinner("Unsubscribing lead..."):
+                        response = post_lead_campaign_action_api(
+                            lead_id, ACTION_UNSUBSCRIBE_LEAD,
+                            details=f"Unsubscribed via dashboard. (Notes: {action_notes})" if action_notes else "Unsubscribed via dashboard.",
+                            reply_id=reply_db_id_for_action
+                        )
+                    if response:
+                        st.success("Lead unsubscribed.")
+                        st.session_state.show_reply_review_dialog = False
+                        st.session_state.force_dashboard_refresh = True
+                        st.rerun()
+            
+            # Optional: Dismiss AI Flag (if backend supports this specific action)
+            # if st.button("⚠️ Dismiss AI Flag (Incorrect Classification)", key=f"dialog_dismiss_ai_btn_{lead_id}"):
+            #     with st.spinner("Dismissing AI flag..."):
+            #         response = post_lead_campaign_action_api(
+            #             lead_id, ACTION_DISMISS_AI_FLAG,
+            #             details=f"AI flag dismissed by user. (Notes: {action_notes})" if action_notes else "AI flag dismissed by user.",
+            #             reply_id=reply_db_id_for_action
+            #         )
+            #     if response:
+            #         st.success("AI flag dismissed.")
+            #         st.session_state.show_reply_review_dialog = False
+            #         st.session_state.force_dashboard_refresh = True
+            #         st.rerun()
+
+            st.markdown("---")
+            if st.button("🔙 Close Review", key=f"dialog_close_btn_{lead_id}"):
+                st.session_state.show_reply_review_dialog = False
+                st.rerun() # Rerun to close dialog, dashboard refresh will happen if forced
+
 
 def render_leads_page(auth_token: str): # Add auth_token parameter
     st.header("👤 Leads Management")
@@ -925,6 +897,7 @@ def render_leads_page(auth_token: str): # Add auth_token parameter
                         st.rerun()
                     # else: error is handled by _handle_api_error
 
+
 def render_campaigns_page(auth_token: str):
     st.header("📣 Campaign Management (AI-Powered)")
     st.caption("Create AI-generated email outreach campaigns, review steps, activate, and enroll leads.")
@@ -1100,7 +1073,7 @@ def render_campaigns_page(auth_token: str):
                             if success:
                                 st.session_state.campaign_action_success = "Campaign activated!"
                                 st.session_state.campaigns_loaded = False
-                                del st.session_state.view_campaign_id
+                                # del st.session_state.view_campaign_id # Keep view
                                 st.rerun()
                     else:
                         if st.button("⏸️ Deactivate Campaign", key=f"deactivate_camp_detail_btn_{campaign_id_to_show}", use_container_width=True):
@@ -1109,7 +1082,7 @@ def render_campaigns_page(auth_token: str):
                             if success:
                                 st.session_state.campaign_action_success = "Campaign deactivated!"
                                 st.session_state.campaigns_loaded = False
-                                del st.session_state.view_campaign_id
+                                # del st.session_state.view_campaign_id # Keep view
                                 st.rerun()
                 elif not has_steps and ai_ready_for_activation:
                     st.caption("Cannot activate: AI completed but no steps.")
@@ -1142,6 +1115,7 @@ def render_campaigns_page(auth_token: str):
             if st.button("Return to Campaigns List", key="return_to_camps_list_error_btn"):
                 if 'view_campaign_id' in st.session_state: del st.session_state.view_campaign_id
                 st.rerun()
+
 
 def render_config_page_icp_tab():
     st.subheader("Ideal Customer Profiles (ICPs)")
@@ -1236,6 +1210,7 @@ def render_config_page_icp_tab():
                 st.session_state.show_icp_form_config_tab = False
                 st.rerun()
 
+
 def render_config_page_offerings_tab():
     st.subheader("💡 Offerings / Value Propositions")
     st.caption("Define the products or services you offer.")
@@ -1327,6 +1302,7 @@ def render_config_page_offerings_tab():
                 st.session_state.show_offering_form_config_tab = False
                 st.rerun()
 
+
 def render_config_page_email_tab():
     st.subheader("📧 Email Sending Setup")
     st.caption("Configure how SalesTroopz will send emails.")
@@ -1362,18 +1338,19 @@ def render_config_page_email_tab():
         sender_name_val = st.text_input("Sender Name* (Display Name):", value=current_email_cfg.get('sender_name', ''), key="email_sender_name_cfg")
 
         # Placeholders for form values to be accessed on submit
-        smtp_host, smtp_port, smtp_user, smtp_pass = "", 587, "", ""
-        aws_region, aws_key, aws_secret = "", "", ""
+        smtp_host_val, smtp_port_val, smtp_user_val, smtp_pass_val = current_email_cfg.get('smtp_host', ''), int(current_email_cfg.get('smtp_port', 587)), current_email_cfg.get('smtp_username', ''), ""
+        aws_region_val, aws_key_val, aws_secret_val = current_email_cfg.get('aws_region', ''), "", ""
+
 
         if sel_provider == "SMTP":
-            smtp_host = st.text_input("SMTP Host*:", value=current_email_cfg.get('smtp_host', ''), key="email_smtp_host_cfg")
-            smtp_port = st.number_input("SMTP Port*:", value=int(current_email_cfg.get('smtp_port', 587)), min_value=1, max_value=65535, key="email_smtp_port_cfg")
-            smtp_user = st.text_input("SMTP Username*:", value=current_email_cfg.get('smtp_username', ''), key="email_smtp_user_cfg")
-            smtp_pass = st.text_input("SMTP Password:", type="password", key="email_smtp_pass_cfg", help="Leave blank to keep current if already set.")
+            smtp_host_val = st.text_input("SMTP Host*:", value=smtp_host_val, key="email_smtp_host_cfg_form")
+            smtp_port_val = st.number_input("SMTP Port*:", value=smtp_port_val, min_value=1, max_value=65535, key="email_smtp_port_cfg_form")
+            smtp_user_val = st.text_input("SMTP Username*:", value=smtp_user_val, key="email_smtp_user_cfg_form")
+            smtp_pass_val = st.text_input("SMTP Password:", type="password", key="email_smtp_pass_cfg_form", help="Leave blank to keep current if already set.")
         elif sel_provider == "AWS_SES":
-            aws_region = st.text_input("AWS Region*:", value=current_email_cfg.get('aws_region', ''), key="email_aws_region_cfg")
-            aws_key = st.text_input("AWS Access Key ID:", type="password", key="email_aws_key_cfg", help="Leave blank to keep current if already set.")
-            aws_secret = st.text_input("AWS Secret Access Key:", type="password", key="email_aws_secret_cfg", help="Leave blank to keep current if already set.")
+            aws_region_val = st.text_input("AWS Region*:", value=aws_region_val, key="email_aws_region_cfg_form")
+            aws_key_val = st.text_input("AWS Access Key ID:", type="password", key="email_aws_key_cfg_form", help="Leave blank to keep current if already set.")
+            aws_secret_val = st.text_input("AWS Secret Access Key:", type="password", key="email_aws_secret_cfg_form", help="Leave blank to keep current if already set.")
 
         is_cfg_toggle = st.toggle("Mark as Fully Configured & Ready to Send", value=bool(current_email_cfg.get('is_configured', False)), key="email_is_configured_toggle_cfg")
 
@@ -1391,32 +1368,32 @@ def render_config_page_email_tab():
 
             if sel_provider == "SMTP":
                 payload.update({
-                    "smtp_host": smtp_host.strip() or None,
-                    "smtp_port": smtp_port,
-                    "smtp_username": smtp_user.strip() or None
+                    "smtp_host": smtp_host_val.strip() or None,
+                    "smtp_port": smtp_port_val,
+                    "smtp_username": smtp_user_val.strip() or None
                 })
-                if smtp_pass: payload["smtp_password"] = smtp_pass # Only include if provided
-                # Check if essential SMTP fields are missing if it's a new SMTP setup or password is not set
+                if smtp_pass_val: payload["smtp_password"] = smtp_pass_val
                 is_new_smtp_or_pass_missing = (
                     not (current_email_cfg.get('provider_type') == "SMTP" and current_email_cfg.get('credentials_set'))
-                    and not smtp_pass
+                    and not smtp_pass_val
                 )
-                if not all([payload["smtp_host"], payload["smtp_port"], payload["smtp_username"]]) or is_new_smtp_or_pass_missing :
-                     st.error("For SMTP, Host, Port, Username are required. Password is required on first setup or if changing.")
+                if not all([payload["smtp_host"], payload["smtp_port"], payload["smtp_username"]]) or (is_new_smtp_or_pass_missing and not current_email_cfg.get('credentials_set')):
+                     st.error("For SMTP, Host, Port, Username are required. Password is required on first setup or if changing and not already set.")
                      valid_save = False
 
-            elif sel_provider == "AWS_SES":
-                payload["aws_region"] = aws_region.strip() or None
-                if aws_key: payload["aws_access_key_id"] = aws_key
-                if aws_secret: payload["aws_secret_access_key"] = aws_secret
 
+            elif sel_provider == "AWS_SES":
+                payload["aws_region"] = aws_region_val.strip() or None
+                if aws_key_val: payload["aws_access_key_id"] = aws_key_val
+                if aws_secret_val: payload["aws_secret_access_key"] = aws_secret_val
                 is_new_aws_or_keys_missing = (
                     not (current_email_cfg.get('provider_type') == "AWS_SES" and current_email_cfg.get('credentials_set'))
-                    and not (aws_key and aws_secret)
+                    and not (aws_key_val and aws_secret_val)
                 )
-                if not payload["aws_region"] or is_new_aws_or_keys_missing:
-                    st.error("For AWS SES, Region is required. Access Key and Secret Key are required on first setup or if changing.")
+                if not payload["aws_region"] or (is_new_aws_or_keys_missing and not current_email_cfg.get('credentials_set')):
+                    st.error("For AWS SES, Region is required. Access Key and Secret Key are required on first setup or if changing and not already set.")
                     valid_save = False
+
 
             if valid_save:
                 with st.spinner("Saving email settings..."):
@@ -1425,7 +1402,7 @@ def render_config_page_email_tab():
                     st.session_state.email_settings_save_success_config_tab = "Email settings saved."
                     st.session_state.email_settings_loaded_config_tab = False # Force reload
                     st.rerun()
-                # else: error handled by API helper
+
 
 def render_config_page(auth_token: str):
     st.header("⚙️ Configuration")
@@ -1441,17 +1418,18 @@ def render_config_page(auth_token: str):
     with tab_email:
         render_config_page_email_tab()
 
+
 def render_setup_assistant_page(auth_token: str):
     st.header("🤖 Setup Assistant")
     st.info("Guided setup and Q&A coming soon!")
 
 
 # --- Main Application Logic ---
-if not st.session_state["authenticated"]:
+if not st.session_state.get("authenticated"):
     st.title("SalesTroopz Portal")
-    view_cols = st.columns([1,3,1]) # Centering hack
+    view_cols = st.columns([1,3,1])
     with view_cols[1]:
-        if st.session_state["view"] == "Login":
+        if st.session_state.get("view") == "Login":
             st.subheader("Login")
             with st.form("login_form"):
                 email = st.text_input("Email")
@@ -1465,15 +1443,15 @@ if not st.session_state["authenticated"]:
                         if token:
                             st.session_state["authenticated"] = True
                             st.session_state["auth_token"] = token
-                            st.session_state["user_email"] = email # Set on successful login
-                            st.session_state["view"] = "App" # Switch to app view
+                            st.session_state["user_email"] = email
+                            st.session_state["view"] = "App"
                             st.rerun()
             st.markdown("---")
             if st.button("Don't have an account? Sign Up", key="go_to_signup_btn", use_container_width=True):
                 st.session_state["view"] = "Sign Up"
                 st.rerun()
 
-        elif st.session_state["view"] == "Sign Up":
+        elif st.session_state.get("view") == "Sign Up":
             st.subheader("Create Account")
             with st.form("signup_form"):
                 org_name = st.text_input("Organization Name")
@@ -1489,43 +1467,50 @@ if not st.session_state["authenticated"]:
                         st.error("Passwords do not match.")
                     else:
                         if register_user(org_name, email, password):
-                            st.session_state["view"] = "Login" # Go to login after successful registration
+                            st.session_state["view"] = "Login"
                             st.rerun()
             st.markdown("---")
             if st.button("Already have an account? Login", key="go_to_login_btn", use_container_width=True):
                 st.session_state["view"] = "Login"
                 st.rerun()
-
-else:  # Authenticated User Flow
+else:
     auth_token = st.session_state.get("auth_token")
     if not auth_token:
         st.error("Critical: Authenticated but no auth token found. Logging out.")
         logout_user()
-        st.stop() 
+        st.stop()
+
     with st.sidebar:
         st.image("https://salestroopz.com/wp-content/uploads/2024/01/cropped-SalesTroopz-Logos-1536x515.png", width=200)
         st.write(f"User: {st.session_state.get('user_email', 'N/A')}")
         st.divider()
         page_options = ["Dashboard", "Leads", "Campaigns", "Configuration", "Setup Assistant"]
-        st.session_state.nav_radio = st.radio( # Storing selection back into session_state.nav_radio
+        # Ensure st.session_state.nav_radio exists before trying to find its index
+        current_nav_selection = st.session_state.get("nav_radio", "Dashboard")
+        if current_nav_selection not in page_options: # Fallback if stored selection is invalid
+            current_nav_selection = "Dashboard"
+            st.session_state.nav_radio = "Dashboard"
+
+        st.session_state.nav_radio = st.radio(
             "Navigate", page_options, key="main_nav_radio_sidebar",
-            index=page_options.index(st.session_state.get("nav_radio", "Dashboard")) # Get default from session state
+            index=page_options.index(current_nav_selection)
         )
         st.divider()
-        if st.button("Logout", key="logout_button_sidebar_main", use_container_width=True): # Unique key
-            logout_user() 
+        if st.button("Logout", key="logout_button_sidebar_main", use_container_width=True):
+            logout_user()
 
     current_page_selected = st.session_state.nav_radio
 
+    # Pass auth_token if the page rendering function expects it (most do for API calls)
     if current_page_selected == "Dashboard":
         render_dashboard_page(auth_token)
     elif current_page_selected == "Leads":
-        render_leads_page(auth_token) # <<< CORRECTED: Call render_leads_page
+        render_leads_page(auth_token)
     elif current_page_selected == "Campaigns":
-        render_campaigns_page(auth_token) # <<< Assume this also needs auth_token
+        render_campaigns_page(auth_token)
     elif current_page_selected == "Configuration":
-        render_config_page(auth_token) # <<< Assume this also needs auth_token
+        render_config_page(auth_token)
     elif current_page_selected == "Setup Assistant":
-        render_setup_assistant_page(auth_token) # <<< Assume this also needs auth_token
+        render_setup_assistant_page(auth_token)
     else:
         st.error("Page not found.")
