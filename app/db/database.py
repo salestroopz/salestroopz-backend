@@ -1731,12 +1731,15 @@ def get_leads_with_positive_status_for_dashboard(organization_id: int, limit: in
 
 def count_appointments_set(db: Session, organization_id: int, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None) -> int:
     """Counts leads marked with appointment_confirmed = True for the organization."""
-    query
-        query = query.filter(Lead.updated_at >= start_date) # Adjust field if necessary
+    base_query = db.query(func.count(Lead.id)).filter(
+    Lead.organization_id == organization_id,
+    Lead.appointment_confirmed == True
+)
+    if start_date:
+    base_query = base_query.filter(Lead.updated_at >= start_date)
     if end_date:
-        query = query.filter(Lead.updated_at <= end_date) # Adjust field if necessary
-
-    count = query.scalar()
+    base_query = base_query.filter(Lead.updated_at <= end_date)
+    count = base_query.scalar()
     return count if count else 0
 
 def count_positive_replies_status(db: Session, organization_id: int, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None) -> int:
