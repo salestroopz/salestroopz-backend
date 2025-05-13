@@ -26,11 +26,11 @@ from app.db.models import User as UserModel # Your SQLAlchemy User model
 SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 if not SECRET_KEY:
     # Fallback for local development only - DO NOT USE THIS IN PRODUCTION
-   print("WARNING: JWT_SECRET_KEY not set, using a default insecure key. SET THIS IN PRODUCTION!")
-   SECRET_KEY = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7" # Example, replace
+ #  print("WARNING: JWT_SECRET_KEY not set, using a default insecure key. SET THIS IN PRODUCTION!")
+ #  SECRET_KEY = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7" # Example, replace
+raise ValueError("FATAL: JWT_SECRET_KEY environment variable is not set or is empty. Application cannot start.")
 ALGORITHM = "HS256" # Algorithm for signing the JWT
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30")) # Default to 30 minutes
-raise ValueError("FATAL: JWT_SECRET_KEY environment variable is not set or is empty. Application cannot start.")
 # --- Password Hashing ---
 # Uses bcrypt as the hashing scheme
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
