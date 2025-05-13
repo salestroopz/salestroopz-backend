@@ -1785,7 +1785,7 @@ def get_recent_appointments_list(db: Session, organization_id: int, limit: int =
          Lead.appointment_confirmed == True # Or use LeadCampaignStatus.status == LeadStatusEnum.appointment_manually_set
      )\
      .order_by(LeadCampaignStatus.last_response_at.desc()) # Or Lead.updated_at.desc()
-     .limit(limit)\
+     .limit(limit)
      .all()
 
     # Convert results to list of dicts for easier JSON serialization
