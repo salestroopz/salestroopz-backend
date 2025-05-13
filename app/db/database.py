@@ -5,7 +5,11 @@ from psycopg2.extras import RealDictCursor # Get dict results
 from urllib.parse import urlparse # For parsing DATABASE_URL
 from typing import Optional, List, Dict, Any
 import json
-from datetime import datetime, timezone # Use timezone for UTC
+from datetime import datetime, timezone, timedelta # Use timezone for UTC
+from sqlalchemy.orm import Session
+from sqlalchemy import func, and_, or_
+from .models import Lead, LeadCampaignStatus, EmailCampaign # Add EmailCampaign if not already imported
+from app.schemas import LeadStatusEnum
 
 # Import logger (assuming configured elsewhere or basic setup)
 try:
@@ -1724,6 +1728,75 @@ def get_leads_with_positive_status_for_dashboard(organization_id: int, limit: in
     finally:
         if conn and not getattr(conn, 'closed', True): conn.close()
     return results_list
+
+def count_appointments_set(db: Session, organization_id: int, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None) -> int:
+    """Counts leads marked with appointment_confirmed = True for the organization."""
+    query
+        query = query.filter(Lead.updated_at >= start_date) # Adjust field if necessary
+    if end_date:
+        query = query.filter(Lead.updated_at <= end_date) # Adjust field if necessary
+
+    count = query.scalar()
+    return count if count else 0
+
+def count_positive_replies_status(db: Session, organization_id: int, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None) -> int:
+    """Counts leads flagged with a positive reply status."""
+    # Define the relevant positive statuses
+    positive_statuses = [
+        LeadStatusEnum.positive_reply_ai_flagged,
+        LeadStatusEnum.positive_reply_received, # Add any other relevant status
+        # Important: Should we include 'appointment_manually_set' here?
+        # If yes, it means "positive reply OR appointment set".
+        # If no, it strictly means "positive reply received but maybe not yet converted".
+        # Let's assume *not* including appointment_manually_set for a clearer conversion rate.
+        # LeadStatusEnum.appointment_manually_set
+    ]
+
+    query = db.query(func.count(LeadCampaignStatus.id)).join(Lead).filter(
+        Lead.organization_id == organization_id,
+        LeadCampaignStatus.status.in_(positive_statuses)
+    )
+    # Add date filtering (e.g., based on LeadCampaignStatus.last_response_at or updated_at)
+    if start_date:
+        query = query.filter(LeadCampaignStatus.last_response_at >= start_date) # Adjust field if necessary
+    if end_date:
+        query = query.filter(LeadCampaignStatus.last_response_at <= end_date) # Adjust field if necessary
+
+    count = query.scalar()
+    return count if count else 0
+
+# --- Potentially needed later, but implement the basics first ---
+
+def get_recent_appointments_list(db: Session, organization_id: int, limit: int = 5) -> List[Dict]:
+    """Fetches the most recent leads marked with an appointment."""
+    results = db.query(
+        Lead.first_name,
+        Lead.last_name,
+        Lead.company_name,
+        EmailCampaign.name.label("campaign_name"),
+        LeadCampaignStatus.last_response_at.label("action_date") # Or Lead.updated_at
+    ).join(LeadCampaignStatus, Lead.id == LeadCampaignStatus.lead_id)\
+     .join(EmailCampaign, LeadCampaignStatus.campaign_id == EmailCampaign.id)\
+     .filter(
+         Lead.organization_id == organization_id,
+         Lead.appointment_confirmed == True # Or use LeadCampaignStatus.status == LeadStatusEnum.appointment_manually_set
+     )\
+     .order_by(LeadCampaignStatus.last_response_at.desc()) # Or Lead.updated_at.desc()
+     .limit(limit)\
+     .all()
+
+    # Convert results to list of dicts for easier JSON serialization
+    appointments = [
+        {
+            "lead_name": f"{r.first_name or ''} {r.last_name or ''}".strip(),
+            "company_name": r.company_name,
+            "campaign_name": r.campaign_name,
+            "date_marked": r.action_date.strftime('%Y-%m-%d %H:%M') if r.action_date else 'N/A'
+        } for r in results
+    ]
+    return appointments
+
+
 
 # ==========================================
 # Run initialization if script is executed directly
