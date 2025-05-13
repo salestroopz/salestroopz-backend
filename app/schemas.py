@@ -5,6 +5,7 @@ from typing import Optional, List, Dict, Any, Literal
 from enum import Enum
 from datetime import datetime
 from app.db.models import LeadStatusEnum
+import enum 
 
 # --- Authentication & User Schemas ---
 class UserBase(BaseModel):
