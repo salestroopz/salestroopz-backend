@@ -7,6 +7,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
 import enum # For Python enums used with SQLAlchemyEnum
+from .database import Base # Or wherever your Base is defined (e.g., a shared base.py)
 
 # Create a Base for declarative models
 Base = declarative_base()
@@ -51,7 +52,7 @@ class Organization(Base): # Assuming you have an Organization table
     icps = relationship("ICP", back_populates="organization")
     offerings = relationship("Offering", back_populates="organization")
     email_campaigns = relationship("EmailCampaign", back_populates="organization")
-    email_settings = relationship("EmailSettings", back_populates="organization", uselist=False)
+    email_settings = relationship("OrganizationEmailSettings", back_populates="organization", uselist=False) # <--- UPDATED CLASS NAME
 
 class User(Base): # Assuming a User model
     __tablename__ = "users"
@@ -271,33 +272,39 @@ class OutgoingEmailLog(Base):
     # replies = relationship("EmailReply", back_populates="original_outgoing_email")
 
 
-class EmailSettings(Base): # Corresponds to your Email Settings tab
-    __tablename__ = "email_settings"
-    id = Column(Integer, primary_key=True, index=True) # Should only be one per org
-    organization_id = Column(Integer, ForeignKey("organizations.id"), unique=True, nullable=False) # Ensures one per org
-    provider_type = Column(String, nullable=True) # SMTP, AWS_SES
-    verified_sender_email = Column(String, nullable=True)
+class OrganizationEmailSettings(Base): # <--- RENAMED CLASS
+    __tablename__ = "organization_email_settings" # <--- RENAMED TABLE
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), unique=True, nullable=False)
+
+    provider_type = Column(String, nullable=True)
+    verified_sender_email = Column(String, nullable=False)
     sender_name = Column(String, nullable=True)
+
     smtp_host = Column(String, nullable=True)
     smtp_port = Column(Integer, nullable=True)
     smtp_username = Column(String, nullable=True)
-    # Never store password directly, store encrypted or flag that it's set in vault
-    smtp_password_set = Column(Boolean, default=False) # Flag if set, actual value in secure storage
-    aws_region = Column(String, nullable=True)
-    aws_access_key_id_set = Column(Boolean, default=False)
-    aws_secret_access_key_set = Column(Boolean, default=False)
-    is_configured = Column(Boolean, default=False) # Master switch if settings are complete & usable
-    credentials_set = Column(Boolean, default=False) # General flag if credentials (pass/keys) are stored
+    encrypted_smtp_password = Column(String, nullable=True)
 
-    # IMAP Settings for reply polling
+    encrypted_api_key = Column(String, nullable=True)
+    encrypted_secret_key = Column(String, nullable=True) # If you store AWS secret key
+    encrypted_access_token = Column(String, nullable=True)
+    encrypted_refresh_token = Column(String, nullable=True)
+    token_expiry = Column(DateTime(timezone=True), nullable=True)
+    aws_region = Column(String, nullable=True)
+
+    is_configured = Column(Boolean, default=False, nullable=False)
+
+    enable_reply_detection = Column(Boolean, default=False, nullable=False) # <--- ADDED
     imap_host = Column(String, nullable=True)
     imap_port = Column(Integer, default=993, nullable=True)
-    imap_username = Column(String, nullable=True) # Usually same as sender email for campaign account
-    imap_password_set = Column(Boolean, default=False)
-    imap_use_ssl = Column(Boolean, default=True)
-    imap_is_configured = Column(Boolean, default=False)
+    imap_username = Column(String, nullable=True)
+    encrypted_imap_password = Column(String, nullable=True) # <--- Store encrypted
+    imap_use_ssl = Column(Boolean, default=True, nullable=False)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_imap_poll_uid = Column(Text, nullable=True) # <--- ADDED
+    last_imap_poll_timestamp = Column(DateTime(timezone=True), nullable=True) # <--- ADDED
 
-    organization = relationship("Organization", back_populates="email_settings")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
