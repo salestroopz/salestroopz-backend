@@ -328,7 +328,7 @@ class ImapReplyAgent:
 #         imap_agent.trigger_imap_polling_for_all_orgs()
 #     except Exception as e:
 #         logger.error(f"SCHEDULER: Error in scheduled_imap_poll_task: {e}", exc_info=True)
-             _process_single_inbox(org_id, org_settings)
-        else:
+          _process_single_inbox(org_id, org_settings)
+       else:
             logger.warning(f"IMAP POLLER: Incomplete IMAP settings for an organization, cannot poll. Data: {org_settings}")
     logger.info("IMAP POLLER: Finished cycle for all organizations.")
