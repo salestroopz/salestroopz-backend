@@ -6,6 +6,7 @@ from typing import Dict, List, Any, Optional
 
 from app.utils.logger import logger
 from app.db import database
+from app.db.database import get_db 
 from app.utils.email_sender import send_email, EmailSendingResult # Assuming EmailSendingResult is defined here
 
 class EmailSchedulerAgent:
