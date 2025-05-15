@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import asyncio # For potential async tasks if agents are async
 from datetime import timezone # For APScheduler timezone
+from typing import Optional
 
 # --- sys.path modification ---
 try:
