@@ -182,7 +182,7 @@ def create_user(db: Session, email: str, hashed_password: str, organization_id: 
             logger.error(f"Organization ID {organization_id} not found when creating user '{email}'.")
             return None
 
-         new_user_data = {
+    new_user_data = {
         "email": email,
         "hashed_password": hashed_password,
         "organization_id": organization_id,
