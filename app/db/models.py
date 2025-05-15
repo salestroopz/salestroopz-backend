@@ -8,6 +8,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
 import enum # For Python enums used with SQLAlchemyEnum
 from .base_class import Base
+from app.schemas import LeadStatusEnum # Import your Enum from schemas
 
 # Create a Base for declarative models
 Base = declarative_base()
@@ -198,6 +199,8 @@ class LeadCampaignStatus(Base):
     id = Column(Integer, primary_key=True, index=True)
     lead_id = Column(Integer, ForeignKey("leads.id"), nullable=False)
     campaign_id = Column(Integer, ForeignKey("email_campaigns.id"), nullable=False)
+
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
 
     status = Column(SQLAlchemyEnum(LeadStatusEnum), default=LeadStatusEnum.pending_enrollment, nullable=False)
     status_reason = Column(Text, nullable=True) # e.g., AI classification details, error messages
