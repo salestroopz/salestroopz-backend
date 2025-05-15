@@ -317,6 +317,7 @@ class LeadCampaignStatusResponse(BaseModel):
 
 # --- DEFINE LeadStatusEnum HERE ---
 class LeadStatusEnum(str, enum.Enum):
+    active = "active"
     pending_enrollment = "pending_enrollment"
     enrolled_active = "enrolled_active"
     sequence_step_1_sent = "sequence_step_1_sent"
