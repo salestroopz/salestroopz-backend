@@ -55,7 +55,7 @@ class Organization(Base): # Assuming you have an Organization table
     email_settings = relationship("OrganizationEmailSettings", back_populates="organization", uselist=False) # <--- UPDATED CLASS NAME
 
 class User(Base):
-    # __tablename__ = "users" # If not using @declared_attr in Base
+    __tablename__ = "users" # If not using @declared_attr in Base
 
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True, nullable=False) # Changed to String from Text for common practice, TEXT is fine too
