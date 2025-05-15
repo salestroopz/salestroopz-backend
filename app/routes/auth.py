@@ -82,20 +82,13 @@ async def register_user(user_in: UserCreate, db: Session = Depends(get_db)): # <
 # --- Login/Token Endpoint ---
 @router.post("/token", response_model=Token)
 # async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()): # OLD
-async def login_for_access_token(db: Session = Depends(get_db), form_data: OAuth2PasswordRequestForm = Depends()): # <--- ADDED db: Session
-    """
-    Authenticates user based on email (passed as 'username') and password.
-    Returns a JWT access token upon successful authentication.
-    """
-    # 1. Fetch user by email
-    user_obj: Optional[models.User] = database.get_user_by_email(db=db, email=form_data.username) # <--- PASS db
+async def login_for_access_token(db: Session = Depends(get_db), form_data: OAuth2PasswordRequestForm = Depends()):
+    user_obj = database.get_user_by_email(db=db, email=form_data.username)
 
-    # 2. Verify user exists and password is correct
-    # Access attributes from the ORM object
-    if not user_obj or not security.verify_password(form_data.password, user_obj.hashed_password): # <--- user_obj.hashed_password
+    if not user_obj or not user_obj.is_active or not security.verify_password(form_data.password, user_obj.hashed_password): # ADDED user_obj.is_active CHECK
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
+            detail="Incorrect email or password, or account disabled", # Updated detail
             headers={"WWW-Authenticate": "Bearer"},
         )
 
