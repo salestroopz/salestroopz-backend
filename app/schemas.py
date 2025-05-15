@@ -164,8 +164,9 @@ class EmailSettingsBase(BaseModel):
     smtp_username: Optional[str] = None
     aws_region: Optional[str] = None # Specific to AWS SES
     is_configured: bool = Field(False)
-
+    
     # IMAP settings for reply detection
+    imap_port: Optional[int] = Field(default=993, description="IMAP port, defaults to 993 for SSL")
     enable_reply_detection: bool = Field(False)
     imap_host: Optional[str] = None
     imap_port: Optional[int] = Field(None, default=993) # Default common SSL port
