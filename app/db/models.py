@@ -7,7 +7,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
 import enum # For Python enums used with SQLAlchemyEnum
-from .database import Base # Or wherever your Base is defined (e.g., a shared base.py)
+from .base_class import Base
 
 # Create a Base for declarative models
 Base = declarative_base()
