@@ -1,6 +1,6 @@
 # app/schemas.py
 
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field, EmailStr, constr
 from typing import Optional, List, Dict, Any, Literal
 from enum import Enum
 from datetime import datetime
