@@ -5,7 +5,7 @@ from jose import JWTError, jwt
 from app.utils.config import settings # Import your settings
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
-from pass.
+from passlib.context import CryptContext
 
 # Password Hashing Context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
