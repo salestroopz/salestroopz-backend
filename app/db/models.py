@@ -275,6 +275,7 @@ class OutgoingEmailLog(Base):
 class OrganizationEmailSettings(Base): # <--- RENAMED CLASS
     __tablename__ = "organization_email_settings" # <--- RENAMED TABLE
 
+    organization = relationship("Organization", back_populates="email_settings")
     id = Column(Integer, primary_key=True, index=True)
     organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), unique=True, nullable=False)
 
