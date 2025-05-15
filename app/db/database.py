@@ -4,7 +4,7 @@ from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy import create_engine, func, and_, or_, text
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from sqlalchemy.dialects.postgresql import insert as pg_insert # For ON CONFLICT DO UPDATE
-
+from app.schemas import LeadStatusEnum
 from typing import Optional, List, Dict, Any
 import json
 from datetime import datetime, timezone
