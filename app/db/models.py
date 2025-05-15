@@ -54,19 +54,25 @@ class Organization(Base): # Assuming you have an Organization table
     email_campaigns = relationship("EmailCampaign", back_populates="organization")
     email_settings = relationship("OrganizationEmailSettings", back_populates="organization", uselist=False) # <--- UPDATED CLASS NAME
 
-class User(Base): # Assuming a User model
-    __tablename__ = "users"
+class User(Base):
+    # __tablename__ = "users" # If not using @declared_attr in Base
+
     id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True, nullable=False)
-    hashed_password = Column(String, nullable=False)
-    full_name = Column(String, index=True, nullable=True)
-    is_active = Column(Boolean, default=True)
-    is_superuser = Column(Boolean, default=False)
+    email = Column(String, unique=True, index=True, nullable=False) # Changed to String from Text for common practice, TEXT is fine too
+    hashed_password = Column(String, nullable=False) # Changed to String
     organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # --- NEW/UPDATED FIELDS ---
+    full_name = Column(String(255), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    is_superuser = Column(Boolean, default=False, nullable=False)
+    # --- ---
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now()) # Add onupdate
 
     organization = relationship("Organization", back_populates="users")
+    # Add other relationships if any (e.g., leads created by user)
 
 class ICP(Base): # Ideal Customer Profile
     __tablename__ = "icps"
