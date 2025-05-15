@@ -1,7 +1,7 @@
 # app/db/models.py
 
 from sqlalchemy import (
-    Boolean, Column, ForeignKey, Integer, String, DateTime, Text, Enum as SQLAlchemyEnum, Float
+    Boolean, Column, ForeignKey, Integer, String, DateTime, Text, Enum as SQLAlchemyEnum, Float, func
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
