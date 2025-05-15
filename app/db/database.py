@@ -171,15 +171,26 @@ def get_all_organizations(db: Session) -> List[models.Organization]:
 # ==========================================
 # USER CRUD (SQLAlchemy)
 # ==========================================
-def create_user(db: Session, email: str, hashed_password: str, organization_id: int) -> Optional[models.User]:
-    if not User: return None
+def create_user(db: Session, email: str, hashed_password: str, organization_id: int,
+                full_name: Optional[str] = None, is_active: bool = True, is_superuser: bool = False
+               ) -> Optional[models.User]:
+    if not models.User: return None
+    
     try:
         # Check if org exists
         if not db.query(Organization).filter(Organization.id == organization_id).first():
             logger.error(f"Organization ID {organization_id} not found when creating user '{email}'.")
             return None
 
-        new_user = User(email=email, hashed_password=hashed_password, organization_id=organization_id)
+         new_user_data = {
+        "email": email,
+        "hashed_password": hashed_password,
+        "organization_id": organization_id,
+        "full_name": full_name,
+        "is_active": is_active,
+        "is_superuser": is_superuser
+    }
+    new_user = models.User(**new_user_data)
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
