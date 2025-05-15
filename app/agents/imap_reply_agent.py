@@ -7,6 +7,8 @@ from email.utils import parsedate_to_datetime  # For parsing date headers
 import re # For cleaning email body (you were using re.split)
 from typing import List, Dict, Optional, Any
 from datetime import datetime, timezone
+from sqlalchemy.orm import Session
+from app.db import database
 
 # Assuming these paths are correct for your project structure
 from app.db import database as db_ops # Using an alias for clarity
