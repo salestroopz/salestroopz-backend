@@ -8,6 +8,19 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert # For ON CONFLICT
 from typing import Optional, List, Dict, Any
 import json
 from datetime import datetime, timezone
+from .base_class import Base 
+
+def create_db_and_tables():
+    if not Base: # This check should ideally not be needed if imports are correct
+        logger.error("SQLAlchemy Base not imported/defined. Cannot create tables.")
+        return
+    logger.info("Attempting to create database tables via SQLAlchemy models (Base.metadata.create_all)...")
+    try:
+        Base.metadata.create_all(bind=engine) # Uses the imported Base
+        logger.info("Database tables (SQLAlchemy models) checked/created successfully.")
+    except Exception as e:
+        logger.error(f"ERROR: Could not create database tables via SQLAlchemy: {e}", exc_info=True)
+
 
 # --- Model Imports (CRUCIAL: These must be correctly defined in app.db.models) ---
 try:
