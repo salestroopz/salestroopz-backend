@@ -1,39 +1,73 @@
 # app/schemas.py
 
 from pydantic import BaseModel, Field, EmailStr, constr
-from typing import Optional, List, Dict, Any, Literal
+from typing import Optional, List, Dict, Any, Literal # Literal was used
 from enum import Enum
 from datetime import datetime
-from app.db.models import LeadStatusEnum
-import enum 
+
+# --- DEFINE LeadStatusEnum HERE ---
+# This should be the single source of truth for these status strings.
+class LeadStatusEnum(str, Enum):
+    active = "active"  # For leads actively in a campaign sequence
+    pending_enrollment = "pending_enrollment"
+    # enrolled_active = "enrolled_active" # 'active' should cover this
+    paused_by_user = "paused_by_user"
+    paused_due_to_reply = "paused_due_to_reply"
+    completed_sequence = "completed_sequence" # Renamed from sequence_completed for consistency
+    unsubscribed = "unsubscribed"
+    unsubscribed_ai_flagged = "unsubscribed_ai_flagged"
+
+    # Reply related statuses
+    positive_reply_ai_flagged = "positive_reply_ai_flagged"
+    positive_reply_received = "positive_reply_received"
+    question_ai_flagged = "question_ai_flagged"
+    negative_reply_ai_flagged = "negative_reply_ai_flagged"
+    manual_follow_up_needed = "manual_follow_up_needed" # Renamed from needs_manual_followup
+
+    # State/Action statuses
+    appointment_manually_set = "appointment_manually_set"
+
+    # Error statuses
+    error_sending_email = "error_sending_email" # Renamed from error_sending
+    error_lead_not_found = "error_lead_not_found"
+    error_email_config = "error_email_config"
+    error_template_missing = "error_template_missing"
+    error_unknown = "error_unknown" # General error
+
+    # Example sequence steps (if you use them, otherwise 'active' is enough during sequence)
+    # sequence_step_1_sent = "sequence_step_1_sent" # Generally, just update current_step_number
 
 # --- Authentication & User Schemas ---
 class UserBase(BaseModel):
     email: EmailStr
-    # Consider adding is_active, is_superuser if you have roles/status directly on user model
+    full_name: Optional[str] = None # Added based on your model changes
+    is_active: Optional[bool] = True # If you track this
 
-class UserCreate(BaseModel):
-    email: EmailStr
+class UserCreate(UserBase): # Inherits email, full_name, is_active from UserBase
     password: constr(min_length=8)
     organization_name: str
-    full_name: Optional[str] = None # Add full_name, make it optional for now
 
-class UserPublic(UserBase): # For API responses representing a user
+class UserPublic(UserBase):
     id: int
     organization_id: int
-    organization_name: str # Good to include for context
-    # is_active: bool # If you have this on your User DB model
+    # organization_name: str # This would require a JOIN or hybrid property on User model if using from_orm directly
+    # For simplicity, let's assume User ORM object doesn't directly have organization_name when fetched by get_user_by_email
+    # If you need it, your /register route can construct it or User model can have a property.
+    is_active: bool # Assuming this comes from DB
+    is_superuser: bool # Assuming this comes from DB
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 class Token(BaseModel):
     access_token: str
     token_type: str
 
 class TokenData(BaseModel):
-    email: Optional[EmailStr] = None # Changed to EmailStr from str
-    # sub: Optional[str] = None # Often 'sub' (subject) is used for user ID/email in JWT
+    # 'sub' (subject) is typically used for the user identifier (e.g., email or ID)
+    sub: Optional[EmailStr] = None # Standard claim for subject
+    user_id: Optional[int] = None
+    organization_id: Optional[int] = None
+
 
 # --- Lead Schemas ---
 class LeadBase(BaseModel):
@@ -46,18 +80,16 @@ class LeadBase(BaseModel):
     company_size: Optional[str] = Field(None, examples=["51-200"])
     industry: Optional[str] = Field(None, examples=["SaaS"])
     location: Optional[str] = Field(None, examples=["New York, USA"])
-    matched: bool = Field(False) # Default to False, ensure boolean
+    matched: bool = Field(False)
     reason: Optional[str] = Field(None, description="Reason for ICP match/no match")
     crm_status: Optional[str] = Field("pending", description="Status in CRM")
-    appointment_confirmed: bool = Field(False) # Default to False
-    icp_match_id: Optional[int] = Field(None, description="ID of the ICP this lead matched, if any") # NEW
+    appointment_confirmed: bool = Field(False)
+    icp_match_id: Optional[int] = Field(None, description="ID of the ICP this lead matched, if any")
 
 class LeadInput(LeadBase):
-    """Schema for creating a new lead."""
     pass
 
-class LeadUpdatePartial(BaseModel): # For PATCH requests - explicitly list updatable fields
-    """Schema for partially updating a lead. All fields are optional."""
+class LeadUpdatePartial(BaseModel):
     name: Optional[str] = None
     company: Optional[str] = None
     title: Optional[str] = None
@@ -73,65 +105,55 @@ class LeadUpdatePartial(BaseModel): # For PATCH requests - explicitly list updat
     icp_match_id: Optional[int] = Field(None, description="Update matched ICP ID, use null to unset")
 
 class LeadResponse(LeadBase):
-    """Schema for returning lead data from the API."""
     id: int
     organization_id: int
-    icp_match_name: Optional[str] = None # Name of the matched ICP (from JOIN)
+    icp_match_name: Optional[str] = None
     created_at: datetime
-    updated_at: datetime # Should always be present after DB schema change
+    updated_at: datetime
+    model_config = {"from_attributes": True}
 
-    class Config:
-        from_attributes = True
-
-# --- ICP (Ideal Customer Profile) Schemas ---
+# --- ICP Schemas ---
 class ICPBase(BaseModel):
     name: str = Field(..., min_length=1, description="A name for this ICP definition", examples=["Tech Startup ICP"])
-    title_keywords: List[str] = Field(default_factory=list, description="List of target job titles/keywords", examples=[["VP Engineering", "CTO"]])
-    industry_keywords: List[str] = Field(default_factory=list, description="List of target industries/keywords", examples=[["SaaS", "Cloud Computing"]])
-    company_size_rules: Optional[Dict[str, Any]] = Field(default_factory=dict, description='Rules for company size (e.g., {"min": 50, "max": 500})', examples=[{"min": 51, "max": 200}]) # Made optional, can be empty dict
-    location_keywords: List[str] = Field(default_factory=list, description="List of target locations/keywords", examples=[["London", "Remote"]])
+    title_keywords: List[str] = Field(default_factory=list)
+    industry_keywords: List[str] = Field(default_factory=list)
+    company_size_rules: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    location_keywords: List[str] = Field(default_factory=list)
 
 class ICPInput(ICPBase):
-    """Schema for creating/updating an ICP via the API."""
     pass
 
 class ICPResponse(ICPBase):
-    """Schema for returning an ICP definition from the API."""
     id: int
     organization_id: int
     created_at: datetime
     updated_at: datetime
-
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 # --- Offering Schemas ---
 class OfferingBase(BaseModel):
     name: str = Field(..., min_length=1, examples=["Cloud Migration Assessment"])
-    description: Optional[str] = Field(None, examples=["Detailed analysis..."])
-    key_features: List[str] = Field(default_factory=list, examples=[["Cost Projection"]])
-    target_pain_points: List[str] = Field(default_factory=list, examples=[["High AWS Bills"]])
-    call_to_action: Optional[str] = Field(None, examples=["Schedule a 15-min call"])
+    description: Optional[str] = Field(None)
+    key_features: List[str] = Field(default_factory=list)
+    target_pain_points: List[str] = Field(default_factory=list)
+    call_to_action: Optional[str] = Field(None)
     is_active: bool = Field(True)
 
 class OfferingInput(OfferingBase):
-    """Schema for creating/updating an Offering via API."""
     pass
 
 class OfferingResponse(OfferingBase):
-    """Schema for returning an Offering definition from the API."""
     id: int
     organization_id: int
     created_at: datetime
     updated_at: datetime
-
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 # --- Email Settings Schemas ---
 class EmailProviderType(str, Enum):
     SMTP = "smtp"
     AWS_SES = "aws_ses"
+    # GOOGLE_OAUTH = "google_oauth" # Example for future
 
 class EmailSettingsBase(BaseModel):
     provider_type: Optional[EmailProviderType] = None
@@ -140,137 +162,150 @@ class EmailSettingsBase(BaseModel):
     smtp_host: Optional[str] = None
     smtp_port: Optional[int] = None
     smtp_username: Optional[str] = None
-    aws_region: Optional[str] = None
-    is_configured: bool = Field(False) # Changed Optional[bool] to bool with default
+    aws_region: Optional[str] = None # Specific to AWS SES
+    is_configured: bool = Field(False)
 
-class EmailSettingsInput(EmailSettingsBase):
-    smtp_password: Optional[str] = Field(None, description="Write-only")
+    # IMAP settings for reply detection
+    enable_reply_detection: bool = Field(False)
+    imap_host: Optional[str] = None
+    imap_port: Optional[int] = Field(None, default=993) # Default common SSL port
+    imap_username: Optional[str] = None
+    imap_use_ssl: bool = Field(True)
+
+
+class EmailSettingsInput(EmailSettingsBase): # Fields for creating/updating settings
+    smtp_password: Optional[str] = Field(None, description="Write-only, will be encrypted")
+    # For AWS SES using API keys
     aws_access_key_id: Optional[str] = Field(None, description="Write-only")
     aws_secret_access_key: Optional[str] = Field(None, description="Write-only")
+    # For Google OAuth
+    # access_token: Optional[str] = Field(None, description="Write-only, from OAuth flow")
+    # refresh_token: Optional[str] = Field(None, description="Write-only, from OAuth flow")
+    # token_expiry: Optional[datetime] = Field(None, description="Write-only, from OAuth flow")
+    # IMAP
+    imap_password: Optional[str] = Field(None, description="Write-only, will be encrypted")
 
-class EmailSettingsResponse(EmailSettingsBase):
+
+class EmailSettingsResponse(EmailSettingsBase): # Fields returned from API (no raw passwords)
     id: int
     organization_id: int
-    credentials_set: bool = Field(False, description="Indicates if essential credentials seem to be set") # Keep this for UI hint
+    # credentials_set: bool = Field(False, description="Indicates if essential credentials seem to be set") # You can derive this
+    # last_imap_poll_uid: Optional[str] = None # If you want to expose this
+    # last_imap_poll_timestamp: Optional[datetime] = None # If you want to expose this
     created_at: datetime
     updated_at: datetime
+    model_config = {"from_attributes": True}
 
-    class Config:
-        from_attributes = True
 
 # --- Campaign Step Schemas ---
 class CampaignStepBase(BaseModel):
-    step_number: int = Field(..., gt=0, description="Order of the step (1, 2, ...)")
-    delay_days: int = Field(..., ge=0, description="Days to wait after previous step/enrollment")
-    subject_template: str = Field(..., description="Subject line template (use {{placeholders}})") # Made required
-    body_template: str = Field(..., description="Email body template (use {{placeholders}})")   # Made required
-    follow_up_angle: Optional[str] = Field(None, description="Angle of the step, e.g., 'Introduction', 'Value Prop'")
+    step_number: int = Field(..., gt=0)
+    delay_days: int = Field(..., ge=0)
+    subject_template: str = Field(...)
+    body_template: str = Field(...)
+    follow_up_angle: Optional[str] = Field(None)
 
-class CampaignStepInput(CampaignStepBase): # Used by AI agent when creating steps
-    """Schema for the AI agent to provide step data to the database layer."""
-    # is_ai_crafted will be set to True by the agent logic directly when calling db.create_campaign_step
+class CampaignStepInput(CampaignStepBase):
     pass
 
-class CampaignStepUpdate(BaseModel): # NEW - For updating existing steps via API
-    """Schema for updating an existing campaign step. All fields optional."""
+class CampaignStepUpdate(BaseModel):
     step_number: Optional[int] = Field(None, gt=0)
     delay_days: Optional[int] = Field(None, ge=0)
     subject_template: Optional[str] = None
     body_template: Optional[str] = None
     follow_up_angle: Optional[str] = None
-    # is_ai_crafted could be set to False by the API if a user edits it
 
 class CampaignStepResponse(CampaignStepBase):
-    """Response model for a campaign step, includes DB ID."""
     id: int
     campaign_id: int
     organization_id: int
-    is_ai_crafted: bool # This comes from the DB
+    is_ai_crafted: bool
     created_at: datetime
     updated_at: datetime
-
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 # --- Campaign Schemas ---
 class CampaignBase(BaseModel):
-    name: str = Field(..., min_length=1, examples=["Q3 Fintech Outreach"])
-    description: Optional[str] = Field(None, examples=["Campaign targeting Fintech CTOs..."])
-    is_active: bool = Field(False)
+    name: str = Field(..., min_length=1)
+    description: Optional[str] = Field(None)
+    is_active: bool = Field(False) # Default to False, activate explicitly
     icp_id: Optional[int] = None
     offering_id: Optional[int] = None
 
-class CampaignInput(CampaignBase): # For POST /campaigns/ (AI generates steps)
-    """Input for creating a campaign definition. Steps are AI-generated."""
+class CampaignInput(CampaignBase):
     pass
 
-class CampaignUpdate(CampaignBase): # For PUT /campaigns/{id}
-    """Schema for updating an existing campaign's core details."""
-    # All fields are optional because it inherits from CampaignBase where fields might be required for creation
-    # Pydantic handles this by making inherited fields optional if not re-declared with ...
-    name: Optional[str] = Field(None, min_length=1) # Explicitly make optional for update
-    is_active: Optional[bool] = None # Explicitly make optional
-    # trigger_ai_regeneration: bool = Field(False) # Future idea
+class CampaignUpdate(BaseModel): # Explicitly make all fields optional for PATCH-like behavior
+    name: Optional[str] = Field(None, min_length=1)
+    description: Optional[str] = Field(None)
+    is_active: Optional[bool] = None
+    icp_id: Optional[int] = None # Allow null to unset
+    offering_id: Optional[int] = None # Allow null to unset
+    # ai_status: Optional[str] = None # If updating AI status is allowed here
 
 class CampaignResponse(CampaignBase):
-    """Standard response model for a campaign."""
     id: int
     organization_id: int
-    icp_name: Optional[str] = None # Populated from DB JOIN
-    offering_name: Optional[str] = None # Populated from DB JOIN
-    ai_status: Optional[str] = Field(None, examples=["pending", "generating", "completed", "failed"])
+    icp_name: Optional[str] = None
+    offering_name: Optional[str] = None
+    ai_status: Optional[str] = Field(None)
     created_at: datetime
     updated_at: datetime
+    model_config = {"from_attributes": True}
 
-    class Config:
-        from_attributes = True
-
-class CampaignDetailResponse(CampaignResponse): # Inherits all fields from CampaignResponse
-    """Detailed response for a campaign, including its steps."""
+class CampaignDetailResponse(CampaignResponse):
     steps: List[CampaignStepResponse] = Field(default_factory=list)
-
-    class Config: # Redundant if inherited, but harmless
-        from_attributes = True
-
+    model_config = {"from_attributes": True}
 
 # --- Lead Enrollment Schemas ---
 class CampaignEnrollLeadsRequest(BaseModel):
-    lead_ids: List[int] = Field(..., min_items=1, description="A list of lead IDs to enroll into the campaign.")
+    lead_ids: List[int] = Field(..., min_items=1)
 
-# --- Lead Campaign Status Schema ---
-class LeadCampaignStatusResponse(BaseModel):
+# --- Lead Campaign Status Schema (Consolidated and Enhanced) ---
+class LeadCampaignStatusResponse(BaseModel): # REMOVED the first duplicate
     id: int
     lead_id: int
     campaign_id: int
     organization_id: int
     current_step_number: int
-    status: str # Consider an Enum for this: 'active', 'paused', 'completed_sequence', etc.
+    status: LeadStatusEnum # Use the Enum for type safety and clarity
     last_email_sent_at: Optional[datetime] = None
     next_email_due_at: Optional[datetime] = None
-    last_response_type: Optional[str] = None # E.g., 'positive', 'negative', 'neutral'
+    last_response_type: Optional[str] = None
     last_response_at: Optional[datetime] = None
     error_message: Optional[str] = None
+    user_notes: Optional[str] = None # Added from your DDL
+
+    # Joined fields for richer responses (e.g., for dashboards)
+    lead_name: Optional[str] = None
+    lead_email: Optional[EmailStr] = None
+    lead_company: Optional[str] = None
+    campaign_name: Optional[str] = None
+    latest_reply_id: Optional[int] = None
+    latest_reply_snippet: Optional[str] = None
+    latest_reply_ai_summary: Optional[str] = None
+    latest_reply_ai_classification: Optional[str] = None
+    latest_reply_received_at: Optional[datetime] = None
+
     created_at: datetime
     updated_at: datetime
-
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
-# --- Misc Schemas (Keep if used) ---
-class ManualLeadData(BaseModel): # If still used for some manual entry flow
+# --- Misc Schemas ---
+class ManualLeadData(BaseModel):
     name: Optional[str] = None
     email: EmailStr
     company: Optional[str] = None
     title: Optional[str] = None
 
-class LeadEnrichmentRequest(BaseModel): # If lead enrichment agent uses it
+class LeadEnrichmentRequest(BaseModel):
     name: str
-    company: str # Assuming company name is used for enrichment
+    company: str
     title: Optional[str] = None
     email: Optional[EmailStr] = None
 
-class LeadEnrichmentResponse(BaseModel): # If lead enrichment agent uses it
+class LeadEnrichmentResponse(BaseModel):
     name: str
     company: str
     title: Optional[str] = None
@@ -280,15 +315,10 @@ class LeadEnrichmentResponse(BaseModel): # If lead enrichment agent uses it
     industry: Optional[str] = None
     location: Optional[str] = None
 
-class WorkflowInitiateRequest(BaseModel): # If used by a workflow endpoint
-    # Forward declaration for ICPDefinitionForWorkflow if defined below, or use ICPInput
-    # icp: 'ICPDefinitionForWorkflow' # Assuming this refers to a specific structure for workflow
-    icp: ICPInput # Or reuse the main ICPInput if suitable
+class WorkflowInitiateRequest(BaseModel):
+    icp: ICPInput
     source_type: Literal["file_upload", "apollo", "crm", "manual_entry"]
-    source_details: Optional[Dict[str, Any]] = None # Keep as is
-
-# class ICPDefinition(BaseModel): # This was a duplicate of ICPInput or similar
-# This can be removed if ICPInput serves the purpose for WorkflowInitiateRequest
+    source_details: Optional[Dict[str, Any]] = None
 
 class BulkImportErrorDetail(BaseModel):
     row_number: Optional[int] = None
@@ -302,92 +332,42 @@ class BulkImportSummary(BaseModel):
     failed_imports: int
     errors: List[BulkImportErrorDetail] = Field(default_factory=list)
 
-class LeadCampaignStatusResponse(BaseModel):
-    # ... (core lcs fields) ...
-    lead_name: Optional[str] = None
-    lead_email: Optional[EmailStr] = None
-    lead_company: Optional[str] = None
-    campaign_name: Optional[str] = None
-    # Fields from the latest email_reply JOIN
-    latest_reply_id: Optional[int] = None
-    latest_reply_snippet: Optional[str] = None
-    latest_reply_ai_summary: Optional[str] = None
-    latest_reply_ai_classification: Optional[str] = None
-    latest_reply_received_at: Optional[datetime] = None # Added from the email_replies table
-
-# --- DEFINE LeadStatusEnum HERE ---
-class LeadStatusEnum(str, enum.Enum):
-    active = "active"
-    pending_enrollment = "pending_enrollment"
-    enrolled_active = "enrolled_active"
-    sequence_step_1_sent = "sequence_step_1_sent"
-    # ... other steps
-    positive_reply_ai_flagged = "positive_reply_ai_flagged"
-    positive_reply_received = "positive_reply_received" # Manually confirmed
-    appointment_manually_set = "appointment_manually_set"
-    needs_manual_followup = "needs_manual_followup"
-    unsubscribed = "unsubscribed"
-    sequence_completed = "sequence_completed"
-    error_sending = "error_sending"
-
-# --- ADD/ENSURE THESE DASHBOARD RESPONSE MODELS ARE DEFINED ---
-
+# --- DASHBOARD RESPONSE MODELS ---
 class AppointmentStatsResponse(BaseModel):
-    """
-    Pydantic model for the response of the /dashboard/appointment_stats endpoint.
-    """
     total_appointments_set: int
-    total_positive_replies: int
-    conversion_rate_percent: Optional[float] = None # Can be None if positive_replies is 0
-
-    class Config:
-        from_attributes = True # For Pydantic v2+ (replaces orm_mode)
-
+    total_positive_replies: int # Or a more specific name like "leads_with_positive_engagement"
+    conversion_rate_percent: Optional[float] = None
+    model_config = {"from_attributes": True}
 
 class RecentAppointment(BaseModel):
-    """
-    Pydantic model for a single item in the recent appointments list.
-    """
     lead_name: str
     company_name: Optional[str] = None
     campaign_name: str
-    date_marked: str # Or datetime if you prefer to format on frontend
+    date_marked: str # Or datetime
+    model_config = {"from_attributes": True}
 
-    class Config:
-        from_attributes = True
-
-
-class ActionableReply(BaseModel): # Assuming you have a schema for actionable replies
+class ActionableReply(BaseModel):
     reply_id: int
     lead_id: int
     lead_name: str
     lead_email: EmailStr
     lead_company: Optional[str] = None
-    campaign_id: int
+    campaign_id: int # Assuming campaign_id is available for the reply context
     campaign_name: str
-    latest_reply_received_at: Optional[datetime] = None # Or received_at
-    latest_reply_ai_classification: Optional[str] = None # Or use your AIClassificationEnum
+    latest_reply_received_at: Optional[datetime] = None # Use this for consistency if it's the reply's received time
+    latest_reply_ai_classification: Optional[str] = None
     latest_reply_ai_summary: Optional[str] = None
     latest_reply_snippet: Optional[str] = None
-    # Add full_reply_body if you pass it from backend
-    # full_reply_body: Optional[str] = None
+    model_config = {"from_attributes": True}
 
-    class Config:
-        from_attributes = True
-
-
-class CampaignPerformanceSummaryItem(BaseModel): # For campaign performance snippets
+class CampaignPerformanceSummaryItem(BaseModel):
     campaign_id: int
     campaign_name: str
     leads_enrolled: int
-    emails_sent: Optional[int] = None # This might be tricky to get accurately without specific logging
+    emails_sent: Optional[int] = None
     positive_replies: int
     appointments_set: int
-    # conversion_rate: Optional[float] = None # (appointments / positive_replies)
+    # model_config should be inside the class, not outside
+    model_config = {"from_attributes": True}
 
-    
-class Config:
-    from_attributes = True
-    successfully_imported_or_updated: int
-    failed_imports: int
-    errors: List[BulkImportErrorDetail] = Field(default_factory=list)
+# Removed the stray Config class that was outside CampaignPerformanceSummaryItem
