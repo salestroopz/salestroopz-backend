@@ -8,6 +8,11 @@ import asyncio # For potential async tasks if agents are async
 from datetime import timezone # For APScheduler timezone
 from typing import Optional
 
+# ==============================================
+# --- Scheduler Instance ---
+# ==============================================
+scheduler: Optional[AsyncIOScheduler] = None # Global scheduler instance with type hint # Now 'Optional' is defined
+
 # --- sys.path modification ---
 try:
     PROJECT_ROOT_DIR = Path(__file__).resolve().parent.parent
