@@ -177,34 +177,39 @@ def create_user(db: Session, email: str, hashed_password: str, organization_id: 
     if not models.User: return None
     
     try:
-        # Check if org exists
-        if not db.query(Organization).filter(Organization.id == organization_id).first():
-            logger.error(f"Organization ID {organization_id} not found when creating user '{email}'.")
-            return None
+        existing_user = db.query(models.User).filter(models.User.email == email).first()
+        if existing_user:
+            logger.warning(f"User with email '{email}' already exists. Cannot create new user.")
+            return existing_user # Or raise an error appropriate for your API
 
-    new_user_data = {
-        "email": email,
-        "hashed_password": hashed_password,
-        "organization_id": organization_id,
-        "full_name": full_name,
-        "is_active": is_active,
-        "is_superuser": is_superuser
-    }
-    new_user = models.User(**new_user_data)
-        db.add(new_user)
+        new_user_data = { # This is your line 185 or around it
+            "email": email,
+            "hashed_password": hashed_password,
+            "organization_id": organization_id,
+            "full_name": full_name,
+            "is_active": is_active,
+            "is_superuser": is_superuser
+        }
+        new_user_orm_obj = models.User(**new_user_data)
+        db.add(new_user_orm_obj)
         db.commit()
-        db.refresh(new_user)
-        logger.info(f"Created user '{email}' (ID: {new_user.id}) for org ID {organization_id}")
-        return new_user
-    except IntegrityError: # Email already exists
+        db.refresh(new_user_orm_obj)
+        logger.info(f"Created user '{email}' (ID: {new_user_orm_obj.id}) for org ID {organization_id}")
+        return new_user_orm_obj
+    except IntegrityError: # Catches unique constraint violations (e.g., email already exists)
         db.rollback()
-        logger.warning(f"User email '{email}' already exists. Fetching existing.")
-        return db.query(User).filter(User.email == email).first()
-    except SQLAlchemyError as e:
+        logger.warning(f"IntegrityError creating user '{email}'. This might be a race condition if pre-check passed, or bad FK.", exc_info=True)
+        # Attempt to fetch the user again in case it was just created by a concurrent request
+        return db.query(models.User).filter(models.User.email == email).first()
+    except SQLAlchemyError as e: # Catches other SQLAlchemy related errors
         db.rollback()
-        logger.error(f"DB Error creating user '{email}': {e}", exc_info=True)
+        logger.error(f"SQLAlchemyError creating user '{email}': {e}", exc_info=True)
         return None
-
+    except Exception as e_unhandled: # Catch any other unexpected errors
+        db.rollback()
+        logger.error(f"Unexpected error creating user '{email}': {e_unhandled}", exc_info=True)
+        return None
+        
 def get_user_by_id(db: Session, user_id: int) -> Optional[models.User]:
     if not User: return None
     try:
