@@ -12,9 +12,11 @@ class UserBase(BaseModel):
     email: EmailStr
     # Consider adding is_active, is_superuser if you have roles/status directly on user model
 
-class UserCreate(UserBase):
-    password: str = Field(..., min_length=8)
-    organization_name: str = Field(..., min_length=1)
+class UserCreate(BaseModel):
+    email: EmailStr
+    password: constr(min_length=8)
+    organization_name: str
+    full_name: Optional[str] = None # Add full_name, make it optional for now
 
 class UserPublic(UserBase): # For API responses representing a user
     id: int
