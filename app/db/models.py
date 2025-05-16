@@ -252,8 +252,8 @@ class EmailReply(Base):
     action_notes = Column(Text, nullable=True)
     action_timestamp = Column(DateTime, nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     lead = relationship("Lead", back_populates="email_replies")
     # campaign = relationship("EmailCampaign") # If you want direct link
