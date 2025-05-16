@@ -891,29 +891,35 @@ def update_lead_campaign_status(db: Session, status_id: int, organization_id: in
         return None
 
 def get_active_leads_due_for_step(db: Session, organization_id: Optional[int] = None, query_limit: int = 100) -> List[models.LeadCampaignStatus]:
-    if not LeadCampaignStatus or not Lead or not EmailCampaign : return []
+    # Use models.LeadCampaignStatus, models.Lead, models.EmailCampaign
+    if not models.LeadCampaignStatus or not models.Lead or not models.EmailCampaign or not LeadStatusEnum: # Check LeadStatusEnum too
+        logger.error("DB: One or more required models/enums for get_active_leads_due_for_step not available.")
+        return []
     try:
-        query = db.query(LeadCampaignStatus).\
-            join(Lead, LeadCampaignStatus.lead_id == Lead.id).\
-            join(EmailCampaign, LeadCampaignStatus.campaign_id == EmailCampaign.id).\
-            filter(LeadCampaignStatus.status == LeadStatusEnum.active.value).\
+        query = db.query(models.LeadCampaignStatus).\
+            join(models.Lead, models.LeadCampaignStatus.lead_id == models.Lead.id).\
+            join(models.EmailCampaign, models.LeadCampaignStatus.campaign_id == models.EmailCampaign.id).\
+            filter(models.LeadCampaignStatus.status == LeadStatusEnum.active.value).\
             filter(or_(
-                LeadCampaignStatus.next_email_due_at <= datetime.now(timezone.utc),
-                and_(LeadCampaignStatus.next_email_due_at == None, LeadCampaignStatus.current_step_number == 0)
+                models.LeadCampaignStatus.next_email_due_at <= datetime.now(timezone.utc),
+                and_(models.LeadCampaignStatus.next_email_due_at == None, models.LeadCampaignStatus.current_step_number == 0)
             ))
 
         if organization_id is not None:
-            query = query.filter(LeadCampaignStatus.organization_id == organization_id)
+            query = query.filter(models.LeadCampaignStatus.organization_id == organization_id)
 
         leads_due = query.order_by(
-                LeadCampaignStatus.organization_id,
-                LeadCampaignStatus.next_email_due_at.asc().nulls_first(),
-                LeadCampaignStatus.created_at.asc()
+                models.LeadCampaignStatus.organization_id,
+                models.LeadCampaignStatus.next_email_due_at.asc().nulls_first(),
+                models.LeadCampaignStatus.created_at.asc() # This should work if created_at is on the model
             ).limit(query_limit).all()
         logger.debug(f"DB: Found {len(leads_due)} active leads due for step (SQLAlchemy).")
         return leads_due
+    except AttributeError as ae:
+        logger.error(f"DB Model AttributeError in get_active_leads_due_for_step (check model definitions for referenced attributes): {ae}", exc_info=True)
+        return []
     except SQLAlchemyError as e:
-        logger.error(f"DB Error getting active leads due (SQLAlchemy): {e}", exc_info=True)
+        logger.error(f"DB SQLAlchemyError in get_active_leads_due_for_step: {e}", exc_info=True)
         return []
 
 
