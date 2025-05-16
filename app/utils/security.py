@@ -19,6 +19,7 @@ def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    print(f"CREATE_TOKEN_DEBUG: Using settings.SECRET_KEY = '{settings.SECRET_KEY}'")
     """Creates a JWT access token."""
     to_encode = data.copy()
     if expires_delta:
@@ -31,6 +32,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 
 def decode_access_token(token: str) -> Optional[dict]:
      """Decodes a JWT access token, returns payload or None if invalid/expired."""
+    print(f"DECODE_TOKEN_DEBUG: Using settings.SECRET_KEY = '{settings.SECRET_KEY}'")
      try:
          payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
          return payload
