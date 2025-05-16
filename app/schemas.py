@@ -1,7 +1,7 @@
 # app/schemas.py
 
 from pydantic import BaseModel, Field, EmailStr, constr
-from typing import Optional, List, Dict, Any, Literal # Literal was used
+from typing import Optional, List, Dict, Any, Literal
 from enum import Enum
 from datetime import datetime
 
@@ -10,10 +10,9 @@ from datetime import datetime
 class LeadStatusEnum(str, Enum):
     active = "active"  # For leads actively in a campaign sequence
     pending_enrollment = "pending_enrollment"
-    # enrolled_active = "enrolled_active" # 'active' should cover this
     paused_by_user = "paused_by_user"
     paused_due_to_reply = "paused_due_to_reply"
-    completed_sequence = "completed_sequence" # Renamed from sequence_completed for consistency
+    completed_sequence = "completed_sequence"
     unsubscribed = "unsubscribed"
     unsubscribed_ai_flagged = "unsubscribed_ai_flagged"
 
@@ -22,39 +21,34 @@ class LeadStatusEnum(str, Enum):
     positive_reply_received = "positive_reply_received"
     question_ai_flagged = "question_ai_flagged"
     negative_reply_ai_flagged = "negative_reply_ai_flagged"
-    manual_follow_up_needed = "manual_follow_up_needed" # Renamed from needs_manual_followup
+    manual_follow_up_needed = "manual_follow_up_needed"
 
     # State/Action statuses
     appointment_manually_set = "appointment_manually_set"
 
     # Error statuses
-    error_sending_email = "error_sending_email" # Renamed from error_sending
+    error_sending_email = "error_sending_email"
     error_lead_not_found = "error_lead_not_found"
     error_email_config = "error_email_config"
     error_template_missing = "error_template_missing"
-    error_unknown = "error_unknown" # General error
-
-    # Example sequence steps (if you use them, otherwise 'active' is enough during sequence)
-    # sequence_step_1_sent = "sequence_step_1_sent" # Generally, just update current_step_number
+    error_unknown = "error_unknown"
 
 # --- Authentication & User Schemas ---
 class UserBase(BaseModel):
     email: EmailStr
-    full_name: Optional[str] = None # Added based on your model changes
-    is_active: Optional[bool] = True # If you track this
+    full_name: Optional[str] = None
+    is_active: Optional[bool] = Field(default=True) # Default to active
 
-class UserCreate(UserBase): # Inherits email, full_name, is_active from UserBase
+class UserCreate(UserBase):
     password: constr(min_length=8)
     organization_name: str
 
 class UserPublic(UserBase):
     id: int
     organization_id: int
-    # organization_name: str # This would require a JOIN or hybrid property on User model if using from_orm directly
-    # For simplicity, let's assume User ORM object doesn't directly have organization_name when fetched by get_user_by_email
-    # If you need it, your /register route can construct it or User model can have a property.
-    is_active: bool # Assuming this comes from DB
-    is_superuser: bool # Assuming this comes from DB
+    is_active: bool # From DB
+    is_superuser: bool # From DB
+    # organization_name: Optional[str] = None # Optional: Add if you join/resolve this in the API response
 
     model_config = {"from_attributes": True}
 
@@ -63,28 +57,26 @@ class Token(BaseModel):
     token_type: str
 
 class TokenData(BaseModel):
-    # 'sub' (subject) is typically used for the user identifier (e.g., email or ID)
-    sub: Optional[EmailStr] = None # Standard claim for subject
+    sub: Optional[EmailStr] = None # Subject (user's email)
     user_id: Optional[int] = None
     organization_id: Optional[int] = None
 
-
 # --- Lead Schemas ---
 class LeadBase(BaseModel):
-    name: Optional[str] = Field(None, examples=["Jane Doe"])
-    email: EmailStr = Field(..., examples=["jane.doe@example.com"])
-    company: Optional[str] = Field(None, examples=["Acme Corp"])
-    title: Optional[str] = Field(None, examples=["Marketing Manager"])
-    source: Optional[str] = Field("API Input", examples=["Manual Entry", "CSV Upload"])
-    linkedin_profile: Optional[str] = Field(None, examples=["https://linkedin.com/in/janedoe"])
-    company_size: Optional[str] = Field(None, examples=["51-200"])
-    industry: Optional[str] = Field(None, examples=["SaaS"])
-    location: Optional[str] = Field(None, examples=["New York, USA"])
-    matched: bool = Field(False)
-    reason: Optional[str] = Field(None, description="Reason for ICP match/no match")
-    crm_status: Optional[str] = Field("pending", description="Status in CRM")
-    appointment_confirmed: bool = Field(False)
-    icp_match_id: Optional[int] = Field(None, description="ID of the ICP this lead matched, if any")
+    name: Optional[str] = Field(default=None, examples=["Jane Doe"])
+    email: EmailStr = Field(..., examples=["jane.doe@example.com"]) # '...' means required
+    company: Optional[str] = Field(default=None, examples=["Acme Corp"])
+    title: Optional[str] = Field(default=None, examples=["Marketing Manager"])
+    source: Optional[str] = Field(default="API Input", examples=["Manual Entry", "CSV Upload"])
+    linkedin_profile: Optional[str] = Field(default=None, examples=["https://linkedin.com/in/janedoe"])
+    company_size: Optional[str] = Field(default=None, examples=["51-200"])
+    industry: Optional[str] = Field(default=None, examples=["SaaS"])
+    location: Optional[str] = Field(default=None, examples=["New York, USA"])
+    matched: bool = Field(default=False)
+    reason: Optional[str] = Field(default=None, description="Reason for ICP match/no match")
+    crm_status: Optional[str] = Field(default="pending", description="Status in CRM")
+    appointment_confirmed: bool = Field(default=False)
+    icp_match_id: Optional[int] = Field(default=None, description="ID of the ICP this lead matched, if any")
 
 class LeadInput(LeadBase):
     pass
@@ -102,7 +94,7 @@ class LeadUpdatePartial(BaseModel):
     reason: Optional[str] = None
     crm_status: Optional[str] = None
     appointment_confirmed: Optional[bool] = None
-    icp_match_id: Optional[int] = Field(None, description="Update matched ICP ID, use null to unset")
+    icp_match_id: Optional[int] = Field(default=None, description="Update matched ICP ID, use null to unset")
 
 class LeadResponse(LeadBase):
     id: int
@@ -112,7 +104,7 @@ class LeadResponse(LeadBase):
     updated_at: datetime
     model_config = {"from_attributes": True}
 
-# --- ICP Schemas ---
+# --- ICP (Ideal Customer Profile) Schemas ---
 class ICPBase(BaseModel):
     name: str = Field(..., min_length=1, description="A name for this ICP definition", examples=["Tech Startup ICP"])
     title_keywords: List[str] = Field(default_factory=list)
@@ -133,11 +125,11 @@ class ICPResponse(ICPBase):
 # --- Offering Schemas ---
 class OfferingBase(BaseModel):
     name: str = Field(..., min_length=1, examples=["Cloud Migration Assessment"])
-    description: Optional[str] = Field(None)
+    description: Optional[str] = Field(default=None)
     key_features: List[str] = Field(default_factory=list)
     target_pain_points: List[str] = Field(default_factory=list)
-    call_to_action: Optional[str] = Field(None)
-    is_active: bool = Field(True)
+    call_to_action: Optional[str] = Field(default=None)
+    is_active: bool = Field(default=True)
 
 class OfferingInput(OfferingBase):
     pass
@@ -153,50 +145,37 @@ class OfferingResponse(OfferingBase):
 class EmailProviderType(str, Enum):
     SMTP = "smtp"
     AWS_SES = "aws_ses"
-    # GOOGLE_OAUTH = "google_oauth" # Example for future
+    # GOOGLE_OAUTH = "google_oauth"
 
 class EmailSettingsBase(BaseModel):
     provider_type: Optional[EmailProviderType] = None
     verified_sender_email: Optional[EmailStr] = None
     sender_name: Optional[str] = None
     smtp_host: Optional[str] = None
-    smtp_port: Optional[int] = None
-    smtp_username: Optional[str] = None
-    aws_region: Optional[str] = None # Specific to AWS SES
-    is_configured: bool = Field(False)
-    
+    smtp_port: Optional[int] = None # Port for SMTP
+    aws_region: Optional[str] = None
+    is_configured: bool = Field(default=False)
+
     # IMAP settings for reply detection
-    imap_port: Optional[int] = Field(993, description="IMAP port, defaults to 993 for SSL")
-    enable_reply_detection: bool = Field(False)
+    enable_reply_detection: bool = Field(default=False)
     imap_host: Optional[str] = None
-    imap_port: Optional[int] = Field(None, default=993) # Default common SSL port
+    imap_port: Optional[int] = Field(default=993, description="IMAP port, defaults to 993 for SSL") # Corrected: Only one definition
     imap_username: Optional[str] = None
-    imap_use_ssl: bool = Field(True)
+    imap_use_ssl: bool = Field(default=True)
 
+class EmailSettingsInput(EmailSettingsBase):
+    smtp_password: Optional[str] = Field(default=None, description="Write-only, will be encrypted")
+    aws_access_key_id: Optional[str] = Field(default=None, description="Write-only")
+    aws_secret_access_key: Optional[str] = Field(default=None, description="Write-only")
+    imap_password: Optional[str] = Field(default=None, description="Write-only, will be encrypted")
 
-class EmailSettingsInput(EmailSettingsBase): # Fields for creating/updating settings
-    smtp_password: Optional[str] = Field(None, description="Write-only, will be encrypted")
-    # For AWS SES using API keys
-    aws_access_key_id: Optional[str] = Field(None, description="Write-only")
-    aws_secret_access_key: Optional[str] = Field(None, description="Write-only")
-    # For Google OAuth
-    # access_token: Optional[str] = Field(None, description="Write-only, from OAuth flow")
-    # refresh_token: Optional[str] = Field(None, description="Write-only, from OAuth flow")
-    # token_expiry: Optional[datetime] = Field(None, description="Write-only, from OAuth flow")
-    # IMAP
-    imap_password: Optional[str] = Field(None, description="Write-only, will be encrypted")
-
-
-class EmailSettingsResponse(EmailSettingsBase): # Fields returned from API (no raw passwords)
+class EmailSettingsResponse(EmailSettingsBase):
     id: int
     organization_id: int
-    # credentials_set: bool = Field(False, description="Indicates if essential credentials seem to be set") # You can derive this
-    # last_imap_poll_uid: Optional[str] = None # If you want to expose this
-    # last_imap_poll_timestamp: Optional[datetime] = None # If you want to expose this
+    # credentials_set: bool = Field(default=False) # Derived in API or model if needed
     created_at: datetime
     updated_at: datetime
     model_config = {"from_attributes": True}
-
 
 # --- Campaign Step Schemas ---
 class CampaignStepBase(BaseModel):
@@ -204,14 +183,14 @@ class CampaignStepBase(BaseModel):
     delay_days: int = Field(..., ge=0)
     subject_template: str = Field(...)
     body_template: str = Field(...)
-    follow_up_angle: Optional[str] = Field(None)
+    follow_up_angle: Optional[str] = Field(default=None)
 
 class CampaignStepInput(CampaignStepBase):
     pass
 
 class CampaignStepUpdate(BaseModel):
-    step_number: Optional[int] = Field(None, gt=0)
-    delay_days: Optional[int] = Field(None, ge=0)
+    step_number: Optional[int] = Field(default=None, gt=0)
+    delay_days: Optional[int] = Field(default=None, ge=0)
     subject_template: Optional[str] = None
     body_template: Optional[str] = None
     follow_up_angle: Optional[str] = None
@@ -228,28 +207,27 @@ class CampaignStepResponse(CampaignStepBase):
 # --- Campaign Schemas ---
 class CampaignBase(BaseModel):
     name: str = Field(..., min_length=1)
-    description: Optional[str] = Field(None)
-    is_active: bool = Field(False) # Default to False, activate explicitly
+    description: Optional[str] = Field(default=None)
+    is_active: bool = Field(default=False)
     icp_id: Optional[int] = None
     offering_id: Optional[int] = None
 
 class CampaignInput(CampaignBase):
     pass
 
-class CampaignUpdate(BaseModel): # Explicitly make all fields optional for PATCH-like behavior
-    name: Optional[str] = Field(None, min_length=1)
-    description: Optional[str] = Field(None)
+class CampaignUpdate(BaseModel): # Explicitly optional for PATCH
+    name: Optional[str] = Field(default=None, min_length=1)
+    description: Optional[str] = Field(default=None)
     is_active: Optional[bool] = None
-    icp_id: Optional[int] = None # Allow null to unset
-    offering_id: Optional[int] = None # Allow null to unset
-    # ai_status: Optional[str] = None # If updating AI status is allowed here
+    icp_id: Optional[int] = None
+    offering_id: Optional[int] = None
 
 class CampaignResponse(CampaignBase):
     id: int
     organization_id: int
     icp_name: Optional[str] = None
     offering_name: Optional[str] = None
-    ai_status: Optional[str] = Field(None)
+    ai_status: Optional[str] = Field(default=None)
     created_at: datetime
     updated_at: datetime
     model_config = {"from_attributes": True}
@@ -262,22 +240,21 @@ class CampaignDetailResponse(CampaignResponse):
 class CampaignEnrollLeadsRequest(BaseModel):
     lead_ids: List[int] = Field(..., min_items=1)
 
-# --- Lead Campaign Status Schema (Consolidated and Enhanced) ---
-class LeadCampaignStatusResponse(BaseModel): # REMOVED the first duplicate
+# --- Lead Campaign Status Schema (Consolidated) ---
+class LeadCampaignStatusResponse(BaseModel):
     id: int
     lead_id: int
     campaign_id: int
     organization_id: int
     current_step_number: int
-    status: LeadStatusEnum # Use the Enum for type safety and clarity
+    status: LeadStatusEnum
     last_email_sent_at: Optional[datetime] = None
     next_email_due_at: Optional[datetime] = None
     last_response_type: Optional[str] = None
     last_response_at: Optional[datetime] = None
     error_message: Optional[str] = None
-    user_notes: Optional[str] = None # Added from your DDL
+    user_notes: Optional[str] = None
 
-    # Joined fields for richer responses (e.g., for dashboards)
     lead_name: Optional[str] = None
     lead_email: Optional[EmailStr] = None
     lead_company: Optional[str] = None
@@ -291,7 +268,6 @@ class LeadCampaignStatusResponse(BaseModel): # REMOVED the first duplicate
     created_at: datetime
     updated_at: datetime
     model_config = {"from_attributes": True}
-
 
 # --- Misc Schemas ---
 class ManualLeadData(BaseModel):
@@ -336,7 +312,7 @@ class BulkImportSummary(BaseModel):
 # --- DASHBOARD RESPONSE MODELS ---
 class AppointmentStatsResponse(BaseModel):
     total_appointments_set: int
-    total_positive_replies: int # Or a more specific name like "leads_with_positive_engagement"
+    total_positive_replies: int
     conversion_rate_percent: Optional[float] = None
     model_config = {"from_attributes": True}
 
@@ -353,9 +329,9 @@ class ActionableReply(BaseModel):
     lead_name: str
     lead_email: EmailStr
     lead_company: Optional[str] = None
-    campaign_id: int # Assuming campaign_id is available for the reply context
+    campaign_id: int
     campaign_name: str
-    latest_reply_received_at: Optional[datetime] = None # Use this for consistency if it's the reply's received time
+    latest_reply_received_at: Optional[datetime] = None
     latest_reply_ai_classification: Optional[str] = None
     latest_reply_ai_summary: Optional[str] = None
     latest_reply_snippet: Optional[str] = None
@@ -368,7 +344,4 @@ class CampaignPerformanceSummaryItem(BaseModel):
     emails_sent: Optional[int] = None
     positive_replies: int
     appointments_set: int
-    # model_config should be inside the class, not outside
     model_config = {"from_attributes": True}
-
-# Removed the stray Config class that was outside CampaignPerformanceSummaryItem
