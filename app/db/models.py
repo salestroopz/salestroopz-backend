@@ -1,110 +1,96 @@
 # app/db/models.py
 
 from sqlalchemy import (
-    Boolean, Column, ForeignKey, Integer, String, DateTime, Text, Enum as SQLAlchemyEnum, Float, func
+    Boolean, Column, ForeignKey, Integer, String, DateTime, Text,
+    Enum as SQLAlchemyEnum, Float, func, UniqueConstraint
 )
 from sqlalchemy.orm import relationship
-from sqlalchemy.ext.declarative import declarative_base
-from datetime import datetime
-import enum # For Python enums used with SQLAlchemyEnum
+from sqlalchemy.dialects.postgresql import JSONB # Specific to PostgreSQL for JSON
+
+# Import Base from your central base_class.py
 from .base_class import Base
-from app.schemas import LeadStatusEnum # Import your Enum from schemas
 
-# Create a Base for declarative models
-Base = declarative_base()
-
-# --- Enums (if you use them for status fields etc.) ---
-# Example: If you have specific statuses for LeadCampaignStatus
-class LeadStatusEnum(str, enum.Enum):
-    pending_enrollment = "pending_enrollment"
-    enrolled_active = "enrolled_active"
-    sequence_step_1_sent = "sequence_step_1_sent"
-    # ... other steps
-    positive_reply_ai_flagged = "positive_reply_ai_flagged"
-    positive_reply_received = "positive_reply_received" # Manually confirmed
-    appointment_manually_set = "appointment_manually_set"
-    needs_manual_followup = "needs_manual_followup"
-    unsubscribed = "unsubscribed"
-    sequence_completed = "sequence_completed"
-    error_sending = "error_sending"
-    # Add other statuses as needed
-
-class AIClassificationEnum(str, enum.Enum):
-    positive_interest = "positive_interest"
-    question = "question"
-    objection = "objection"
-    unsubscribe_request = "unsubscribe_request"
-    out_of_office = "out_of_office"
-    negative_reply = "negative_reply"
-    not_applicable = "not_applicable"
-    # Add other classifications
+# Import Enums from schemas.py (Single Source of Truth for Enums)
+from app.schemas import LeadStatusEnum, AIClassificationEnum # Ensure these are defined in schemas.py
 
 # --- Main Models ---
 
-class Organization(Base): # Assuming you have an Organization table
+class Organization(Base):
     __tablename__ = "organizations"
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, index=True, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    users = relationship("User", back_populates="organization")
-    leads = relationship("Lead", back_populates="organization")
-    icps = relationship("ICP", back_populates="organization")
-    offerings = relationship("Offering", back_populates="organization")
-    email_campaigns = relationship("EmailCampaign", back_populates="organization")
-    email_settings = relationship("OrganizationEmailSettings", back_populates="organization", uselist=False) # <--- UPDATED CLASS NAME
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, index=True, nullable=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    # Relationships
+    users = relationship("User", back_populates="organization", cascade="all, delete-orphan")
+    leads = relationship("Lead", back_populates="organization", cascade="all, delete-orphan")
+    icps = relationship("ICP", back_populates="organization", cascade="all, delete-orphan")
+    offerings = relationship("Offering", back_populates="organization", cascade="all, delete-orphan")
+    email_campaigns = relationship("EmailCampaign", back_populates="organization", cascade="all, delete-orphan")
+    email_settings = relationship("OrganizationEmailSettings", back_populates="organization", uselist=False, cascade="all, delete-orphan")
+    # outgoing_email_logs = relationship("OutgoingEmailLog", back_populates="organization", cascade="all, delete-orphan") # If needed
+    # email_replies = relationship("EmailReply", back_populates="organization", cascade="all, delete-orphan") # If needed
+
 
 class User(Base):
-    __tablename__ = "users" # If not using @declared_attr in Base
+    __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True, nullable=False) # Changed to String from Text for common practice, TEXT is fine too
-    hashed_password = Column(String, nullable=False) # Changed to String
-    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    email = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
 
-    # --- NEW/UPDATED FIELDS ---
     full_name = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     is_superuser = Column(Boolean, default=False, nullable=False)
-    # --- ---
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now()) # Add onupdate
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     organization = relationship("Organization", back_populates="users")
-    # Add other relationships if any (e.g., leads created by user)
+
 
 class ICP(Base): # Ideal Customer Profile
     __tablename__ = "icps"
+
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, index=True, nullable=False)
-    title_keywords = Column(Text, nullable=True) # Could be JSON or comma-separated
-    industry_keywords = Column(Text, nullable=True)
-    location_keywords = Column(Text, nullable=True)
-    # Example: company_size_min = Column(Integer, nullable=True)
-    # Example: company_size_max = Column(Integer, nullable=True)
-    company_size_rules = Column(Text, nullable=True) # Could store JSON like {"min": 10, "max": 50}
-    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String, default='Default ICP', nullable=False) # Ensure name is not nullable
+    
+    title_keywords = Column(JSONB, nullable=True, default=list) # Store as JSON list
+    industry_keywords = Column(JSONB, nullable=True, default=list)
+    company_size_rules = Column(JSONB, nullable=True, default=dict) # Store as JSON dict
+    location_keywords = Column(JSONB, nullable=True, default=list)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     organization = relationship("Organization", back_populates="icps")
-    campaigns = relationship("EmailCampaign", back_populates="icp")
-    # leads_matched = relationship("Lead", back_populates="matched_icp") # If you want a direct link
+    # Relationships to leads and campaigns
+    leads_matched = relationship("Lead", back_populates="matched_icp") # Link to leads this ICP matched
+    campaigns = relationship("EmailCampaign", back_populates="icp")   # Campaigns using this ICP
+
 
 class Offering(Base):
     __tablename__ = "offerings"
+    __table_args__ = (UniqueConstraint('organization_id', 'name', name='_org_offering_name_uc'),)
+
+
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, index=True, nullable=False)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String, nullable=False)
     description = Column(Text, nullable=True)
-    key_features = Column(Text, nullable=True) # Could be JSON array
-    target_pain_points = Column(Text, nullable=True) # Could be JSON array
+    
+    key_features = Column(JSONB, nullable=True, default=list)
+    target_pain_points = Column(JSONB, nullable=True, default=list)
     call_to_action = Column(String, nullable=True)
-    is_active = Column(Boolean, default=True)
-    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     organization = relationship("Organization", back_populates="offerings")
     campaigns = relationship("EmailCampaign", back_populates="offering")
@@ -112,209 +98,221 @@ class Offering(Base):
 
 class Lead(Base):
     __tablename__ = "leads"
+    __table_args__ = (UniqueConstraint('organization_id', 'email', name='_org_lead_email_uc'),)
 
     id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, index=True, nullable=False) # Consider unique=True per organization
-    name = Column(String, index=True, nullable=True)
-    first_name = Column(String, nullable=True)
-    last_name = Column(String, nullable=True)
-    company_name = Column(String, index=True, nullable=True) # Renamed from 'company' for clarity
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    email = Column(String, index=True, nullable=False)
+    name = Column(String, index=True, nullable=True) # Combined name
+    # first_name = Column(String, nullable=True) # If you store separately
+    # last_name = Column(String, nullable=True)  # If you store separately
+    company = Column(String, index=True, nullable=True) # Aligned with your DDL
     title = Column(String, nullable=True)
-    linkedin_profile = Column(String, nullable=True)
     source = Column(String, nullable=True)
-    # Custom fields can be added or handled via a JSON column
-    custom_fields = Column(Text, nullable=True) # For storing JSON data
+    linkedin_profile = Column(String, nullable=True)
+    company_size = Column(String, nullable=True) # DDL had TEXT
+    industry = Column(String, nullable=True) # DDL had TEXT
+    location = Column(String, nullable=True) # DDL had TEXT
+    
+    matched = Column(Boolean, default=False) # DDL name for is_icp_matched
+    reason = Column(Text, nullable=True) # DDL name for icp_match_reason
+    icp_match_id = Column(Integer, ForeignKey("icps.id", ondelete="SET NULL"), nullable=True, index=True) # DDL name
 
-    # ICP Matching related fields
-    matched_icp_id = Column(Integer, ForeignKey("icps.id"), nullable=True)
-    icp_match_reason = Column(Text, nullable=True)
-    is_icp_matched = Column(Boolean, default=False) # 'matched' from your Streamlit form
-
-    # Appointment and status fields
+    crm_status = Column(String, default='pending')
     appointment_confirmed = Column(Boolean, default=False)
-    appointment_details = Column(Text, nullable=True) # Store notes about the appointment
-    is_unsubscribed = Column(Boolean, default=False) # Global unsubscribe flag
+    # appointment_details = Column(Text, nullable=True) # If you want to store details
+    # is_unsubscribed = Column(Boolean, default=False) # Might be better on LeadCampaignStatus per campaign
 
-    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
-    # Relationships
     organization = relationship("Organization", back_populates="leads")
-    # matched_icp = relationship("ICP", back_populates="leads_matched") # If direct link defined above
-    campaign_statuses = relationship("LeadCampaignStatus", back_populates="lead")
-    email_replies = relationship("EmailReply", back_populates="lead") # All replies from this lead
-
-    # To make email unique per organization, you might use a UniqueConstraint
-    # from sqlalchemy import UniqueConstraint
-    # __table_args__ = (UniqueConstraint('email', 'organization_id', name='_email_org_uc'),)
+    matched_icp = relationship("ICP", back_populates="leads_matched") # Matched ICP for this lead
+    campaign_statuses = relationship("LeadCampaignStatus", back_populates="lead", cascade="all, delete-orphan")
+    email_replies = relationship("EmailReply", back_populates="lead", cascade="all, delete-orphan")
+    # outgoing_email_logs = relationship("OutgoingEmailLog", back_populates="lead", cascade="all, delete-orphan") # if needed
 
 
 class EmailCampaign(Base):
     __tablename__ = "email_campaigns"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, index=True, nullable=False)
-    description = Column(Text, nullable=True)
-    is_active = Column(Boolean, default=False) # User activates/deactivates
-    ai_status = Column(String, default="pending") # e.g., pending, generating, completed, failed, completed_partial
-    ai_error_message = Column(Text, nullable=True)
-
-    icp_id = Column(Integer, ForeignKey("icps.id"), nullable=True)
-    offering_id = Column(Integer, ForeignKey("offerings.id"), nullable=True)
-    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
-
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    # Relationships
-    organization = relationship("Organization", back_populates="email_campaigns")
-    icp = relationship("ICP", back_populates="campaigns")
-    offering = relationship("Offering", back_populates="campaigns")
-    steps = relationship("CampaignStep", back_populates="campaign", cascade="all, delete-orphan")
-    lead_statuses = relationship("LeadCampaignStatus", back_populates="campaign")
-    # outgoing_emails = relationship("OutgoingEmailLog", back_populates="campaign")
-
-
-class CampaignStep(Base):
-    __tablename__ = "campaign_steps"
-
-    id = Column(Integer, primary_key=True, index=True)
-    campaign_id = Column(Integer, ForeignKey("email_campaigns.id"), nullable=False)
-    step_number = Column(Integer, nullable=False) # e.g., 1, 2, 3
-    delay_days = Column(Integer, default=0) # Days after previous step or enrollment
-    subject_template = Column(String, nullable=False)
-    body_template = Column(Text, nullable=False)
-    follow_up_angle = Column(String, nullable=True) # AI's suggested angle
-    is_ai_crafted = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    campaign = relationship("EmailCampaign", back_populates="steps")
-
-
-class LeadCampaignStatus(Base):
-    __tablename__ = "lead_campaign_status"
-
-    id = Column(Integer, primary_key=True, index=True)
-    lead_id = Column(Integer, ForeignKey("leads.id"), nullable=False)
-    campaign_id = Column(Integer, ForeignKey("email_campaigns.id"), nullable=False)
-
     organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
-
-    status = Column(SQLAlchemyEnum(LeadStatusEnum), default=LeadStatusEnum.pending_enrollment, nullable=False)
-    status_reason = Column(Text, nullable=True) # e.g., AI classification details, error messages
-    current_step_number = Column(Integer, default=0) # Last step processed or next step to process
-    next_email_due_at = Column(DateTime, nullable=True, index=True) # When the next email in sequence is due
-    last_contacted_at = Column(DateTime, nullable=True) # When last email was sent in this campaign
-    last_response_at = Column(DateTime, nullable=True) # When last reply was received for this campaign
-    engagement_score = Column(Float, default=0.0) # Opens, clicks, replies
-    is_active = Column(Boolean, default=True) # If false, lead is paused/finished in this campaign
-    error_count = Column(Integer, default=0)
-
-    # Timestamps for this specific enrollment
-    enrolled_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    # Relationships
-    lead = relationship("Lead", back_populates="campaign_statuses")
-    campaign = relationship("EmailCampaign", back_populates="lead_statuses")
-    # associated_replies relationship might be redundant if EmailReply links to lead_id and campaign_id
-
-# Table for Email Replies (IMAP Polling)
-class EmailReply(Base):
-    __tablename__ = "email_replies"
-    id = Column(Integer, primary_key=True, index=True)
-    message_id_header = Column(String, unique=True, index=True, nullable=False) # From email header
-    in_reply_to_header = Column(String, index=True, nullable=True) # Links to outgoing email
-    thread_id = Column(String, index=True, nullable=True) # If available from IMAP/email
-    subject = Column(Text, nullable=True)
-    sender_email = Column(String, index=True, nullable=False)
-    recipient_email = Column(String, index=True, nullable=False) # Your campaign email address
-    received_at = Column(DateTime, nullable=False, index=True)
-    body_text = Column(Text, nullable=True) # Full text body
-    body_html = Column(Text, nullable=True) # Full HTML body
-    body_preview = Column(Text, nullable=True) # Short snippet
-
-    lead_id = Column(Integer, ForeignKey("leads.id"), nullable=True) # Linked lead
-    campaign_id = Column(Integer, ForeignKey("email_campaigns.id"), nullable=True) # Linked campaign
-    original_outgoing_email_id = Column(Integer, ForeignKey("outgoing_email_log.id"), nullable=True) # If linked to a specific sent email
-
-    # AI Classification Fields
-    ai_classification = Column(SQLAlchemyEnum(AIClassificationEnum), nullable=True)
-    ai_summary = Column(Text, nullable=True)
-    ai_confidence_score = Column(Float, nullable=True)
-    ai_processed_at = Column(DateTime, nullable=True)
-
-    # User Action Fields
-    is_actioned_by_user = Column(Boolean, default=False)
-    action_taken = Column(String, nullable=True) # e.g., "appointment_set", "manual_followup"
-    action_notes = Column(Text, nullable=True)
-    action_timestamp = Column(DateTime, nullable=True)
+    icp_id = Column(Integer, ForeignKey("icps.id", ondelete="SET NULL"), nullable=True, index=True)
+    offering_id = Column(Integer, ForeignKey("offerings.id", ondelete="SET NULL"), nullable=True, index=True)
+    
+    name = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=False, nullable=False)
+    ai_status = Column(String, default='pending', nullable=False) # e.g., pending, generating, completed
+    # ai_error_message = Column(Text, nullable=True) # If you want to store AI errors
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
-    lead = relationship("Lead", back_populates="email_replies")
-    # campaign = relationship("EmailCampaign") # If you want direct link
-    # original_outgoing_email = relationship("OutgoingEmailLog", back_populates="replies")
+    organization = relationship("Organization", back_populates="email_campaigns")
+    icp = relationship("ICP", back_populates="campaigns")
+    offering = relationship("Offering", back_populates="campaigns")
+    steps = relationship("CampaignStep", back_populates="campaign", cascade="all, delete-orphan")
+    lead_statuses = relationship("LeadCampaignStatus", back_populates="campaign", cascade="all, delete-orphan")
+    # outgoing_email_logs = relationship("OutgoingEmailLog", back_populates="campaign", cascade="all, delete-orphan") # if needed
+    # email_replies = relationship("EmailReply", back_populates="campaign", cascade="all, delete-orphan") # if needed
 
 
-# Table for Outgoing Email Logs
-class OutgoingEmailLog(Base):
-    __tablename__ = "outgoing_email_log"
+class CampaignStep(Base):
+    __tablename__ = "campaign_steps"
+    __table_args__ = (UniqueConstraint('campaign_id', 'step_number', name='_campaign_step_uc'),)
+
     id = Column(Integer, primary_key=True, index=True)
-    lead_id = Column(Integer, ForeignKey("leads.id"), nullable=False)
-    campaign_id = Column(Integer, ForeignKey("email_campaigns.id"), nullable=False)
-    campaign_step_id = Column(Integer, ForeignKey("campaign_steps.id"), nullable=False)
-    sent_at = Column(DateTime, default=datetime.utcnow, index=True)
-    recipient_email = Column(String, nullable=False)
-    subject = Column(String, nullable=False)
-    body_html = Column(Text, nullable=True) # Store the actual sent body
-    status = Column(String, default="sent") # e.g., sent, failed, bounced
+    campaign_id = Column(Integer, ForeignKey("email_campaigns.id", ondelete="CASCADE"), nullable=False, index=True)
+    # Added organization_id to align with DDL and likely query needs
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    step_number = Column(Integer, nullable=False)
+    delay_days = Column(Integer, default=1, nullable=False) # DDL had default 1
+    subject_template = Column(Text, nullable=False) # DDL had TEXT
+    body_template = Column(Text, nullable=False)    # DDL had TEXT
+    is_ai_crafted = Column(Boolean, default=False, nullable=False) # DDL had default FALSE
+    follow_up_angle = Column(String, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    campaign = relationship("EmailCampaign", back_populates="steps")
+    # outgoing_email_logs = relationship("OutgoingEmailLog", back_populates="campaign_step") # If specific step log is needed
+
+
+class LeadCampaignStatus(Base):
+    __tablename__ = "lead_campaign_status"
+    __table_args__ = (UniqueConstraint('lead_id', name='_lead_campaign_status_lead_uc'),) # DDL had UNIQUE(lead_id)
+
+    id = Column(Integer, primary_key=True, index=True)
+    lead_id = Column(Integer, ForeignKey("leads.id", ondelete="CASCADE"), nullable=False, index=True)
+    campaign_id = Column(Integer, ForeignKey("email_campaigns.id", ondelete="CASCADE"), nullable=False, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    current_step_number = Column(Integer, default=0, nullable=False)
+    status = Column(String(50), nullable=False, default=LeadStatusEnum.pending_enrollment.value) # Storing enum value as string
+    # If using native DB ENUM:
+    # status = Column(SQLAlchemyEnum(LeadStatusEnum, name="lcs_status_enum", values_callable=lambda x: [e.value for e in x]),
+    #                 default=LeadStatusEnum.pending_enrollment, nullable=False)
+
+    last_email_sent_at = Column(DateTime(timezone=True), nullable=True)
+    next_email_due_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    last_response_type = Column(String(255), nullable=True) # Could be AIClassificationEnum.value
+    last_response_at = Column(DateTime(timezone=True), nullable=True)
     error_message = Column(Text, nullable=True)
-    message_id_returned = Column(String, nullable=True, index=True) # Message-ID from ESP
+    user_notes = Column(Text, nullable=True)
 
-    # lead = relationship("Lead") # Optional: if needed for direct access
-    # campaign = relationship("EmailCampaign", back_populates="outgoing_emails")
-    # step = relationship("CampaignStep")
-    # replies = relationship("EmailReply", back_populates="original_outgoing_email")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    lead = relationship("Lead", back_populates="campaign_statuses")
+    campaign = relationship("EmailCampaign", back_populates="lead_statuses")
+    outgoing_email_logs = relationship("OutgoingEmailLog", back_populates="lead_campaign_status")
+    email_replies = relationship("EmailReply", back_populates="lead_campaign_status")
 
 
-class OrganizationEmailSettings(Base): # <--- RENAMED CLASS
-    __tablename__ = "organization_email_settings" # <--- RENAMED TABLE
+class OrganizationEmailSettings(Base):
+    __tablename__ = "organization_email_settings"
 
-    organization = relationship("Organization", back_populates="email_settings")
     id = Column(Integer, primary_key=True, index=True)
-    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), unique=True, nullable=False)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), unique=True, nullable=False, index=True)
 
-    provider_type = Column(String, nullable=True)
+    provider_type = Column(String, nullable=True) # e.g., "SMTP", "AWS_SES"
     verified_sender_email = Column(String, nullable=False)
     sender_name = Column(String, nullable=True)
 
     smtp_host = Column(String, nullable=True)
     smtp_port = Column(Integer, nullable=True)
     smtp_username = Column(String, nullable=True)
-    encrypted_smtp_password = Column(String, nullable=True)
+    encrypted_smtp_password = Column(Text, nullable=True) # Text for potentially long encrypted strings
 
-    encrypted_api_key = Column(String, nullable=True)
-    encrypted_secret_key = Column(String, nullable=True) # If you store AWS secret key
-    encrypted_access_token = Column(String, nullable=True)
-    encrypted_refresh_token = Column(String, nullable=True)
+    encrypted_api_key = Column(Text, nullable=True)
+    encrypted_secret_key = Column(Text, nullable=True) # Ensure this column exists in DB
+    encrypted_access_token = Column(Text, nullable=True)
+    encrypted_refresh_token = Column(Text, nullable=True)
     token_expiry = Column(DateTime(timezone=True), nullable=True)
-    aws_region = Column(String, nullable=True)
+    aws_region = Column(String, nullable=True) # If provider_type is AWS_SES
 
     is_configured = Column(Boolean, default=False, nullable=False)
-
-    enable_reply_detection = Column(Boolean, default=False, nullable=False) # <--- ADDED
+    enable_reply_detection = Column(Boolean, default=False, nullable=False)
     imap_host = Column(String, nullable=True)
     imap_port = Column(Integer, default=993, nullable=True)
     imap_username = Column(String, nullable=True)
-    encrypted_imap_password = Column(String, nullable=True) # <--- Store encrypted
+    encrypted_imap_password = Column(Text, nullable=True)
     imap_use_ssl = Column(Boolean, default=True, nullable=False)
 
-    last_imap_poll_uid = Column(Text, nullable=True) # <--- ADDED
-    last_imap_poll_timestamp = Column(DateTime(timezone=True), nullable=True) # <--- ADDED
+    last_imap_poll_uid = Column(Text, nullable=True) # Can be string or number, Text is safer
+    last_imap_poll_timestamp = Column(DateTime(timezone=True), nullable=True)
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    organization = relationship("Organization", back_populates="email_settings")
+
+
+class OutgoingEmailLog(Base):
+    __tablename__ = "outgoing_email_log"
+    __table_args__ = (UniqueConstraint('organization_id', 'message_id_header', name='_org_message_id_uc'),)
+
+
+    id = Column(Integer, primary_key=True, index=True)
+    lead_campaign_status_id = Column(Integer, ForeignKey("lead_campaign_status.id", ondelete="SET NULL"), nullable=True, index=True) # Can be null if LCS deleted
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    lead_id = Column(Integer, ForeignKey("leads.id", ondelete="CASCADE"), nullable=False, index=True)
+    campaign_id = Column(Integer, ForeignKey("email_campaigns.id", ondelete="CASCADE"), nullable=False, index=True)
+    campaign_step_id = Column(Integer, ForeignKey("campaign_steps.id", ondelete="SET NULL"), nullable=True, index=True) # Can be null if step deleted
+
+    message_id_header = Column(String(512), nullable=False, index=True) # DDL had VARCHAR(512)
+    sent_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    to_email = Column(String(255), nullable=False) # DDL had VARCHAR(255)
+    subject = Column(Text, nullable=True) # DDL had TEXT
+    # body_html = Column(Text, nullable=True) # If you store the sent body here
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False) # Redundant with sent_at but good for record creation
+    # No updated_at typically for logs unless you modify them post-creation
+
+    # Relationships
+    lead_campaign_status = relationship("LeadCampaignStatus", back_populates="outgoing_email_logs")
+    # organization = relationship("Organization", back_populates="outgoing_email_logs") # Add to Organization if needed
+    # lead = relationship("Lead", back_populates="outgoing_email_logs") # Add to Lead if needed
+    # campaign = relationship("EmailCampaign", back_populates="outgoing_email_logs") # Add to EmailCampaign if needed
+    # campaign_step = relationship("CampaignStep", back_populates="outgoing_email_logs") # Add to CampaignStep if needed
+    email_replies = relationship("EmailReply", back_populates="outgoing_email_log") # Replies to this sent email
+
+
+class EmailReply(Base):
+    __tablename__ = "email_replies"
+
+    id = Column(Integer, primary_key=True, index=True)
+    outgoing_email_log_id = Column(Integer, ForeignKey("outgoing_email_log.id", ondelete="SET NULL"), nullable=True, index=True)
+    lead_campaign_status_id = Column(Integer, ForeignKey("lead_campaign_status.id", ondelete="CASCADE"), nullable=True, index=True) # Can be nullable if not directly tied to a campaign status
+    
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    lead_id = Column(Integer, ForeignKey("leads.id", ondelete="CASCADE"), nullable=False, index=True) # Reply must be from a known lead
+    campaign_id = Column(Integer, ForeignKey("email_campaigns.id", ondelete="CASCADE"), nullable=True, index=True) # Optional: campaign context
+
+    received_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    from_email = Column(String(255), nullable=False) # DDL had VARCHAR(255)
+    reply_subject = Column(Text, nullable=True)
+    raw_body_text = Column(Text, nullable=True)
+    cleaned_reply_text = Column(Text, nullable=True)
+
+    # ai_classification = Column(SQLAlchemyEnum(AIClassificationEnum, name="ai_class_enum", values_callable=lambda x: [e.value for e in x]), nullable=True)
+    ai_classification = Column(String(100), nullable=True) # Storing as string for simplicity
+    ai_summary = Column(Text, nullable=True)
+    ai_extracted_entities = Column(JSONB, nullable=True) # Store as JSON
+
+    is_actioned_by_user = Column(Boolean, default=False, nullable=False)
+    user_action_notes = Column(Text, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    # No updated_at typically for replies unless they are modified
+
+    # Relationships
+    outgoing_email_log = relationship("OutgoingEmailLog", back_populates="email_replies")
+    lead_campaign_status = relationship("LeadCampaignStatus", back_populates="email_replies")
+    lead = relationship("Lead", back_populates="email_replies")
+    # organization = relationship("Organization", back_populates="email_replies") # Add to Organization if needed
+    # campaign = relationship("EmailCampaign", back_populates="email_replies") # Add to EmailCampaign if needed
