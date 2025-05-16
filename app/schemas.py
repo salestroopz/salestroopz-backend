@@ -345,3 +345,14 @@ class CampaignPerformanceSummaryItem(BaseModel):
     positive_replies: int
     appointments_set: int
     model_config = {"from_attributes": True}
+
+class AIClassificationEnum(str, Enum): # <--- DEFINE IT HERE
+    positive_interest = "positive_interest"
+    question = "question"
+    objection = "objection"
+    unsubscribe_request = "unsubscribe_request"
+    out_of_office = "out_of_office"
+    negative_reply = "negative_reply"
+    not_applicable = "not_applicable"
+    empty_reply = "empty_reply" # If you use this
+    classification_failed = "classification_failed" # If you use this
