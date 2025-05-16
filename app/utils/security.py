@@ -1,63 +1,79 @@
 # app/utils/security.py
+
 from datetime import datetime, timedelta, timezone
+from typing import Optional, Dict, Any # Combined typing imports
+
 from passlib.context import CryptContext
 from jose import JWTError, jwt
-from app.utils.config import settings # Import your settings
-from app.utils.logger import logger
-from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict, Any
-from passlib.context import CryptContext
+
+from app.utils.config import settings # Import your settings instance
+from app.utils.logger import logger # Your application's logger
 
 # Password Hashing Context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verifies a plain password against a hashed password."""
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return pwd_context.verify(plain_password, hashed_password)
+    except Exception as e: # Catch potential errors from passlib, e.g., if hash is malformed or unknown scheme
+        logger.error(f"Error during password verification: {e}")
+        return False
 
 def get_password_hash(password: str) -> str:
     """Hashes a plain password."""
     return pwd_context.hash(password)
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    print(f"CREATE_TOKEN_DEBUG: Using settings.SECRET_KEY = '{settings.SECRET_KEY}'")
     """Creates a JWT access token."""
+    # --- TEMPORARY DEBUGGING ---
+    # Remove 'if' condition temporarily to ensure it always prints during this test
+    # if settings.environment == "development":
+    print(f"CREATE_TOKEN_DEBUG: Using settings.SECRET_KEY = '{settings.SECRET_KEY}' for signing.")
+    print(f"CREATE_TOKEN_DEBUG: Using settings.ALGORITHM = '{settings.ALGORITHM}' for signing.")
+    # --- END TEMPORARY DEBUGGING ---
+
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
         expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
+    
+    to_encode.update({"exp": expire, "iat": datetime.now(timezone.utc)}) # Add 'iat' (issued at) claim
+    
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
 
 def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
+    """
+    Decodes an access token. Returns the payload if successful, None otherwise.
+    """
     # --- TEMPORARY DEBUGGING ---
-    # Ensure settings are imported correctly and are the same instance
-    if settings.environment == "development": # Or remove the if for one test
-        print(f"DECODE_TOKEN_DEBUG: Attempting to decode using settings.SECRET_KEY = '{settings.SECRET_KEY}'")
-        print(f"DECODE_TOKEN_DEBUG: Attempting to decode using settings.ALGORITHM = '{settings.ALGORITHM}'")
+    # Remove 'if' condition temporarily to ensure it always prints during this test
+    # if settings.environment == "development":
+    print(f"DECODE_TOKEN_DEBUG: Attempting to decode with settings.SECRET_KEY = '{settings.SECRET_KEY}'")
+    print(f"DECODE_TOKEN_DEBUG: Attempting to decode with algorithms = ['{settings.ALGORITHM}']")
     # --- END TEMPORARY DEBUGGING ---
     try:
         payload = jwt.decode(
             token,
-            settings.SECRET_KEY, # Must be the same as used in create_access_token
-            algorithms=[settings.ALGORITHM] # Must be the same
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM] # algorithms should be a list
         )
-        # You could also print the email from payload here to see if decoding gets that far before signature check
-        # email: Optional[str] = payload.get("sub")
-        # if settings.environment == "development" and email:
-        #    print(f"DECODE_TOKEN_DEBUG: Successfully decoded subject (sub): {email}")
+        # Optional: Log successful decoding subject
+        # email_from_payload: Optional[str] = payload.get("sub")
+        # if settings.environment == "development" and email_from_payload:
+        # print(f"DECODE_TOKEN_DEBUG: Successfully decoded. Subject (sub): {email_from_payload}")
         return payload
     except JWTError as e:
-        logger.warning(f"JWTError during token decoding: {str(e)}. Token prefix: '{token[:30]}...'") # Keep this log
-        # If you added the print above, you can see if the keys were different before this exception
-        if settings.environment == "development":
-            print(f"DECODE_TOKEN_DEBUG: FAILED with SECRET_KEY = '{settings.SECRET_KEY}' and ALGORITHM = '{settings.ALGORITHM}'")
+        # This is where "Signature verification failed" and other JWT errors (like expired) are caught
+        logger.warning(f"JWTError during token decoding: {str(e)}. Token prefix: '{token[:40]}...'")
+        # if settings.environment == "development": # Also remove 'if' for this test
+        print(f"DECODE_TOKEN_DEBUG: JWTError FAILED with SECRET_KEY='{settings.SECRET_KEY}', ALGORITHM='{settings.ALGORITHM}'. Error: {str(e)}")
         return None
-    except Exception as e_unhandled:
+    except Exception as e_unhandled: # Catch any other unexpected errors during decoding
         logger.error(f"Unexpected error during token decoding: {str(e_unhandled)}", exc_info=True)
-        if settings.environment == "development":
-            print(f"DECODE_TOKEN_DEBUG: UNEXPECTED FAILED with SECRET_KEY = '{settings.SECRET_KEY}' and ALGORITHM = '{settings.ALGORITHM}'")
+        # if settings.environment == "development": # Also remove 'if' for this test
+        print(f"DECODE_TOKEN_DEBUG: UNEXPECTED FAILED with SECRET_KEY='{settings.SECRET_KEY}', ALGORITHM='{settings.ALGORITHM}'. Error: {str(e_unhandled)}")
         return None
