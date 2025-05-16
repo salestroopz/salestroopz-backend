@@ -1,6 +1,8 @@
+# app/db/database.py
+
 # --- Standard Library Imports ---
 import os
-import json
+import json # Keep if used for any non-ORM JSON processing
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
@@ -11,102 +13,125 @@ from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 # --- Application Specific Imports ---
-# Import Base FIRST (critical for models to inherit from)
+
+# 1. Import Base FIRST (critical for models to inherit from)
+#    This assumes base_class.py is in the same 'db' directory.
 try:
-    from .base_class import Base # Base MUST come from here
+    from .base_class import Base
 except ImportError as e_base:
-    print(f"CRITICAL ERROR: Could not import Base from .base_class: {e_base}")
-    # If Base cannot be imported, the app likely can't function with ORM
-    raise SystemExit("SQLAlchemy Base class not found.") from e_base
+    # Use basic print as logger might not be fully initialized
+    print(f"CRITICAL ERROR [database.py]: Could not import SQLAlchemy Base from .base_class: {e_base}")
+    print("Ensure app/db/base_class.py exists and defines the SQLAlchemy Base.")
+    raise SystemExit("SQLAlchemy Base class not found, application cannot start.") from e_base
 
-
-# --- Model Imports (CRUCIAL: These must be correctly defined in app.db.models) ---
+# 2. Import Models NEXT (they depend on Base)
+#    This imports the 'models' module itself, so you'll access classes like 'models.User'.
+#    This also assumes models.py is in the same 'db' directory.
 try:
-    from . import models # Assuming models.py is in the same directory
-    from .models import (
-        Base, Organization, User, ICP, Offering, Lead, EmailCampaign, CampaignStep,
-        LeadCampaignStatus, OrganizationEmailSettings, OutgoingEmailLog, EmailReply
-    )
-except ImportError as e:
-    print(f"CRITICAL ERROR: Could not import SQLAlchemy models from .models: {e}")
-    print("Please ensure app.db.models.py exists and defines all necessary SQLAlchemy models.")
-    # To prevent the app from completely breaking on import, define placeholders
-    # but this means the DB functions will fail until models are correct.
-    Base = None
-    Organization = User = ICP = Offering = Lead = EmailCampaign = CampaignStep = None
-    LeadCampaignStatus = OrganizationEmailSettings = OutgoingEmailLog = EmailReply = None
+    from . import models
+except ImportError as e_models:
+    print(f"CRITICAL ERROR [database.py]: Could not import the '.models' module: {e_models}")
+    print("This often indicates an error *within* app/db/models.py (e.g., another import error, syntax error).")
+    print("Check the full traceback for errors originating from app/db/models.py.")
+    raise SystemExit("Failed to import ORM models module, application cannot start.") from e_models
 
-from app.schemas import LeadStatusEnum # Assuming this is for enum values
-import os
+# If you prefer to import each model class directly into the database.py namespace:
+# (This is an alternative to 'from . import models' and using 'models.User')
+# try:
+#     from .models import (
+#         Organization, User, ICP, Offering, Lead, EmailCampaign, CampaignStep,
+#         LeadCampaignStatus, OrganizationEmailSettings, OutgoingEmailLog, EmailReply
+#     )
+# except ImportError as e_specific_models:
+#     print(f"CRITICAL ERROR [database.py]: Could not import specific model classes from .models: {e_specific_models}")
+#     print("This often indicates an error *within* app/db/models.py or a missing model definition.")
+#     raise SystemExit("Failed to import one or more ORM model classes.") from e_specific_models
 
-# Import logger
+
+# 3. Import Schemas (like LeadStatusEnum if used directly in DB queries)
+#    This assumes schemas.py is in the 'app' directory, a sibling to 'db'.
+try:
+    from app.schemas import LeadStatusEnum
+    # from app.schemas import AIClassificationEnum # If you use this directly in database.py
+except ImportError as e_schemas:
+    # Use basic print as logger might not be initialized
+    print(f"Warning [database.py]: Could not import LeadStatusEnum (or other enums) from app.schemas: {e_schemas}")
+    print("Functions relying on these enums might fail or use None as a fallback.")
+    LeadStatusEnum = None # Define as None so parts of the file can still parse, but be aware
+    # AIClassificationEnum = None
+
+# 4. Import Logger (can come after core DB/model imports)
 try:
     from app.utils.logger import logger
 except ImportError:
     import logging
     logger = logging.getLogger(__name__)
     logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(levelname)s | %(name)s | %(message)s')
+    logger.info("Initialized basic logger for database.py.")
 
-# Import Settings
+# 5. Import Settings (usually one of the last core imports)
 try:
     from app.utils.config import settings
     logger.info("Successfully imported settings in database.py")
-    if not settings or not getattr(settings, 'DATABASE_URL', None) or \
+    # DATABASE_URL logic (ensure it's robust as before)
+    if not hasattr(settings, 'DATABASE_URL') or not settings.DATABASE_URL or \
        settings.DATABASE_URL == "ENV_VAR_DATABASE_URL_NOT_SET" or \
        not settings.DATABASE_URL.startswith(("postgresql://", "postgres://")):
-        logger.critical("DATABASE_URL from settings is not configured or is invalid for SQLAlchemy.")
-        # Fallback to os.getenv if settings are problematic for DATABASE_URL
+        logger.critical("DATABASE_URL from settings is not configured or is invalid. Falling back to OS env var.")
         SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
         if not SQLALCHEMY_DATABASE_URL:
-            raise ValueError("FATAL ERROR: DATABASE_URL cannot be determined.")
-        logger.warning(f"Falling back to DATABASE_URL from environment: {SQLALCHEMY_DATABASE_URL[:30]}...")
+            raise ValueError("FATAL ERROR: DATABASE_URL cannot be determined from settings or environment.")
     else:
         SQLALCHEMY_DATABASE_URL = settings.DATABASE_URL
 except ImportError:
-    logger.critical("Could not import settings from app.utils.config. Falling back for DATABASE_URL.")
+    logger.critical("Could not import settings. Attempting to use DATABASE_URL from OS env var.")
     SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
     if not SQLALCHEMY_DATABASE_URL:
-        raise ValueError("FATAL ERROR: DATABASE_URL environment variable is not set and settings import failed.")
-except Exception as e:
-    logger.critical(f"Error loading settings in database.py: {e}. Falling back for DATABASE_URL.")
+        raise ValueError("FATAL ERROR: DATABASE_URL not found in OS env and settings import failed.")
+except Exception as e_settings: # Catch any other error during settings access
+    logger.critical(f"Error accessing settings: {e_settings}. Attempting to use DATABASE_URL from OS env var.")
     SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
     if not SQLALCHEMY_DATABASE_URL:
-        raise ValueError("FATAL ERROR: DATABASE_URL cannot be determined after settings error.")
+        raise ValueError("FATAL ERROR: DATABASE_URL not found in OS env after settings access error.")
 
 
+# --- Engine and Session Setup (comes after all necessary configurations are loaded) ---
 if not SQLALCHEMY_DATABASE_URL:
-    raise ValueError("FATAL ERROR: SQLALCHEMY_DATABASE_URL is not set.")
+    raise ValueError("FATAL ERROR: SQLALCHEMY_DATABASE_URL is unexpectedly not set before engine creation.")
 
 try:
     engine = create_engine(SQLALCHEMY_DATABASE_URL)
-except Exception as e:
-    logger.error(f"ERROR: Could not create database engine with URL: {SQLALCHEMY_DATABASE_URL}")
-    logger.error(f"SQLAlchemy create_engine error: {e}", exc_info=True)
-    raise
+except Exception as e_engine:
+    logger.error(f"FATAL ERROR: Could not create database engine with URL: {SQLALCHEMY_DATABASE_URL}", exc_info=True)
+    raise SystemExit("Database engine creation failed.") from e_engine
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-def get_db():
+def get_db() -> Session:
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
 
-# --- Schema Creation Function (Define it ONCE after Base and engine are set up) ---
+# --- Schema Creation Function (Defined ONCE after Base and engine are set up) ---
 def create_db_and_tables():
     """Creates all database tables defined in models.py inheriting from Base."""
-    # Base is imported from .base_class and should be valid here
+    # 'Base' is imported from .base_class and must be valid here
+    if not Base: # Should ideally not be None if initial import succeeded
+        logger.error("CRITICAL: SQLAlchemy Base is None. Cannot create tables.")
+        return
+
     logger.info("Attempting to create database tables via SQLAlchemy models (Base.metadata.create_all)...")
     try:
-        Base.metadata.create_all(bind=engine) # 'Base' from .base_class is used
+        Base.metadata.create_all(bind=engine)
         logger.info("Database tables (SQLAlchemy models) checked/created successfully.")
     except Exception as e:
         logger.error(f"ERROR: Could not create database tables via SQLAlchemy: {e}", exc_info=True)
-        # Depending on severity, you might want to raise an error or exit
+
 
 # ==========================================
-# PLACEHOLDER ENCRYPTION FUNCTIONS - WARNING!
+# PLACEHOLDER ENCRYPTION FUNCTIONS
 # ==========================================
 def _encrypt_data(plain_text: Optional[str]) -> Optional[str]:
     if plain_text is None: return None
