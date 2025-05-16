@@ -1,25 +1,23 @@
-# app/db/database.py
+# --- Standard Library Imports ---
+import os
+import json
+from datetime import datetime, timezone
+from typing import Optional, List, Dict, Any
 
+# --- SQLAlchemy Core Imports ---
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy import create_engine, func, and_, or_, text
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
-from sqlalchemy.dialects.postgresql import insert as pg_insert # For ON CONFLICT DO UPDATE
-from app.schemas import LeadStatusEnum
-from typing import Optional, List, Dict, Any
-import json
-from datetime import datetime, timezone
-from .base_class import Base 
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-def create_db_and_tables():
-    if not Base: # This check should ideally not be needed if imports are correct
-        logger.error("SQLAlchemy Base not imported/defined. Cannot create tables.")
-        return
-    logger.info("Attempting to create database tables via SQLAlchemy models (Base.metadata.create_all)...")
-    try:
-        Base.metadata.create_all(bind=engine) # Uses the imported Base
-        logger.info("Database tables (SQLAlchemy models) checked/created successfully.")
-    except Exception as e:
-        logger.error(f"ERROR: Could not create database tables via SQLAlchemy: {e}", exc_info=True)
+# --- Application Specific Imports ---
+# Import Base FIRST (critical for models to inherit from)
+try:
+    from .base_class import Base # Base MUST come from here
+except ImportError as e_base:
+    print(f"CRITICAL ERROR: Could not import Base from .base_class: {e_base}")
+    # If Base cannot be imported, the app likely can't function with ORM
+    raise SystemExit("SQLAlchemy Base class not found.") from e_base
 
 
 # --- Model Imports (CRUCIAL: These must be correctly defined in app.db.models) ---
@@ -95,17 +93,17 @@ def get_db():
     finally:
         db.close()
 
+# --- Schema Creation Function (Define it ONCE after Base and engine are set up) ---
 def create_db_and_tables():
     """Creates all database tables defined in models.py inheriting from Base."""
-    if not Base:
-        logger.error("SQLAlchemy Base not imported/defined. Cannot create tables.")
-        return
+    # Base is imported from .base_class and should be valid here
     logger.info("Attempting to create database tables via SQLAlchemy models (Base.metadata.create_all)...")
     try:
-        Base.metadata.create_all(bind=engine)
+        Base.metadata.create_all(bind=engine) # 'Base' from .base_class is used
         logger.info("Database tables (SQLAlchemy models) checked/created successfully.")
     except Exception as e:
         logger.error(f"ERROR: Could not create database tables via SQLAlchemy: {e}", exc_info=True)
+        # Depending on severity, you might want to raise an error or exit
 
 # ==========================================
 # PLACEHOLDER ENCRYPTION FUNCTIONS - WARNING!
