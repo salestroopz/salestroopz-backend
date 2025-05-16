@@ -30,11 +30,23 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
-def decode_access_token(token: str) -> Optional[dict]:
-     """Decodes a JWT access token, returns payload or None if invalid/expired."""
-    print(f"DECODE_TOKEN_DEBUG: Using settings.SECRET_KEY = '{settings.SECRET_KEY}'")
-     try:
-         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-         return payload
-     except JWTError:
-         return None
+def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
+    # --- TEMPORARY DEBUGGING ---
+    # This block should be indented correctly under the function definition
+    if settings.environment == "development":
+        print(f"DECODE_TOKEN_DEBUG: Using settings.SECRET_KEY = '{settings.SECRET_KEY}' and ALGORITHMS: ['{settings.ALGORITHM}']")
+    # --- END TEMPORARY DEBUGGING ---
+
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        # Optional: You could log the decoded payload subject for further confirmation
+        # if settings.environment == "development" and payload and payload.get("sub"):
+        #     print(f"DECODE_TOKEN_DEBUG: Decoded subject (sub): {payload.get('sub')}")
+        return payload
+    except JWTError as e:
+        # Log the specific JWT error for debugging
+        logger.warning(f"JWTError during token decoding: {str(e)}. Token prefix: '{token[:30]}...'")
+        return None
+    except Exception as e_unhandled: # Catch other potential errors during decoding
+        logger.error(f"Unexpected error during token decoding: {str(e_unhandled)}", exc_info=True)
+        return None
