@@ -91,7 +91,7 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-
+print(f"CONFIG_DEBUG: Loaded settings.SECRET_KEY = '{settings.SECRET_KEY}'")
 # --- Configuration Warnings (Adjust default value used in check) ---
 if settings.SECRET_KEY == "ENV_VAR_NOT_SET_SECRET_KEY": # This check remains valid for the default case
     warnings.warn("SECURITY WARNING: SECRET_KEY could not be loaded from secret file or environment, using placeholder!", UserWarning)
