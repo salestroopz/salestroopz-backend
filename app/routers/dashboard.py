@@ -9,6 +9,7 @@ from app import schemas # For Pydantic response models
 from app.db import database as db_ops # Use an alias for database operations
 from app.db.models import User as UserModel
 from app.core.security import get_current_active_user # Assuming this is your main auth dependency
+from app.auth.dependencies import get_current_active_user
 # from app.utils.logger import logger # Assuming you have a configured logger utility
 import logging # Using standard logging if app.utils.logger is not set up
 
