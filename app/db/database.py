@@ -907,6 +907,88 @@ def get_leads_with_positive_status_for_dashboard(db: Session, organization_id: i
             dashboard_items.append(item)
         return dashboard_items
     except SQLAlchemyError as e: logger.error(f"DB Error get positive status for dashboard (Org {organization_id}): {e}", exc_info=True); return []
+def get_actionable_email_replies(db: Session, organization_id: int, limit: int = 50) -> List[Dict]:
+    """
+    Fetches email replies that are marked as unactioned by the user and have
+    an AI classification indicating they need review or action.
+    Returns a list of dictionaries with relevant information for the dashboard.
+    """
+    if not models.EmailReply or not models.Lead or not models.EmailCampaign or not models.LeadCampaignStatus or not LeadStatusEnum:
+        logger.error("DB: One or more models/enums missing for get_actionable_email_replies.")
+        return []
+
+    # Define AI classifications that are considered "actionable" for the dashboard
+    # This list might need adjustment based on your AIClassificationEnum and business logic
+    actionable_ai_classifications = [
+        # AIClassificationEnum.positive_interest.value, # Assuming you have this enum
+        # AIClassificationEnum.question.value,
+        # AIClassificationEnum.objection.value,
+        # Add any other AI classifications that require user attention
+        "positive_interest", # Using strings if your model stores strings
+        "question",
+        "objection",
+        "positive_reply_ai_flagged", # This might come from LeadCampaignStatus
+        "question_ai_flagged"        # This might come from LeadCampaignStatus
+    ]
+    
+    # Define LeadCampaignStatus statuses that are also relevant for showing actionable items
+    # (e.g., if an AI classification directly sets the LCS status)
+    actionable_lcs_statuses = [
+        LeadStatusEnum.positive_reply_ai_flagged.value,
+        LeadStatusEnum.question_ai_flagged.value,
+        LeadStatusEnum.manual_follow_up_needed.value
+    ]
+
+    try:
+        # We want to join EmailReply with Lead, EmailCampaign, and potentially LeadCampaignStatus
+        # to get all necessary context for the dashboard.
+        query = db.query(
+            models.EmailReply.id.label("reply_id"),
+            models.EmailReply.received_at.label("reply_received_at"),
+            models.EmailReply.cleaned_reply_text.label("reply_snippet"), # You might want full text or better snippet logic
+            models.EmailReply.ai_classification.label("reply_ai_classification"),
+            models.EmailReply.ai_summary.label("reply_ai_summary"),
+            models.Lead.id.label("lead_id"),
+            models.Lead.name.label("lead_name"),
+            models.Lead.email.label("lead_email"),
+            models.Lead.company.label("lead_company"),
+            models.EmailCampaign.id.label("campaign_id"),
+            models.EmailCampaign.name.label("campaign_name"),
+            models.LeadCampaignStatus.status.label("lead_campaign_status") # Current status of the lead in the campaign
+        ).select_from(models.EmailReply)\
+         .join(models.Lead, models.EmailReply.lead_id == models.Lead.id)\
+         .outerjoin(models.EmailCampaign, models.EmailReply.campaign_id == models.EmailCampaign.id) \
+         .outerjoin(models.LeadCampaignStatus, models.EmailReply.lead_campaign_status_id == models.LeadCampaignStatus.id) \
+         .filter(models.EmailReply.organization_id == organization_id)\
+         .filter(models.EmailReply.is_actioned_by_user == False) \
+         .filter(
+             or_(
+                 models.EmailReply.ai_classification.in_(actionable_ai_classifications),
+                 models.LeadCampaignStatus.status.in_(actionable_lcs_statuses) # Also consider LCS status
+             )
+         )
+
+        # Order by most recent replies first
+        results = query.order_by(models.EmailReply.received_at.desc()).limit(limit).all()
+
+        actionable_items = []
+        for row in results:
+            item = dict(row._asdict()) # Convert RowProxy to dict
+            # Further process snippet if needed
+            if item.get("reply_snippet"):
+                item["reply_snippet"] = item["reply_snippet"][:250] + "..." if len(item["reply_snippet"]) > 250 else item["reply_snippet"]
+            actionable_items.append(item)
+        
+        logger.info(f"DB: Found {len(actionable_items)} actionable replies for Org ID {organization_id}.")
+        return actionable_items
+
+    except AttributeError as ae: # Catch if a model is missing an expected attribute
+        logger.error(f"DB Model AttributeError in get_actionable_email_replies: {ae}", exc_info=True)
+        return []
+    except SQLAlchemyError as e:
+        logger.error(f"DB SQLAlchemyError in get_actionable_email_replies for Org ID {organization_id}: {e}", exc_info=True)
+        return []
+
 
 def count_appointments_set(db: Session, organization_id: int, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None) -> int:
     if not models.Lead: logger.error("DB: Lead model not loaded."); return 0
