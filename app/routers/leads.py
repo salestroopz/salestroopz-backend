@@ -8,6 +8,9 @@ from pydantic import EmailStr, ValidationError # For validating email within the
 # Import your project schemas, database, get_current_user, logger
 from app import schemas # Assuming your BulkImportSummary and LeadInput are in schemas
 from app.db import database
+from app.database import get_db # Adjust path as needed
+from app import crud # Or wherever your DB functions are
+from app.schemas import User # For current_user
 from app.auth.dependencies import get_current_user
 from app.utils.logger import logger
 
@@ -16,7 +19,17 @@ router = APIRouter(
     tags=["Lead Management"]
 )
 
-# ... (keep your existing lead CRUD endpoints: POST /, GET /, GET /{id}, PATCH /{id}, DELETE /{id}) ...
+@router.get("/api/v1/leads", ...) # Or whatever the path is
+async def read_leads(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db), # <--- IMPORTANT
+    current_user: User = Depends(get_current_active_user) # <--- IMPORTANT
+):
+    # ...
+    leads = crud.get_leads_by_organization(db, organization_id=current_user.organization_id, skip=skip, limit=limit) # <--- Pass db
+    # ...
+    return leads
 
 @router.post(
     "/upload-csv/",
