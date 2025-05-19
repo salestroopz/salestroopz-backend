@@ -7,17 +7,39 @@ from datetime import datetime # Needed for response model
 # --- Import necessary project modules ---
 # Use the Input/Response schemas designed for DB interaction
 from app.schemas import OfferingInput, OfferingResponse, UserPublic
-# Import the database module containing CRUD functions
 from app.db import database
+from app.database import get_db
+from app.crud import offering as offering_crud
 # Import the authentication dependency
 from app.auth.dependencies import get_current_user
 
 # --- Define Router ---
 # Consistent prefix and tags for Offering management
 router = APIRouter(
-    prefix="/api/v1/offerings", # Plural resource name is conventional
-    tags=["Offering Management"]
+    prefix="/api/v1/offerings",
+    tags=["offerings"],
 )
+
+@router.get("/", response_model=List[Offering]) # Or your specific response model
+def list_organization_offerings( # Changed to 'def' as per original traceback
+    active_only: Optional[bool] = Query(True, description="Filter for active offerings only. Defaults to True."),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Retrieve all offerings for the current user's organization.
+    Optionally filter by active status (defaults to active only).
+    """
+
+print(f"API: Listing offerings for Org ID: {current_user.organization_id} (Active only: {active_only})")
+    offerings = offering_crud.get_offerings_by_organization(
+        db=db,
+        organization_id=current_user.organization_id,
+        active_only=active_only
+    )
+    if not offerings:
+        return []
+    return offerings
 
 # --- POST Endpoint to create a NEW Offering ---
 @router.post("/", response_model=OfferingResponse, status_code=status.HTTP_201_CREATED)
