@@ -8,7 +8,7 @@ from datetime import datetime # Needed for response model
 # Assuming these schemas exist and ICPResponseAPI handles potential None values for JSON fields
 from app.schemas import ICPInput, ICPResponse, UserPublic
 from app.db import database
-from app.database import get_db
+from app.db.database import get_db
 from app.crud import icp as icp_crud
 from app.auth.dependencies import get_current_user
 from app.utils.logger import logger # Assuming logger is setup
