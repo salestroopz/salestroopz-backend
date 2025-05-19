@@ -8,7 +8,6 @@ from datetime import datetime, timezone
 from app import schemas # This will import all schemas defined in app/schemas.py
 from app.db import database
 from app.db.database import get_db
-from app.crud import campaign as campaign_crud
 from app.auth.dependencies import get_current_user # Assuming this provides your UserPublic model correctly
 from app.agents.campaign_generator import generate_campaign_steps # Import the AI agent
 from app.utils.logger import logger
