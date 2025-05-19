@@ -8,15 +8,35 @@ from datetime import datetime # Needed for response model
 # Assuming these schemas exist and ICPResponseAPI handles potential None values for JSON fields
 from app.schemas import ICPInput, ICPResponse, UserPublic
 from app.db import database
+from app.database import get_db
+from app.crud import icp as icp_crud
 from app.auth.dependencies import get_current_user
 from app.utils.logger import logger # Assuming logger is setup
 
 # --- Define Router ---
 # Changed prefix to /icps for standard REST pluralization
 router = APIRouter(
-    prefix="/api/v1/icps", # Plural for resource collection
-    tags=["ICP Management"]
+    prefix="/api/v1/icps",
+    tags=["icps"],
 )
+
+@router.get("/", response_model=List[ICP]) # Or your specific response model
+def list_organization_icps( # Note: Changed to 'def' as per original traceback showing run_in_threadpool
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Retrieve all ICPs (Ideal Customer Profiles) for the current user's organization.
+    """
+
+print(f"API: Fetching all ICPs for Org ID: {current_user.organization_id}")
+    icps_list = icp_crud.get_icps_by_organization_id(
+        db=db,
+        organization_id=current_user.organization_id
+    )
+    if not icps_list:
+        return []
+    return icps_list
 
 # --- POST Endpoint to CREATE a new ICP ---
 @router.post(
