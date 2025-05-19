@@ -29,7 +29,7 @@ def list_organization_icps( # Note: Changed to 'def' as per original traceback s
     Retrieve all ICPs (Ideal Customer Profiles) for the current user's organization.
     """
 
-print(f"API: Fetching all ICPs for Org ID: {current_user.organization_id}")
+    print(f"API: Fetching all ICPs for Org ID: {current_user.organization_id}")
     icps_list = icp_crud.get_icps_by_organization_id(
         db=db,
         organization_id=current_user.organization_id
