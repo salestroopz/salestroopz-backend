@@ -6,7 +6,7 @@ from typing import Optional
 # Import project modules
 from app.schemas import EmailSettingsInput, EmailSettingsResponse, UserPublic
 from app.db import database
-from app.database import get_db
+from app.db.database import get_db
 from app.crud import email_settings as email_settings_crud
 from app.schemas.email_settings import EmailSettings
 from app.auth.dependencies import get_current_user
