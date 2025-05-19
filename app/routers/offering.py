@@ -8,7 +8,7 @@ from datetime import datetime # Needed for response model
 # Use the Input/Response schemas designed for DB interaction
 from app.schemas import OfferingInput, OfferingResponse, UserPublic
 from app.db import database
-from app.database import get_db
+from app.db.database import get_db
 from app.crud import offering as offering_crud
 # Import the authentication dependency
 from app.auth.dependencies import get_current_user
