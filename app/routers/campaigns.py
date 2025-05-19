@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 # Import project modules
 from app import schemas # This will import all schemas defined in app/schemas.py
 from app.db import database
+from app.database import get_db
+from app.crud import campaign as campaign_crud
 from app.auth.dependencies import get_current_user # Assuming this provides your UserPublic model correctly
 from app.agents.campaign_generator import generate_campaign_steps # Import the AI agent
 from app.utils.logger import logger
@@ -16,6 +18,27 @@ router = APIRouter(
     prefix="/api/v1/campaigns",
     tags=["Campaign Management"]
 )
+
+@router.get("/", response_model=List[Campaign]) # Or your specific response model
+async def list_organization_campaigns(
+    active_only: Optional[bool] = Query(None, description="Filter for active campaigns only"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Retrieve all campaigns for the current user's organization.
+    Optionally filter by active status.
+    """
+ print(f"API: Listing campaigns for Org ID: {current_user.organization_id} (Active filter: {active_only})")
+    campaigns = campaign_crud.get_campaigns_by_organization(
+        db=db,
+        organization_id=current_user.organization_id,
+        active_only=active_only
+    )
+    if not campaigns:
+        # Optionally return an empty list or raise a 404 if no campaigns found is an error
+        return []
+    return campaigns    
 
 # --- Campaign Endpoints ---
 
