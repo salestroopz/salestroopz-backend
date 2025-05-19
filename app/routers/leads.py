@@ -9,7 +9,6 @@ from pydantic import EmailStr, ValidationError # For validating email within the
 from app import schemas # Assuming your BulkImportSummary and LeadInput are in schemas
 from app.db import database
 from app.db.database import get_db # Adjust path as needed
-from app import crud # Or wherever your DB functions are
 from app.schemas import User # For current_user
 from app.auth.dependencies import get_current_user
 from app.utils.logger import logger
