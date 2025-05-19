@@ -9,7 +9,6 @@ from datetime import datetime # Needed for response model
 from app.schemas import ICPInput, ICPResponse, UserPublic
 from app.db import database
 from app.db.database import get_db
-from app.crud import icp as icp_crud
 from app.auth.dependencies import get_current_user
 from app.utils.logger import logger # Assuming logger is setup
 
