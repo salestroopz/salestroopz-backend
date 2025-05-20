@@ -1,136 +1,130 @@
 # app/routers/offering.py
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query # Added Query
 from typing import List, Optional
-from datetime import datetime # Needed for response model
+from sqlalchemy.orm import Session # <--- IMPORTED Session
 
 # --- Import necessary project modules ---
-# Use the Input/Response schemas designed for DB interaction
-from app.schemas import OfferingInput, OfferingResponse, UserPublic
-from app.db import database
+from app.schemas import OfferingInput, OfferingResponse, UserPublic # OfferingResponse is key
+# from app.db import database # This might be where your CRUD functions are if not in a dedicated crud module
 from app.db.database import get_db
-# Import the authentication dependency
+from app.crud import offering as offering_crud # <--- EXAMPLE: Assuming app/crud/offering.py
 from app.auth.dependencies import get_current_user
+# from app.utils.logger import logger # Uncomment if you have a logger
 
 # --- Define Router ---
-# Consistent prefix and tags for Offering management
 router = APIRouter(
     prefix="/api/v1/offerings",
     tags=["offerings"],
 )
 
-@router.get("/", response_model=List[Offering]) # Or your specific response model
+# --- GET Endpoint to list Offerings for the Organization ---
+# This is the single, corrected version of this endpoint
+@router.get("/", response_model=List[OfferingResponse])
 def list_organization_offerings(
-    db: Session = Depends(get_db),
+    active_only: Optional[bool] = Query(None, description="Filter by active status. If not provided, returns all."), # Made it truly optional
+    db: Session = Depends(get_db), # <--- ADDED db session dependency
     current_user: UserPublic = Depends(get_current_user)
-    # active_only: bool = Query(True) # If you have query params
 ):
-    
-    print(f"API: Listing offerings for Org ID: {current_user.organization_id}")
+    """
+    Lists all offerings for the current user's organization.
+    Optionally filters by active status.
+    """
+    # logger.info(f"API: Listing offerings for Org ID: {current_user.organization_id} (Active only: {active_only})")
+    print(f"API: Listing offerings for Org ID: {current_user.organization_id} (Active only: {active_only})")
 
-  
-        offerings = offering_crud.get_offerings_by_organization
-            db=db,
-            organization_id=current_user.organization_id,
-            # active_only=active_only
-        )
-    # OR
     offerings = offering_crud.get_offerings_by_organization(
-    # ...
-    ) 
+        db=db,
+        organization_id=current_user.organization_id,
+        active_only=active_only # Pass the active_only filter
+    )
+    return offerings
+
 
 # --- POST Endpoint to create a NEW Offering ---
 @router.post("/", response_model=OfferingResponse, status_code=status.HTTP_201_CREATED)
 def create_new_offering(
-    offering_data: OfferingInput, # Validate request body against OfferingInput
-    current_user: UserPublic = Depends(get_current_user) # Require authentication
+    offering_data: OfferingInput,
+    db: Session = Depends(get_db), # <--- ADDED db session
+    current_user: UserPublic = Depends(get_current_user)
 ):
     """
     Creates a new offering for the current user's organization.
-    Requires authentication.
     """
+    # logger.info(f"API: Attempting to create offering '{offering_data.name}' for Org ID: {current_user.organization_id}")
     print(f"API: Attempting to create offering '{offering_data.name}' for Org ID: {current_user.organization_id}")
-    # Convert Pydantic model to dict for the database function
-    offering_dict = offering_data.dict()
-    # Call the database function to create the offering
-    created_offering = database.create_offering(
-        organization_id=current_user.organization_id,
-        offering_data=offering_dict
+
+    # Assuming offering_crud.create_offering expects db, obj_in, and organization_id
+    created_offering = offering_crud.create_offering(
+        db=db,
+        obj_in=offering_data, # Pass the Pydantic model directly
+        organization_id=current_user.organization_id
     )
-    # Handle potential database errors
+
     if not created_offering:
+        # logger.error(f"API Error: Failed to create offering in DB for Org ID {current_user.organization_id}")
         print(f"API Error: Failed to create offering in DB for Org ID {current_user.organization_id}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create offering.")
-    # Return the data of the created offering (validated by response_model)
-    print(f"API: Successfully created offering ID {created_offering.get('id')} for Org ID {current_user.organization_id}")
+
+    # logger.info(f"API: Successfully created offering ID {created_offering.id} for Org ID {current_user.organization_id}")
+    print(f"API: Successfully created offering ID {created_offering.id} for Org ID {current_user.organization_id}")
     return created_offering
-
-
-# --- GET Endpoint to list Offerings for the Organization ---
-@router.get("/", response_model=List[OfferingResponse])
-def list_organization_offerings(
-    active_only: bool = True, # Optional query parameter to filter by is_active flag
-    current_user: UserPublic = Depends(get_current_user) # Require authentication
-):
-    """
-    Lists all offerings (active by default) for the current user's organization.
-    Requires authentication.
-    """
-    print(f"API: Listing offerings for Org ID: {current_user.organization_id} (Active only: {active_only})")
-    # Call the database function to get offerings for the specific organization
-    offerings = database.get_offerings_by_organization( # <--- Correct name
-    organization_id=current_user.organization_id,
-    active_only=active_only
-    )
-    # FastAPI validates the list of dictionaries against List[OfferingResponse]
-    return offerings
 
 
 # --- GET Endpoint for a specific Offering ---
 @router.get("/{offering_id}", response_model=OfferingResponse)
 def get_single_offering(
-    offering_id: int, # Path parameter for the offering ID
-    current_user: UserPublic = Depends(get_current_user) # Require authentication
+    offering_id: int,
+    db: Session = Depends(get_db), # <--- ADDED db session
+    current_user: UserPublic = Depends(get_current_user)
 ):
     """
     Gets a specific offering by ID, ensuring it belongs to the user's organization.
-    Requires authentication.
     """
-    # --- CORRECTED PRINT STATEMENT ---
+    # logger.info(f"API: Getting offering ID {offering_id} for Org ID: {current_user.organization_id}")
     print(f"API: Getting offering ID {offering_id} for Org ID: {current_user.organization_id}")
-    # --- END CORRECTION ---
 
-    # Call database function, passing both IDs for authorization check
-    offering = database.get_offering_by_id(offering_id, current_user.organization_id)
-    # Handle case where offering doesn't exist or doesn't belong to the org
+    # Assuming offering_crud.get_offering expects db, id, and organization_id
+    offering = offering_crud.get_offering(
+        db=db,
+        id=offering_id,
+        organization_id=current_user.organization_id
+    )
+
     if not offering:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Offering not found.")
-    # Return the fetched offering data
     return offering
 
 
 # --- PUT Endpoint to update an Offering ---
 @router.put("/{offering_id}", response_model=OfferingResponse)
 def update_existing_offering(
-    offering_id: int, # Path parameter for the offering ID
+    offering_id: int,
     offering_data: OfferingInput, # Use input schema for update data validation
-    current_user: UserPublic = Depends(get_current_user) # Require authentication
+    db: Session = Depends(get_db), # <--- ADDED db session
+    current_user: UserPublic = Depends(get_current_user)
 ):
     """
     Updates an existing offering by ID, ensuring it belongs to the user's organization.
-    Requires authentication.
     """
+    # logger.info(f"API: Updating offering ID {offering_id} for Org ID: {current_user.organization_id}")
     print(f"API: Updating offering ID {offering_id} for Org ID: {current_user.organization_id}")
-    # Call database function to update, passing IDs and data dict
-    updated_offering = database.update_offering(
-        offering_id=offering_id,
-        organization_id=current_user.organization_id,
-        offering_data=offering_data.dict(exclude_unset=True) # Allow partial updates if desired
+
+    # Check if offering exists first
+    db_offering = offering_crud.get_offering(db=db, id=offering_id, organization_id=current_user.organization_id)
+    if not db_offering:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Offering not found.")
+
+    # Assuming offering_crud.update_offering expects db, db_obj (the existing offering), and obj_in (update data)
+    updated_offering = offering_crud.update_offering(
+        db=db,
+        db_obj=db_offering,
+        obj_in=offering_data # Pass Pydantic model; CRUD function can convert to dict if needed
     )
-    # Handle case where offering wasn't found or update failed
-    if not updated_offering:
-         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Offering not found or failed to update.")
-    # Return the updated offering data
+    # The update_offering function should handle the actual update and commit if successful.
+    # It should return the updated SQLAlchemy model instance.
+
+    # logger.info(f"API: Successfully updated offering ID {offering_id} for Org ID {current_user.organization_id}")
     print(f"API: Successfully updated offering ID {offering_id} for Org ID {current_user.organization_id}")
     return updated_offering
 
@@ -138,18 +132,26 @@ def update_existing_offering(
 # --- DELETE Endpoint for an Offering ---
 @router.delete("/{offering_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_single_offering(
-    offering_id: int, # Path parameter for the offering ID
-    current_user: UserPublic = Depends(get_current_user) # Require authentication
+    offering_id: int,
+    db: Session = Depends(get_db), # <--- ADDED db session
+    current_user: UserPublic = Depends(get_current_user)
 ):
     """
     Deletes a specific offering by ID, ensuring it belongs to the user's organization.
-    Requires authentication. Returns No Content on success.
+    Returns No Content on success.
     """
+    # logger.info(f"API: Deleting offering ID {offering_id} for Org ID: {current_user.organization_id}")
     print(f"API: Deleting offering ID {offering_id} for Org ID: {current_user.organization_id}")
-    # Call database function to delete
-    deleted = database.delete_offering(offering_id, current_user.organization_id)
-    # Handle case where offering wasn't found to be deleted
-    if not deleted:
+
+    # Assuming offering_crud.remove_offering expects db, id, and organization_id
+    # and returns the deleted object or raises an exception if not found.
+    deleted_offering = offering_crud.remove_offering(
+        db=db,
+        id=offering_id,
+        organization_id=current_user.organization_id
+    )
+
+    if not deleted_offering: # Adjust if your remove_offering returns True/False or raises
          raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Offering not found.")
-    # No response body for 204 status code
-    return None
+
+    return None # For 204 No Content
