@@ -11,7 +11,6 @@ from app.db.database import get_db # Corrected path for get_db
 # from app.db import database # This could be your CRUD module or just DB setup.
                             # If it's CRUD, then calls like database.create_icp are fine.
                             # If you have a dedicated icp_crud module, use that.
-from app.crud import icp as icp_crud # Example: if you have app/crud/icp.py
 
 from app.auth.dependencies import get_current_user # Assuming this returns UserPublic
 from app.utils.logger import logger
