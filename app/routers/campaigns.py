@@ -1,16 +1,23 @@
 # app/routers/campaigns.py
 
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Query # Added Query
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
+from sqlalchemy.orm import Session # <--- IMPORTED Session
 
 # Import project modules
-from app import schemas # This will import all schemas defined in app/schemas.py
-from app.db import database
-from app.db.database import get_db
-from app.auth.dependencies import get_current_user # Assuming this provides your UserPublic model correctly
-from app.agents.campaign_generator import generate_campaign_steps # Import the AI agent
+from app.schemas import ( # <--- EXPLICIT SCHEMA IMPORTS
+    CampaignResponse, CampaignInput, CampaignUpdate, CampaignDetailResponse,
+    CampaignStepResponse, UserPublic, CampaignEnrollLeadsRequest
+)
+# from app.db import database # Your CRUD functions seem to be here
+# For consistency with FastAPI patterns, database functions should accept a 'db' session.
+from app.db.database import get_db # For injecting DB session
+from app.auth.dependencies import get_current_user
+from app.agents.campaign_generator import generate_campaign_steps
 from app.utils.logger import logger
+# Assuming your CRUD functions are in app.db.database, let's alias it for clarity if needed
+from app.db import database as campaign_db_ops # Or import specific functions
 
 # Define Router
 router = APIRouter(
@@ -18,310 +25,240 @@ router = APIRouter(
     tags=["Campaign Management"]
 )
 
-@router.get("/", response_model=List[Campaign]) # Or your specific response model
-async def list_organization_campaigns(
-    active_only: Optional[bool] = Query(None, description="Filter for active campaigns only"),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
-):
-    """
-    Retrieve all campaigns for the current user's organization.
-    Optionally filter by active status.
-    """
-    print(f"API: Listing campaigns for Org ID: {current_user.organization_id} (Active filter: {active_only})")
-    campaigns = campaign_crud.get_campaigns_by_organization(
-        db=db,
-        organization_id=current_user.organization_id,
-        active_only=active_only
-    )
-    if not campaigns:
-        # Optionally return an empty list or raise a 404 if no campaigns found is an error
-        return []
-    return campaigns    
-
 # --- Campaign Endpoints ---
 
-@router.post("/", response_model=schemas.CampaignResponse, status_code=status.HTTP_201_CREATED)
-async def create_new_campaign_with_ai_steps( # Renamed for clarity
-    campaign_in: schemas.CampaignInput,
-    background_tasks: BackgroundTasks, # FastAPI BackgroundTasks
-    current_user: schemas.UserPublic = Depends(get_current_user) # Use UserPublic from schemas
+@router.post("/", response_model=CampaignResponse, status_code=status.HTTP_201_CREATED)
+async def create_new_campaign_with_ai_steps(
+    campaign_in: CampaignInput,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db), # <--- ADDED db
+    current_user: UserPublic = Depends(get_current_user)
 ):
-    """
-    Creates a new email campaign.
-    The AI will generate email steps in the background.
-    """
     org_id = current_user.organization_id
     logger.info(f"API: Creating campaign '{campaign_in.name}' for Org ID: {org_id}, ICP ID: {campaign_in.icp_id}, Offering ID: {campaign_in.offering_id}")
 
-    # --- Optional: Validate icp_id if provided ---
     if campaign_in.icp_id is not None:
-        icp = database.get_icp_by_id(icp_id=campaign_in.icp_id, organization_id=org_id)
+        icp = campaign_db_ops.get_icp_by_id(db=db, icp_id=campaign_in.icp_id, organization_id=org_id) # Pass db
         if not icp:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"ICP with ID {campaign_in.icp_id} not found for this organization."
-            )
-    # --- Optional: Validate offering_id if provided ---
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"ICP with ID {campaign_in.icp_id} not found.")
     if campaign_in.offering_id is not None:
-        offering = database.get_offering_by_id(offering_id=campaign_in.offering_id, organization_id=org_id)
+        offering = campaign_db_ops.get_offering_by_id(db=db, offering_id=campaign_in.offering_id, organization_id=org_id) # Pass db
         if not offering:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Offering with ID {campaign_in.offering_id} not found for this organization."
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Offering with ID {campaign_in.offering_id} not found.")
 
-    created_campaign = database.create_campaign(
+    created_campaign_dict = campaign_db_ops.create_campaign( # Pass db
+        db=db,
         organization_id=org_id,
         name=campaign_in.name,
         description=campaign_in.description,
         icp_id=campaign_in.icp_id,
         offering_id=campaign_in.offering_id,
-        is_active=campaign_in.is_active, # User can set initial active state
-        ai_status="pending" # Initial AI status
+        is_active=campaign_in.is_active,
+        ai_status="pending"
     )
-    if not created_campaign:
+    if not created_campaign_dict:
          logger.error(f"API Error: Failed to create campaign '{campaign_in.name}' for Org ID {org_id}")
-         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create campaign in database.")
+         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create campaign.")
 
-    campaign_id = created_campaign['id']
-
-    # Trigger AI agent in the background
+    campaign_id = created_campaign_dict['id']
     logger.info(f"API: Triggering AI step generation for Campaign ID: {campaign_id}")
     background_tasks.add_task(
         generate_campaign_steps,
+        db_session_factory=get_db, # Pass a way for the background task to get a DB session
         campaign_id=campaign_id,
         organization_id=org_id
-        # force_regeneration can be added as a param if needed for other endpoints
     )
-    
-    # The response model schemas.CampaignResponse does not include steps list by default
-    # created_campaign dict from database.create_campaign (which calls get_campaign_by_id)
-    # should have icp_name and offering_name already.
-    return schemas.CampaignResponse(**created_campaign)
+    return CampaignResponse(**created_campaign_dict)
 
 
-@router.get("/", response_model=List[schemas.CampaignResponse])
-async def list_organization_campaigns( # Renamed for clarity
-    active_only: Optional[bool] = None, # Now optional, can list all
-    current_user: schemas.UserPublic = Depends(get_current_user)
+@router.get("/", response_model=List[CampaignResponse])
+async def list_organization_campaigns(
+    active_only: Optional[bool] = Query(None, description="Filter for active campaigns only"), # Use Query
+    db: Session = Depends(get_db), # <--- ADDED db
+    current_user: UserPublic = Depends(get_current_user)
 ):
-    """Lists email campaigns for the current user's organization."""
     logger.info(f"API: Listing campaigns for Org ID: {current_user.organization_id} (Active filter: {active_only})")
-    campaigns = database.get_campaigns_by_organization(current_user.organization_id, active_only=active_only)
-    logger.info(f"API: Found {len(campaigns)} campaigns for Org ID: {current_user.organization_id}")
-    # Convert list of dicts to list of CampaignResponse objects
-    return [schemas.CampaignResponse(**campaign) for campaign in campaigns]
+    campaigns_data = campaign_db_ops.get_campaigns_by_organization( # Pass db
+        db=db,
+        organization_id=current_user.organization_id,
+        active_only=active_only
+    )
+    logger.info(f"API: Found {len(campaigns_data)} campaigns for Org ID: {current_user.organization_id}")
+    return [CampaignResponse(**campaign) for campaign in campaigns_data]
 
 
-@router.get("/{campaign_id}", response_model=schemas.CampaignDetailResponse) # Use CampaignDetailResponse
-async def get_single_campaign_details( # Renamed for clarity
+@router.get("/{campaign_id}", response_model=CampaignDetailResponse)
+async def get_single_campaign_details(
     campaign_id: int,
-    current_user: schemas.UserPublic = Depends(get_current_user)
+    db: Session = Depends(get_db), # <--- ADDED db
+    current_user: UserPublic = Depends(get_current_user)
 ):
-    """Gets detailed information for a specific campaign, including its steps."""
     org_id = current_user.organization_id
     logger.info(f"API: Getting campaign ID {campaign_id} for Org ID: {org_id}")
     
-    campaign_data = database.get_campaign_by_id(campaign_id, org_id)
+    campaign_data = campaign_db_ops.get_campaign_by_id(db=db, campaign_id=campaign_id, organization_id=org_id) # Pass db
     if not campaign_data:
         logger.warning(f"API: Campaign ID {campaign_id} not found for Org ID: {org_id}")
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found.")
 
-    campaign_steps = database.get_steps_for_campaign(campaign_id, org_id)
+    campaign_steps_data = campaign_db_ops.get_steps_for_campaign(db=db, campaign_id=campaign_id, organization_id=org_id) # Pass db
     
-    # Construct the CampaignDetailResponse
-    # Ensure campaign_data (a dict) and campaign_steps (list of dicts) are compatible
-    response_data = {**campaign_data, "steps": [schemas.CampaignStepResponse(**step) for step in campaign_steps]}
-    logger.info(f"API: Successfully retrieved campaign ID {campaign_id} with {len(campaign_steps)} steps.")
-    return schemas.CampaignDetailResponse(**response_data)
+    response_data = {**campaign_data, "steps": [CampaignStepResponse(**step) for step in campaign_steps_data]}
+    logger.info(f"API: Successfully retrieved campaign ID {campaign_id} with {len(campaign_steps_data)} steps.")
+    return CampaignDetailResponse(**response_data)
 
 
-@router.put("/{campaign_id}", response_model=schemas.CampaignResponse)
-async def update_existing_campaign_details( # Renamed for clarity
+@router.put("/{campaign_id}", response_model=CampaignResponse)
+async def update_existing_campaign_details(
     campaign_id: int,
-    campaign_update_data: schemas.CampaignUpdate, # Use CampaignUpdate schema
-    current_user: schemas.UserPublic = Depends(get_current_user)
+    campaign_update_data: CampaignUpdate,
+    db: Session = Depends(get_db), # <--- ADDED db
+    current_user: UserPublic = Depends(get_current_user)
 ):
-    """Updates an existing campaign's basic information."""
     org_id = current_user.organization_id
-    logger.info(f"API: Updating campaign ID {campaign_id} for Org ID: {org_id} with data: {campaign_update_data.dict(exclude_unset=True)}")
+    logger.info(f"API: Updating campaign ID {campaign_id} for Org ID: {org_id} with data: {campaign_update_data.model_dump(exclude_unset=True)}")
 
-    # Check if campaign exists and belongs to org
-    existing_campaign = database.get_campaign_by_id(campaign_id, org_id)
+    existing_campaign = campaign_db_ops.get_campaign_by_id(db=db, campaign_id=campaign_id, organization_id=org_id) # Pass db
     if not existing_campaign:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found.")
 
-    update_data_dict = campaign_update_data.dict(exclude_unset=True)
+    update_data_dict = campaign_update_data.model_dump(exclude_unset=True) # Use model_dump for Pydantic v2
     if not update_data_dict:
         logger.info(f"API: No update data provided for campaign {campaign_id}.")
-        # Return existing campaign data if no updates, or raise 400
-        return schemas.CampaignResponse(**existing_campaign)
-        # raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No update data provided.")
+        return CampaignResponse(**existing_campaign)
 
-    updated_campaign = database.update_campaign(
+    updated_campaign_dict = campaign_db_ops.update_campaign( # Pass db
+        db=db,
         campaign_id=campaign_id,
         organization_id=org_id,
         updates=update_data_dict
     )
-    if not updated_campaign:
-        # This might happen if update_campaign returns None on failure beyond not found
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update campaign information.")
+    if not updated_campaign_dict:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update campaign.")
     
     logger.info(f"API: Successfully updated campaign ID {campaign_id}.")
-    return schemas.CampaignResponse(**updated_campaign)
+    return CampaignResponse(**updated_campaign_dict)
 
 
 @router.delete("/{campaign_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_existing_campaign_record( # Renamed for clarity
+async def delete_existing_campaign_record(
     campaign_id: int,
-    current_user: schemas.UserPublic = Depends(get_current_user)
+    db: Session = Depends(get_db), # <--- ADDED db
+    current_user: UserPublic = Depends(get_current_user)
 ):
-    """Deletes a campaign and its associated steps."""
     org_id = current_user.organization_id
     logger.info(f"API: Deleting campaign ID {campaign_id} for Org ID: {org_id}")
 
-    # Check if campaign exists and belongs to org before attempting delete
-    existing_campaign = database.get_campaign_by_id(campaign_id, org_id)
+    existing_campaign = campaign_db_ops.get_campaign_by_id(db=db, campaign_id=campaign_id, organization_id=org_id) # Pass db
     if not existing_campaign:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found.")
 
-    deleted = database.delete_campaign(campaign_id=campaign_id, organization_id=org_id)
+    deleted = campaign_db_ops.delete_campaign(db=db, campaign_id=campaign_id, organization_id=org_id) # Pass db
     if not deleted:
-        # This case should ideally be caught by the check above, but as a safeguard
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete campaign.")
     
     logger.info(f"API: Successfully deleted campaign ID {campaign_id}.")
-    return None # For 204 No Content
+    return None
 
 
-# --- Campaign Step Endpoints (Revised) ---
-
-@router.get("/{campaign_id}/steps/", response_model=List[schemas.CampaignStepResponse])
-async def list_campaign_steps_read_only( # Renamed for clarity
+# --- Campaign Step Endpoints ---
+@router.get("/{campaign_id}/steps/", response_model=List[CampaignStepResponse])
+async def list_campaign_steps_read_only(
     campaign_id: int,
-    current_user: schemas.UserPublic = Depends(get_current_user)
+    db: Session = Depends(get_db), # <--- ADDED db
+    current_user: UserPublic = Depends(get_current_user)
 ):
-    """Lists all AI-generated steps for a specific campaign (read-only)."""
     org_id = current_user.organization_id
     logger.info(f"API: Listing steps for Campaign {campaign_id}, Org {org_id}")
     
-    campaign = database.get_campaign_by_id(campaign_id, org_id)
+    campaign = campaign_db_ops.get_campaign_by_id(db=db, campaign_id=campaign_id, organization_id=org_id) # Pass db
     if not campaign:
          raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found.")
 
-    steps = database.get_steps_for_campaign(campaign_id, org_id)
-    logger.info(f"API: Found {len(steps)} steps for Campaign {campaign_id}")
-    return [schemas.CampaignStepResponse(**step) for step in steps]
+    steps_data = campaign_db_ops.get_steps_for_campaign(db=db, campaign_id=campaign_id, organization_id=org_id) # Pass db
+    logger.info(f"API: Found {len(steps_data)} steps for Campaign {campaign_id}")
+    return [CampaignStepResponse(**step) for step in steps_data]
 
 
-@router.put("/{campaign_id}/steps/{step_id}", response_model=schemas.CampaignStepResponse)
-async def update_campaign_step_details( # Renamed for clarity
-    campaign_id: int, # Path parameter to scope the step to a campaign
+@router.put("/{campaign_id}/steps/{step_id}", response_model=CampaignStepResponse)
+async def update_campaign_step_details(
+    campaign_id: int,
     step_id: int,
-    step_update_data: schemas.CampaignStepUpdate, # Use specific update schema
-    current_user: schemas.UserPublic = Depends(get_current_user)
+    step_update_data: schemas.CampaignStepUpdate, # Explicitly from schemas
+    db: Session = Depends(get_db), # <--- ADDED db
+    current_user: UserPublic = Depends(get_current_user)
 ):
-    """Updates an existing campaign step (e.g., content edited by user)."""
     org_id = current_user.organization_id
     logger.info(f"API: Updating step ID {step_id} for Campaign {campaign_id}, Org {org_id}")
 
-    # Verify campaign exists and step belongs to it and user's org
-    campaign = database.get_campaign_by_id(campaign_id, org_id)
+    campaign = campaign_db_ops.get_campaign_by_id(db=db, campaign_id=campaign_id, organization_id=org_id) # Pass db
     if not campaign:
          raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Parent campaign not found.")
 
-    original_step = database.get_campaign_step_by_id(step_id, org_id)
-    if not original_step:
+    original_step_dict = campaign_db_ops.get_campaign_step_by_id(db=db, step_id=step_id, organization_id=org_id) # Pass db
+    if not original_step_dict:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign step not found.")
-    if original_step.get('campaign_id') != campaign_id:
+    if original_step_dict.get('campaign_id') != campaign_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Step does not belong to the specified campaign.")
 
-    updates_dict = step_update_data.dict(exclude_unset=True)
+    updates_dict = step_update_data.model_dump(exclude_unset=True) # Use model_dump for Pydantic v2
     if not updates_dict:
-        return schemas.CampaignStepResponse(**original_step) # No changes, return original
+        return CampaignStepResponse(**original_step_dict)
 
-    # If user edits, it's no longer purely AI crafted
     if "subject_template" in updates_dict or "body_template" in updates_dict:
         updates_dict['is_ai_crafted'] = False
 
-    updated_step = database.update_campaign_step(
+    updated_step_dict = campaign_db_ops.update_campaign_step( # Pass db
+        db=db,
         step_id=step_id,
         organization_id=org_id,
         updates=updates_dict
     )
-    if not updated_step:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update campaign step.")
+    if not updated_step_dict:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update step.")
     
     logger.info(f"API: Successfully updated step ID {step_id} for campaign {campaign_id}")
-    return schemas.CampaignStepResponse(**updated_step)
-
-
-# POST /{campaign_id}/steps/ is REMOVED (AI generates steps)
-# DELETE /{campaign_id}/steps/{step_id} can be added if needed to delete individual AI steps
+    return CampaignStepResponse(**updated_step_dict)
 
 
 # --- Lead Enrollment Endpoints ---
-
 @router.post("/{campaign_id}/enroll_leads", status_code=status.HTTP_200_OK, response_model=Dict[str, Any])
-async def enroll_specific_leads_into_campaign( # Renamed for clarity
+async def enroll_specific_leads_into_campaign(
     campaign_id: int,
-    enroll_request: schemas.CampaignEnrollLeadsRequest,
-    current_user: schemas.UserPublic = Depends(get_current_user)
+    enroll_request: CampaignEnrollLeadsRequest, # Explicitly from schemas
+    db: Session = Depends(get_db), # <--- ADDED db
+    current_user: UserPublic = Depends(get_current_user)
 ) -> Dict[str, Any]:
-    """Enrolls a provided list of lead IDs into a specified active campaign."""
-    # ... (Logic for this endpoint as defined in previous detailed response) ...
-    # Includes:
-    # 1. Validate campaign (exists, active, has steps)
-    # 2. Get first step delay
-    # 3. Loop enroll_request.lead_ids:
-    #    - Validate lead
-    #    - Check existing active enrollment (handle re-enrollment policy)
-    #    - Call database.enroll_lead_in_campaign
-    #    - Update next_email_due_at for the new status record
-    # 4. Return summary
     organization_id = current_user.organization_id
     logger.info(f"API: Enrolling leads {enroll_request.lead_ids} into Campaign {campaign_id} for Org {organization_id}")
 
-    campaign = database.get_campaign_by_id(campaign_id=campaign_id, organization_id=organization_id)
+    campaign = campaign_db_ops.get_campaign_by_id(db=db, campaign_id=campaign_id, organization_id=organization_id) # Pass db
     if not campaign: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Campaign ID {campaign_id} not found.")
     if not campaign.get("is_active"): raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Campaign '{campaign.get('name')}' is not active.")
     
-    campaign_steps = database.get_steps_for_campaign(campaign_id=campaign_id, organization_id=organization_id)
+    campaign_steps = campaign_db_ops.get_steps_for_campaign(db=db, campaign_id=campaign_id, organization_id=organization_id) # Pass db
     if not campaign_steps and campaign.get("ai_status") not in ["completed_partial", "completed"]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Campaign '{campaign.get('name')}' steps not ready (AI Status: {campaign.get('ai_status')}).")
-
-    first_step_delay_days = 0 # Default if no steps or first step has no delay defined
-    if campaign_steps:
-        first_step = min(campaign_steps, key=lambda x: x.get('step_number', float('inf')))
-        if first_step: first_step_delay_days = first_step.get('delay_days', 0)
     
     successful_enrollments = 0; failed_enrollments = 0; errors = []; processed_lead_ids = set()
 
     for lead_id in enroll_request.lead_ids:
         if lead_id in processed_lead_ids: continue
         processed_lead_ids.add(lead_id)
-        lead = database.get_lead_by_id(lead_id=lead_id, organization_id=organization_id)
+        lead = campaign_db_ops.get_lead_by_id(db=db, lead_id=lead_id, organization_id=organization_id) # Pass db
         if not lead: errors.append({"lead_id": lead_id, "error": "Lead not found."}); failed_enrollments += 1; continue
         
-        existing_status = database.get_lead_campaign_status(lead_id=lead_id, organization_id=organization_id)
-        if existing_status: # Simplified: if any status exists, don't re-enroll via this simple endpoint
-            errors.append({"lead_id": lead_id, "error": f"Lead already has campaign status: {existing_status.get('status')}."}); failed_enrollments += 1; continue
+        existing_status = campaign_db_ops.get_lead_campaign_status(db=db, lead_id=lead_id, organization_id=organization_id) # Pass db
+        if existing_status:
+            errors.append({"lead_id": lead_id, "error": f"Lead already has status: {existing_status.get('status')}."}); failed_enrollments += 1; continue
             
-        enrolled_status_record = database.enroll_lead_in_campaign(lead_id, campaign_id, organization_id)
+        enrolled_status_record = campaign_db_ops.enroll_lead_in_campaign(db=db, lead_id=lead_id, campaign_id=campaign_id, organization_id=organization_id) # Pass db
         if enrolled_status_record:
-            next_due = datetime.now(timezone.utc) # Assume immediate for step 0->1 if delay is 0
-            # More precise: next_due should be enrollment_time + timedelta(days=first_step_delay_days)
-            # The sending worker should ideally calculate the *first* send time based on enrollment time and first step delay.
-            # For now, let's make it due now if delay is 0, for simplicity of this endpoint.
-            # This means the enroll_lead_in_campaign sets current_step_number to 0.
-            # The worker will then look for step 1.
-            # Let's assume the sending worker calculates the first due date.
-            # For now, just ensure `next_email_due_at` is set, perhaps to now for the worker to pick up.
-            database.update_lead_campaign_status(
+            campaign_db_ops.update_lead_campaign_status( # Pass db
+                db=db,
                 status_id=enrolled_status_record['id'], 
                 organization_id=organization_id, 
-                updates={"next_email_due_at": datetime.now(timezone.utc)} # Mark as ready for processing by worker
+                updates={"next_email_due_at": datetime.now(timezone.utc)}
             )
             successful_enrollments += 1
         else:
@@ -334,62 +271,52 @@ async def enroll_specific_leads_into_campaign( # Renamed for clarity
     }
 
 
-def _background_enroll_icp_matched_leads(campaign_id_for_enrollment: int, org_id_for_enrollment: int):
-    """Background task to find leads matching a campaign's ICP and enroll them."""
-    # ... (Full logic for this function as defined in the previous detailed response) ...
-    # Includes:
-    # 1. Fetch campaign, verify ICP link
-    # 2. Call database.get_leads_by_icp_match
-    # 3. Loop through matched leads:
-    #    - Check existing active enrollment
-    #    - Call database.enroll_lead_in_campaign
-    #    - Update next_email_due_at for the new status record
-    # 4. Log summary
-    logger.info(f"BACKGROUND: Starting enrollment of ICP-matched leads for campaign ID {campaign_id_for_enrollment}, org {org_id_for_enrollment}.")
-    campaign = database.get_campaign_by_id(campaign_id=campaign_id_for_enrollment, organization_id=org_id_for_enrollment)
-    if not campaign or not campaign.get("icp_id"):
-        logger.error(f"BACKGROUND: Campaign {campaign_id_for_enrollment} not found or no ICP linked. Aborting."); return
-    
-    matched_leads = database.get_leads_by_icp_match(organization_id=org_id_for_enrollment, icp_id=campaign["icp_id"])
-    if not matched_leads: logger.info(f"BACKGROUND: No leads found matching ICP ID {campaign['icp_id']}."); return
-    
-    successful_enrollments = 0; skipped_count = 0
-    for lead in matched_leads:
-        lead_id = lead.get("id")
-        existing_status = database.get_lead_campaign_status(lead_id=lead_id, organization_id=org_id_for_enrollment)
-        if existing_status: skipped_count += 1; logger.debug(f"BACKGROUND: Lead {lead_id} already has campaign status, skipping."); continue
+def _background_enroll_icp_matched_leads(db_session_factory, campaign_id_for_enrollment: int, org_id_for_enrollment: int):
+    db: Session = next(db_session_factory()) # Get a new session for the background task
+    try:
+        logger.info(f"BACKGROUND: Starting enrollment of ICP-matched leads for campaign ID {campaign_id_for_enrollment}, org {org_id_for_enrollment}.")
+        campaign = campaign_db_ops.get_campaign_by_id(db=db, campaign_id=campaign_id_for_enrollment, organization_id=org_id_for_enrollment)
+        if not campaign or not campaign.get("icp_id"):
+            logger.error(f"BACKGROUND: Campaign {campaign_id_for_enrollment} not found or no ICP. Aborting."); return
         
-        enrolled = database.enroll_lead_in_campaign(lead_id, campaign_id_for_enrollment, org_id_for_enrollment)
-        if enrolled: 
-            database.update_lead_campaign_status(
-                status_id=enrolled['id'], 
-                organization_id=org_id_for_enrollment, 
-                updates={"next_email_due_at": datetime.now(timezone.utc)}
-            )
-            successful_enrollments += 1
-    logger.info(f"BACKGROUND: ICP-matched enrollment for campaign {campaign_id_for_enrollment} finished. Enrolled: {successful_enrollments}, Skipped: {skipped_count}.")
+        matched_leads = campaign_db_ops.get_leads_by_icp_match(db=db, organization_id=org_id_for_enrollment, icp_id=campaign["icp_id"])
+        if not matched_leads: logger.info(f"BACKGROUND: No leads found matching ICP ID {campaign['icp_id']}."); return
+        
+        successful_enrollments = 0; skipped_count = 0
+        for lead in matched_leads:
+            lead_id = lead.get("id")
+            existing_status = campaign_db_ops.get_lead_campaign_status(db=db, lead_id=lead_id, organization_id=org_id_for_enrollment)
+            if existing_status: skipped_count += 1; logger.debug(f"BACKGROUND: Lead {lead_id} already has status, skipping."); continue
+            
+            enrolled = campaign_db_ops.enroll_lead_in_campaign(db=db, lead_id=lead_id, campaign_id=campaign_id_for_enrollment, organization_id=org_id_for_enrollment)
+            if enrolled: 
+                campaign_db_ops.update_lead_campaign_status(
+                    db=db,
+                    status_id=enrolled['id'], 
+                    organization_id=org_id_for_enrollment, 
+                    updates={"next_email_due_at": datetime.now(timezone.utc)}
+                )
+                successful_enrollments += 1
+        logger.info(f"BACKGROUND: ICP-matched enrollment for campaign {campaign_id_for_enrollment} finished. Enrolled: {successful_enrollments}, Skipped: {skipped_count}.")
+    finally:
+        db.close()
 
 
 @router.post("/{campaign_id}/enroll_matched_icp_leads", status_code=status.HTTP_202_ACCEPTED, response_model=Dict[str, str])
-async def trigger_enroll_icp_matched_leads( # Renamed for clarity
+async def trigger_enroll_icp_matched_leads(
     campaign_id: int,
     background_tasks: BackgroundTasks,
-    current_user: schemas.UserPublic = Depends(get_current_user)
+    db: Session = Depends(get_db), # <--- ADDED db
+    current_user: UserPublic = Depends(get_current_user)
 ):
-    """Triggers a background task to find and enroll leads matching the campaign's linked ICP."""
-    # ... (Logic for this endpoint as defined in previous detailed response) ...
-    # Includes:
-    # 1. Validate campaign (exists, active, has ICP, has steps)
-    # 2. Add _background_enroll_icp_matched_leads to background_tasks
-    # 3. Return success message
     organization_id = current_user.organization_id
-    campaign = database.get_campaign_by_id(campaign_id=campaign_id, organization_id=organization_id)
+    campaign = campaign_db_ops.get_campaign_by_id(db=db, campaign_id=campaign_id, organization_id=organization_id) # Pass db
     if not campaign: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found.")
     if not campaign.get("icp_id"): raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Campaign not linked to an ICP.")
     if not campaign.get("is_active"): raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Campaign is not active.")
-    campaign_steps = database.get_steps_for_campaign(campaign_id=campaign_id, organization_id=organization_id)
+    campaign_steps = campaign_db_ops.get_steps_for_campaign(db=db, campaign_id=campaign_id, organization_id=organization_id) # Pass db
     if not campaign_steps and campaign.get("ai_status") not in ["completed_partial", "completed"]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Campaign steps not ready (AI: {campaign.get('ai_status')}).")
 
-    background_tasks.add_task(_background_enroll_icp_matched_leads, campaign_id, organization_id)
+    background_tasks.add_task(_background_enroll_icp_matched_leads, get_db, campaign_id, organization_id) # Pass db_session_factory
     return {"message": f"Process to enroll ICP-matched leads into campaign '{campaign.get('name')}' triggered."}
