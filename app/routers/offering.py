@@ -29,7 +29,7 @@ def list_organization_offerings(
     print(f"API: Listing offerings for Org ID: {current_user.organization_id}")
 
   
-        offerings = offering_crud.get_offerings_by_organization( #<-- TOO MUCH INDENT
+        offerings = offering_crud.get_offerings_by_organization
             db=db,
             organization_id=current_user.organization_id,
             # active_only=active_only
