@@ -6,6 +6,7 @@ import os
 from openai import OpenAI, APIError, AuthenticationError, RateLimitError, APIConnectionError, APITimeoutError
 from tenacity import retry, stop_after_attempt, wait_random_exponential
 from sqlalchemy.orm import Session # <--- IMPORTED Session
+from typing import Optional # For db: Optional[Session] in generate_campaign_steps
 
 # Assuming your database CRUD functions are in app.db.database
 # These functions will need to be updated to accept 'db: Session' as their first argument
@@ -77,6 +78,15 @@ def _construct_llm_prompt(campaign_data: dict, icp_details: dict, offering_detai
         if pain_points_solved: offering_summary += f"It solves pain points such as: {', '.join(pain_points_solved)}. "
         offering_summary += f"The goal is to invite them to '{cta}' if there's a mutual fit."
 
+    # --- Define the example JSON as a separate regular string ---
+    example_json_step = """
+    {
+        "step_number": 1, "delay_days": 0,
+        "subject_template": "Question about {{company_name}}'s approach to [Pain Area]",
+        "body_template": "Hi {{lead_name}},\\n\\nNoticed {{company_name}} is a leader in {{industry}}. Often, companies like yours face challenges with [Specific Pain Point].\\n\\nIs this something your team is currently exploring?\\n\\nBest,\\n[Your Name]",
+        "follow_up_angle": "Pattern Interrupt / Initial Pain Probe"
+    }"""
+
     prompt = f"""
     You are an expert Sales Development Representative (SDR) trained in the Sandler Selling System.
     Your mission is to craft a highly effective {num_steps}-step email outreach sequence for the campaign titled "{campaign_name}".
@@ -104,12 +114,7 @@ def _construct_llm_prompt(campaign_data: dict, icp_details: dict, offering_detai
     - Use placeholders like {{{{lead_name}}}}, {{{{company_name}}}}, {{{{title}}}}, {{{{industry}}}}. Newlines in body_template as \\n.
 
     Example (DO NOT just repeat this example):
-    {{
-        "step_number": 1, "delay_days": 0,
-        "subject_template": "Question about {{{{company_name}}}}'s approach to [Pain Area]",
-        "body_template": "Hi {{{{lead_name}}},\\n\\nNoticed {{{{company_name}}}} is a leader in {{{{industry}}}}. Often, companies like yours face challenges with [Specific Pain Point].\\n\\nIs this something your team is currently exploring?\\n\\nBest,\\n[Your Name]",
-        "follow_up_angle": "Pattern Interrupt / Initial Pain Probe"
-    }}
+    {example_json_step}
     ---
     GENERATE THE FULL {num_steps}-STEP EMAIL SEQUENCE JSON NOW:
     """
@@ -225,10 +230,8 @@ def _clear_existing_steps(db: Session, campaign_id: int, organization_id: int):
     if existing_steps:
         logger.info(f"AI AGENT: Clearing {len(existing_steps)} existing steps for campaign {campaign_id}.")
         for step in existing_steps:
-            # Ensure delete_campaign_step signature is (db, step_id, organization_id)
             if not delete_campaign_step(db=db, step_id=step['id'], organization_id=organization_id):
                 logger.error(f"AI AGENT: Failed to delete step ID {step['id']} for campaign {campaign_id}.")
-                # Decide if you want to raise an error here or just log and continue
 
 
 def generate_campaign_steps(db_session_factory, campaign_id: int, organization_id: int, force_regeneration: bool = False):
@@ -236,9 +239,9 @@ def generate_campaign_steps(db_session_factory, campaign_id: int, organization_i
     Generates email steps for a given campaign using an LLM.
     Manages its own database session via db_session_factory.
     """
-    db: Optional[Session] = None # Initialize db to None
+    db: Optional[Session] = None 
     try:
-        db = next(db_session_factory()) # Get a new session
+        db = next(db_session_factory()) 
         logger.info(f"AI AGENT: Task received for campaign_id: {campaign_id}, org_id: {organization_id}, force: {force_regeneration} with DB session.")
 
         campaign_data = get_campaign_by_id(db=db, campaign_id=campaign_id, organization_id=organization_id)
@@ -259,7 +262,7 @@ def generate_campaign_steps(db_session_factory, campaign_id: int, organization_i
         
         if force_regeneration:
             _clear_existing_steps(db=db, campaign_id=campaign_id, organization_id=organization_id)
-            # db.commit() might be needed here if _clear_existing_steps doesn't commit deletions
+            # Assuming _clear_existing_steps or subsequent operations will handle commit if needed.
 
         if not SIMULATE_LLM_CALL and not client:
             logger.error(f"AI AGENT: OpenAI client not available. Cannot generate for campaign {campaign_id}.")
@@ -268,9 +271,8 @@ def generate_campaign_steps(db_session_factory, campaign_id: int, organization_i
             return
 
         update_campaign_ai_status(db=db, campaign_id=campaign_id, organization_id=organization_id, ai_status="generating")
-        db.commit() # Commit 'generating' status immediately
+        db.commit() 
 
-        # --- Main generation logic ---
         try:
             icp_details = db_get_icp_by_id(db=db, icp_id=campaign_data["icp_id"], organization_id=organization_id) if campaign_data.get("icp_id") else None
             if campaign_data.get("icp_id") and not icp_details: logger.warning(f"AI AGENT: ICP {campaign_data['icp_id']} not found.")
@@ -301,24 +303,23 @@ def generate_campaign_steps(db_session_factory, campaign_id: int, organization_i
             
             final_status = "completed"
             if steps_saved_count < len(generated_steps_data) and steps_saved_count > 0: final_status = "completed_partial"
-            elif steps_saved_count == 0: final_status = "failed_llm_empty" # Or failed_db_save
+            elif steps_saved_count == 0: final_status = "failed_llm_empty"
             
             logger.info(f"AI AGENT: Final status for campaign {campaign_id}: {final_status}. Saved {steps_saved_count} steps.")
             update_campaign_ai_status(db=db, campaign_id=campaign_id, organization_id=organization_id, ai_status=final_status)
-            db.commit() # Commit all steps and final status
+            db.commit()
 
-        except Exception as generation_error: # Catch errors from LLM call, parsing, or DB saving steps
+        except Exception as generation_error:
             logger.error(f"AI AGENT: Error during LLM/DB step processing for campaign {campaign_id}: {generation_error}", exc_info=True)
-            db.rollback() # Rollback any partial step creations
+            if db.is_active: db.rollback() 
             update_campaign_ai_status(db=db, campaign_id=campaign_id, organization_id=organization_id, ai_status="failed")
-            db.commit() # Commit 'failed' status
+            db.commit()
 
-    except Exception as outer_error: # Catch any other unexpected errors (e.g., DB session issue)
+    except Exception as outer_error:
         logger.error(f"AI AGENT: Top-level unhandled error in generate_campaign_steps for campaign {campaign_id}: {outer_error}", exc_info=True)
-        if db and db.is_active: # Check if db is valid and session is active
-            db.rollback() # Rollback any pending changes if an error occurred before commit
-            # Consider if status update is possible/safe here
+        if db and db.is_active:
+            db.rollback()
     finally:
-        if db: # Check if db was successfully initialized
+        if db:
             db.close()
             logger.debug(f"AI AGENT: DB session closed for campaign {campaign_id} task.")
