@@ -20,25 +20,24 @@ router = APIRouter(
 )
 
 @router.get("/", response_model=List[Offering]) # Or your specific response model
-def list_organization_offerings( # Changed to 'def' as per original traceback
-    active_only: Optional[bool] = Query(True, description="Filter for active offerings only. Defaults to True."),
+def list_organization_offerings(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserPublic = Depends(get_current_user)
+    # active_only: bool = Query(True) # If you have query params
 ):
-    """
-    Retrieve all offerings for the current user's organization.
-    Optionally filter by active status (defaults to active only).
-    """
+    
+    print(f"API: Listing offerings for Org ID: {current_user.organization_id}")
 
-print(f"API: Listing offerings for Org ID: {current_user.organization_id} (Active only: {active_only})")
+  
+        offerings = offering_crud.get_offerings_by_organization( #<-- TOO MUCH INDENT
+            db=db,
+            organization_id=current_user.organization_id,
+            # active_only=active_only
+        )
+    # OR
     offerings = offering_crud.get_offerings_by_organization(
-        db=db,
-        organization_id=current_user.organization_id,
-        active_only=active_only
-    )
-    if not offerings:
-        return []
-    return offerings
+    # ...
+    ) 
 
 # --- POST Endpoint to create a NEW Offering ---
 @router.post("/", response_model=OfferingResponse, status_code=status.HTTP_201_CREATED)
