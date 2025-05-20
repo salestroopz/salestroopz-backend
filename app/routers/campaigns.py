@@ -28,7 +28,7 @@ async def list_organization_campaigns(
     Retrieve all campaigns for the current user's organization.
     Optionally filter by active status.
     """
- print(f"API: Listing campaigns for Org ID: {current_user.organization_id} (Active filter: {active_only})")
+    print(f"API: Listing campaigns for Org ID: {current_user.organization_id} (Active filter: {active_only})")
     campaigns = campaign_crud.get_campaigns_by_organization(
         db=db,
         organization_id=current_user.organization_id,
