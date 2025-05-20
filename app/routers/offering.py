@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session # <--- IMPORTED Session
 from app.schemas import OfferingInput, OfferingResponse, UserPublic # OfferingResponse is key
 # from app.db import database # This might be where your CRUD functions are if not in a dedicated crud module
 from app.db.database import get_db
-from app.crud import offering as offering_crud # <--- EXAMPLE: Assuming app/crud/offering.py
 from app.auth.dependencies import get_current_user
 # from app.utils.logger import logger # Uncomment if you have a logger
 
