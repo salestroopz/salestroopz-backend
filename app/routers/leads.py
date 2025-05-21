@@ -13,7 +13,6 @@ from app.schemas import ( # <--- EXPLICIT SCHEMA IMPORTS
 # from app.db import database # Your CRUD/DB functions
 from app.db.database import get_db
 from app.auth.dependencies import get_current_user # Assuming this provides UserPublic
-from app.crud import lead as lead_crud # <--- EXAMPLE: Assuming app/crud/lead.py
 from app.utils.logger import logger
 
 router = APIRouter(
