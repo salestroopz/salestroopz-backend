@@ -112,7 +112,7 @@ async def upload_leads_csv(
                 continue
 
             # Assuming lead_crud.save_lead (upsert) takes db, organization_id, and lead_data (Pydantic model or dict)
-            saved_lead = lead_crud.save_lead(
+            saved_lead = database.save_lead(
                 db=db,
                 organization_id=org_id,
                 lead_in=lead_input_obj # Pass validated Pydantic model
