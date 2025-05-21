@@ -259,6 +259,7 @@ router_modules_to_include = {
     "Campaigns": campaigns_router_module, "Email Settings": email_settings_router_module,
     "Leads": leads_router_module,
     "Dashboard Data": dashboard_router_module,
+    "Subscriptions": subscriptions_router_module
 }
 
 for name, module_instance in router_modules_to_include.items():
