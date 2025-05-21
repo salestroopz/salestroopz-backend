@@ -366,3 +366,34 @@ class CreateSubscriptionResponse(BaseModel):
     status: str
     client_secret: Optional[str] = None # For SCA
     # Add other relevant fields you want to return
+
+class SubscriptionBase(BaseModel):
+    stripe_price_id: str
+    stripe_product_id: Optional[str] = None
+    status: str
+    current_period_start: Optional[datetime] = None
+    current_period_end: Optional[datetime] = None
+    cancel_at_period_end: bool = False
+    trial_end_at: Optional[datetime] = None
+
+class SubscriptionCreate(SubscriptionBase):
+    stripe_subscription_id: str
+    stripe_customer_id: str
+    organization_id: int
+
+class SubscriptionUpdate(BaseModel): # For webhook updates primarily
+    status: Optional[str] = None
+    current_period_start: Optional[datetime] = None
+    current_period_end: Optional[datetime] = None
+    cancel_at_period_end: Optional[bool] = None
+    trial_end_at: Optional[datetime] = None
+
+class SubscriptionResponse(SubscriptionBase):
+    id: int
+    organization_id: int
+    stripe_subscription_id: str
+    stripe_customer_id: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
