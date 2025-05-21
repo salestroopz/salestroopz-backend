@@ -356,3 +356,13 @@ class AIClassificationEnum(str, Enum): # <--- DEFINE IT HERE
     not_applicable = "not_applicable"
     empty_reply = "empty_reply" # If you use this
     classification_failed = "classification_failed" # If you use this
+
+class CreateSubscriptionRequest(BaseModel):
+    payment_method_id: str
+    price_id: str # Stripe Price ID (e.g., price_xxxxxxxxxxxx)
+
+class CreateSubscriptionResponse(BaseModel):
+    subscription_id: str
+    status: str
+    client_secret: Optional[str] = None # For SCA
+    # Add other relevant fields you want to return
