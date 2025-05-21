@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session # <--- IMPORTED Session
 
 # --- Import necessary project modules ---
 from app.schemas import OfferingInput, OfferingResponse, UserPublic # OfferingResponse is key
-# from app.db import database # This might be where your CRUD functions are if not in a dedicated crud module
+from app.db import database # This might be where your CRUD functions are if not in a dedicated crud module
 from app.db.database import get_db
 from app.auth.dependencies import get_current_user
 # from app.utils.logger import logger # Uncomment if you have a logger
@@ -32,7 +32,7 @@ def list_organization_offerings(
     # logger.info(f"API: Listing offerings for Org ID: {current_user.organization_id} (Active only: {active_only})")
     print(f"API: Listing offerings for Org ID: {current_user.organization_id} (Active only: {active_only})")
 
-    offerings = offering_crud.get_offerings_by_organization(
+    offerings = database.get_offerings_by_organization(
         db=db,
         organization_id=current_user.organization_id,
         active_only=active_only # Pass the active_only filter
@@ -54,7 +54,7 @@ def create_new_offering(
     print(f"API: Attempting to create offering '{offering_data.name}' for Org ID: {current_user.organization_id}")
 
     # Assuming offering_crud.create_offering expects db, obj_in, and organization_id
-    created_offering = offering_crud.create_offering(
+    created_offering = database.create_offering(
         db=db,
         obj_in=offering_data, # Pass the Pydantic model directly
         organization_id=current_user.organization_id
@@ -84,7 +84,7 @@ def get_single_offering(
     print(f"API: Getting offering ID {offering_id} for Org ID: {current_user.organization_id}")
 
     # Assuming offering_crud.get_offering expects db, id, and organization_id
-    offering = offering_crud.get_offering(
+    offering = database.get_offering(
         db=db,
         id=offering_id,
         organization_id=current_user.organization_id
@@ -144,7 +144,7 @@ def delete_single_offering(
 
     # Assuming offering_crud.remove_offering expects db, id, and organization_id
     # and returns the deleted object or raises an exception if not found.
-    deleted_offering = offering_crud.remove_offering(
+    deleted_offering = database.remove_offering(
         db=db,
         id=offering_id,
         organization_id=current_user.organization_id
