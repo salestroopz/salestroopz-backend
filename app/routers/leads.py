@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session # <--- IMPORTED Session
 from app.schemas import ( # <--- EXPLICIT SCHEMA IMPORTS
     LeadResponse, LeadInput, BulkImportSummary, BulkImportErrorDetail, UserPublic
 )
-# from app.db import database # Your CRUD/DB functions
+from app.db import database # Your CRUD/DB functions
 from app.db.database import get_db
 from app.auth.dependencies import get_current_user # Assuming this provides UserPublic
 from app.utils.logger import logger
@@ -29,7 +29,7 @@ async def read_leads(
     current_user: UserPublic = Depends(get_current_user) # Use get_current_user for consistency
 ):
     logger.info(f"API: Fetching leads for Org ID: {current_user.organization_id}, skip: {skip}, limit: {limit}")
-    leads = lead_crud.get_leads_by_organization(
+    leads = database.get_leads_by_organization(
         db=db,
         organization_id=current_user.organization_id,
         skip=skip,
