@@ -1,23 +1,20 @@
-# app/routers/campaigns.py
-
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Query # Added Query
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Query
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
-from sqlalchemy.orm import Session # <--- IMPORTED Session
+from sqlalchemy.orm import Session
 
-# Import project modules
-from app.schemas import ( # <--- EXPLICIT SCHEMA IMPORTS
+# --- Import necessary project modules ---
+from app.schemas import (
     CampaignResponse, CampaignInput, CampaignUpdate, CampaignDetailResponse,
-    CampaignStepResponse, UserPublic, CampaignEnrollLeadsRequest
+    CampaignStepResponse, UserPublic, CampaignEnrollLeadsRequest,
+    CampaignStepUpdate  # <--- ENSURE THIS IS ADDED
 )
-# from app.db import database # Your CRUD functions seem to be here
-# For consistency with FastAPI patterns, database functions should accept a 'db' session.
-from app.db.database import get_db # For injecting DB session
+from app.db.database import get_db
 from app.auth.dependencies import get_current_user
 from app.agents.campaign_generator import generate_campaign_steps
 from app.utils.logger import logger
-# Assuming your CRUD functions are in app.db.database, let's alias it for clarity if needed
-from app.db import database as campaign_db_ops # Or import specific functions
+from app.db import database as campaign_db_ops
+
 
 # Define Router
 router = APIRouter(
