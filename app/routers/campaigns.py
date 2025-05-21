@@ -184,7 +184,7 @@ async def list_campaign_steps_read_only(
 async def update_campaign_step_details(
     campaign_id: int,
     step_id: int,
-    step_update_data: schemas.CampaignStepUpdate, # Explicitly from schemas
+    step_update_data: CampaignStepUpdate, # Explicitly from schemas
     db: Session = Depends(get_db), # <--- ADDED db
     current_user: UserPublic = Depends(get_current_user)
 ):
