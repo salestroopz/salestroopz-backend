@@ -27,15 +27,15 @@ def get_email_settings( # Changed to 'def' as per original traceback
     """
 
 org_id = current_user.organization_id
-    print(f"API: Getting email settings for Org ID: {org_id}")
+print(f"API: Getting email settings for Org ID: {org_id}")
 
-    settings_data = email_settings_crud.get_org_email_settings_from_db(
-        db=db,
-        organization_id=org_id
+settings_data = email_settings_crud.get_org_email_settings_from_db(
+    db=db,
+    organization_id=org_id
     )
-    if not settings_data:
-        raise HTTPException(status_code=404, detail="Email settings not found for this organization")
-    return settings_data
+if not settings_data:
+    raise HTTPException(status_code=404, detail="Email settings not found for this organization")
+return settings_data
 
 # --- GET Endpoint to retrieve email settings ---
 @router.get("/", response_model=Optional[EmailSettingsResponse])
