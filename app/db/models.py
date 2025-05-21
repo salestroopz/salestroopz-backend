@@ -29,10 +29,12 @@ class Organization(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, index=True, nullable=False)
-
+    stripe_customer_id = Column(String, nullable=True, unique=True, index=True)
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
-
+    
+    
     # Relationships
     users = relationship("User", back_populates="organization", cascade="all, delete-orphan")
     leads = relationship("Lead", back_populates="organization", cascade="all, delete-orphan")
@@ -40,7 +42,7 @@ class Organization(Base):
     offerings = relationship("Offering", back_populates="organization", cascade="all, delete-orphan")
     email_campaigns = relationship("EmailCampaign", back_populates="organization", cascade="all, delete-orphan")
     email_settings = relationship("OrganizationEmailSettings", back_populates="organization", uselist=False, cascade="all, delete-orphan")
-
+    subscription = relationship("Subscription", back_populates="organization", uselist=False, cascade="all, delete-orphan")
 
 class User(Base):
     __tablename__ = "users"
@@ -314,3 +316,26 @@ class EmailReply(Base):
     outgoing_email_log = relationship("OutgoingEmailLog", back_populates="email_replies")
     lead_campaign_status = relationship("LeadCampaignStatus", back_populates="email_replies")
     lead = relationship("Lead", back_populates="email_replies")
+
+class Subscription(Base):
+    __tablename__ = "subscriptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    # Link subscription to an organization
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), unique=True, nullable=False)
+
+    stripe_subscription_id = Column(String, unique=True, index=True, nullable=False)
+    stripe_customer_id = Column(String, index=True, nullable=False) # From the Organization's Stripe Customer
+    stripe_price_id = Column(String, nullable=False) # The Stripe Price ID
+    stripe_product_id = Column(String, nullable=True) # Optional: The Stripe Product ID
+
+    status = Column(String(50), nullable=False) # e.g., "active", "trialing", "past_due", "canceled", "incomplete"
+    current_period_start = Column(DateTime(timezone=True), nullable=True)
+    current_period_end = Column(DateTime(timezone=True), nullable=True)
+    cancel_at_period_end = Column(Boolean, default=False, nullable=False)
+    trial_end_at = Column(DateTime(timezone=True), nullable=True) # If you offer trials
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    organization = relationship("Organization", back_populates="subscription")
