@@ -7,7 +7,9 @@ from pathlib import Path
 import asyncio # For potential async tasks if agents are async
 from datetime import timezone, datetime # For APScheduler timezone
 from typing import Optional
-
+import stripe
+from app.utils.config import settings
+from app.utils.logger import logger
 
 # --- sys.path modification ---
 try:
@@ -17,6 +19,12 @@ try:
 except Exception as e_path:
     # Use a basic print here as logger might not be initialized yet
     print(f"Warning: Could not modify sys.path: {e_path}")
+
+if settings.STRIPE_SECRET_KEY and settings.STRIPE_SECRET_KEY.startswith("sk_"):
+    stripe.api_key = settings.STRIPE_SECRET_KEY
+    logger.info("Stripe API key configured.")
+else:
+    logger.error("STRIPE_SECRET_KEY is not configured correctly. Stripe integration will fail.")
 
 # --- Third-Party Imports ---
 try:
