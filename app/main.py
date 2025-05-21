@@ -11,6 +11,7 @@ import stripe
 from app.utils.config import settings
 from app.utils.logger import logger
 
+
 # --- sys.path modification ---
 try:
     PROJECT_ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -97,6 +98,7 @@ try:
     from app.routers import email_settings as email_settings_router_module
     from app.routers import leads as leads_router_module
     from app.routers import dashboard as dashboard_router_module
+    from app.routers import subscriptions as subscriptions_router_module
     logger.info("Successfully imported modules from 'app.routers'.")
 except Exception as e_routers:
     logger.error(f"FATAL ERROR during import from 'app.routers': {type(e_routers).__name__} - {e_routers}", exc_info=True)
@@ -286,6 +288,8 @@ async def read_root():
         "version": app.version,
         "timestamp_utc": datetime.now(timezone.utc).isoformat()
     }
+
+
 
 # --- Final Confirmation Log ---
 logger.info(f"--- {getattr(settings, 'app_name', 'SalesTroopz API')} FastAPI application module loading complete. Awaiting Uvicorn startup events. ---")
