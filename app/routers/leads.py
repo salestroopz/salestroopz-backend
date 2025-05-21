@@ -32,7 +32,7 @@ async def read_leads(
     leads = database.get_leads_by_organization(
         db=db,
         organization_id=current_user.organization_id,
-        skip=skip,
+        offset=skip,
         limit=limit
     )
     # Pydantic will automatically convert list of ORM objects to List[LeadResponse]
