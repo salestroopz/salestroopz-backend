@@ -75,7 +75,10 @@ class Settings(BaseSettings):
     ENABLE_IMAP_REPLY_POLLER: bool = Field(default=True, description="Enable the periodic IMAP reply poller")
     IMAP_POLLER_INTERVAL_MINUTES: int = Field(default=10, gt=0, description="How often the IMAP poller runs")
 
-
+    STRIPE_PUBLISHABLE_KEY: str = "pk_test_YOUR_DEFAULT_PUBLISHABLE_KEY_FOR_LOCAL_DEV" # Fallback if not in env
+    STRIPE_SECRET_KEY: str = "sk_test_YOUR_DEFAULT_SECRET_KEY_FOR_LOCAL_DEV"         # Fallback if not in env
+  
+    
     @property
     def allowed_origins_list(self) -> List[str]:
         if not self.ALLOWED_ORIGINS: # Handle if ALLOWED_ORIGINS itself could be None/empty
@@ -115,3 +118,7 @@ try:
 except ImportError:
     print(f"[{settings.environment.upper()}] Settings loaded (basic print). Email sending configured for AWS SES in region: {settings.AWS_REGION}")
     print(f"SECRET_KEY loaded (basic print): {'Yes' if settings.SECRET_KEY != 'ENV_VAR_NOT_SET_SECRET_KEY' else 'No (Using Default/Placeholder)'}")
+
+class Settings(BaseSettings):
+    # ... your existing settings ...
+    
