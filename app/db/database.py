@@ -732,6 +732,52 @@ def get_org_email_settings_from_db(db: Session, organization_id: int, decrypt: b
     except SQLAlchemyError as e: logger.error(f"DB Error get email settings for Org {organization_id}: {e}", exc_info=True); return None
 
 # ==========================================
+# SUBSCRIPTION CRUD - ADDED/MODIFIED
+# ==========================================
+def create_or_update_subscription(db: Session, sub_in: SubscriptionCreate) -> Optional[models.Subscription]:
+    if not models.Subscription: logger.error("DB: Subscription model not loaded."); return None
+    if not hasattr(sub_in, 'stripe_subscription_id') or not sub_in.stripe_subscription_id:
+        logger.error(f"DB Error: stripe_subscription_id is required in sub_in for Org {sub_in.organization_id}")
+        return None
+    try:
+        db_sub = db.query(models.Subscription).filter(models.Subscription.stripe_subscription_id == sub_in.stripe_subscription_id).first()
+        
+        # Prepare data from Pydantic model, ensuring all fields exist on the model or have defaults
+        # Use model_dump to get all fields from Pydantic model that are set
+        update_data = sub_in.model_dump(exclude_unset=False) # Pydantic v2
+        # update_data = sub_in.dict(exclude_unset=False) # Pydantic v1
+        
+        if db_sub: # Update existing
+            logger.info(f"Updating existing subscription {db_sub.stripe_subscription_id} for Org {sub_in.organization_id}")
+            for key, value in update_data.items():
+                if hasattr(db_sub, key): # Only set attributes that exist on the model
+                    setattr(db_sub, key, value)
+                # else: logger.warning(f"Field {key} from SubscriptionCreate not found on models.Subscription during update.")
+        else: # Create new
+            logger.info(f"Creating new subscription for Org {sub_in.organization_id} with Stripe Sub ID {sub_in.stripe_subscription_id}")
+            # Ensure all required fields for models.Subscription are present in update_data from SubscriptionCreate
+            # or have defaults in the model itself.
+            db_sub = models.Subscription(**update_data)
+            db.add(db_sub)
+        
+        db.commit()
+        db.refresh(db_sub)
+        return db_sub
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error(f"DB Error creating/updating subscription for Org {sub_in.organization_id}, Stripe Sub ID {sub_in.stripe_subscription_id}: {e}", exc_info=True)
+        return None
+
+def get_subscription_by_org_id(db: Session, organization_id: int) -> Optional[models.Subscription]:
+    if not models.Subscription: logger.error("DB: Subscription model not loaded."); return None
+    try:
+        return db.query(models.Subscription).filter(models.Subscription.organization_id == organization_id).first()
+    except SQLAlchemyError as e:
+        logger.error(f"DB Error getting subscription for Org {organization_id}: {e}", exc_info=True)
+        return None
+
+
+# ==========================================
 # LEAD & IMAP RELATED QUERIES
 # ==========================================
 def get_leads_by_icp_match(db: Session, organization_id: int, icp_id: int, limit: int = 1000) -> List[models.Lead]:
