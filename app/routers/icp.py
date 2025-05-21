@@ -39,7 +39,7 @@ def create_new_icp(
     # Assuming icp_crud.create_icp(db=db, icp_in=icp_data, organization_id=current_user.organization_id)
     # Or if your app.db.database module has the create_icp function:
     # from app.db import database as icp_db_ops (or a better alias)
-    created_icp = icp_crud.create_icp( # Or your direct database module call
+    created_icp = database.create_icp( # Or your direct database module call
         db=db,
         icp_in=icp_data,
         organization_id=current_user.organization_id
@@ -71,7 +71,7 @@ def list_organization_icps(
     logger.info(f"API: Fetching all ICPs for Org ID: {current_user.organization_id}")
 
     # Assuming icp_crud.get_icps_by_organization_id(db, organization_id)
-    icps_list = icp_crud.get_icps_by_organization_id( # Or your direct database module call
+    icps_list = database.get_icps_by_organization_id( # Or your direct database module call
         db=db,
         organization_id=current_user.organization_id
     )
@@ -95,7 +95,7 @@ def get_specific_icp(
     logger.info(f"API: Fetching ICP ID {icp_id} for Org ID: {current_user.organization_id}")
 
     # Assuming icp_crud.get_icp(db, icp_id, organization_id)
-    icp_data = icp_crud.get_icp( # Or your direct database module call
+    icp_data = database.get_icp( # Or your direct database module call
         db=db,
         id=icp_id, # Assuming your CRUD function takes 'id'
         organization_id=current_user.organization_id
@@ -128,7 +128,7 @@ def update_specific_icp(
     logger.info(f"API: Attempting to update ICP ID {icp_id} for Org ID: {current_user.organization_id}")
 
     # Assuming icp_crud.update_icp(db, icp_id, organization_id, icp_in)
-    updated_icp = icp_crud.update_icp( # Or your direct database module call
+    updated_icp = database.update_icp( # Or your direct database module call
         db=db,
         id=icp_id, # Assuming your CRUD function takes 'id'
         organization_id=current_user.organization_id,
@@ -161,7 +161,7 @@ def delete_specific_icp(
     logger.info(f"API: Attempting to delete ICP ID {icp_id} for Org ID: {current_user.organization_id}")
 
     # Assuming icp_crud.remove_icp(db, icp_id, organization_id)
-    deleted_icp = icp_crud.remove_icp( # Or your direct database module call
+    deleted_icp = database.remove_icp( # Or your direct database module call
         db=db,
         id=icp_id, # Assuming your CRUD function takes 'id'
         organization_id=current_user.organization_id
