@@ -9,7 +9,7 @@ from pydantic import EmailStr, ValidationError # For validating email within the
 from app import schemas # Assuming your BulkImportSummary and LeadInput are in schemas
 from app.db import database
 from app.db.database import get_db # Adjust path as needed
-from app.schemas import User # For current_user
+from app.schemas import UserPublic # For current_user
 from app.auth.dependencies import get_current_user
 from app.utils.logger import logger
 
@@ -23,7 +23,7 @@ async def read_leads(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db), # <--- IMPORTANT
-    current_user: User = Depends(get_current_active_user) # <--- IMPORTANT
+    current_user: UserPublic = Depends(get_current_active_user) # <--- IMPORTANT
 ):
     # ...
     leads = crud.get_leads_by_organization(db, organization_id=current_user.organization_id, skip=skip, limit=limit) # <--- Pass db
