@@ -11,6 +11,7 @@ from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy import create_engine, func, and_, or_, text, inspect # Added inspect
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from app.schemas import SubscriptionCreate
 
 # --- Application Specific Imports ---
 
@@ -1034,6 +1035,39 @@ def get_recent_appointments_list(db: Session, organization_id: int, limit: int =
             for r in results
         ]
     except SQLAlchemyError as e: logger.error(f"DB Error get recent appointments: {e}", exc_info=True); return []
+
+def create_or_update_subscription(db: Session, sub_in: SubscriptionCreate) -> Optional[models.Subscription]:
+    try:
+        # Try to find existing by stripe_subscription_id to handle potential webhook race conditions or retries
+        db_sub = db.query(models.Subscription).filter(models.Subscription.stripe_subscription_id == sub_in.stripe_subscription_id).first()
+        if db_sub: # Update existing
+            logger.info(f"Updating existing subscription {db_sub.stripe_subscription_id} for Org {sub_in.organization_id}")
+            db_sub.status = sub_in.status
+            db_sub.stripe_price_id = sub_in.stripe_price_id
+            db_sub.stripe_product_id = sub_in.stripe_product_id
+            db_sub.current_period_start = sub_in.current_period_start
+            db_sub.current_period_end = sub_in.current_period_end
+            db_sub.cancel_at_period_end = sub_in.cancel_at_period_end
+            db_sub.trial_end_at = sub_in.trial_end_at
+        else: # Create new
+            logger.info(f"Creating new subscription for Org {sub_in.organization_id} with Stripe Sub ID {sub_in.stripe_subscription_id}")
+            db_sub = models.Subscription(**sub_in.model_dump()) # Pydantic v2
+            # db_sub = models.Subscription(**sub_in.dict()) # Pydantic v1
+            db.add(db_sub)
+        db.commit()
+        db.refresh(db_sub)
+        return db_sub
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error(f"DB Error creating/updating subscription for Org {sub_in.organization_id}, Stripe Sub ID {sub_in.stripe_subscription_id}: {e}", exc_info=True)
+        return None
+
+def get_subscription_by_org_id(db: Session, organization_id: int) -> Optional[models.Subscription]:
+    try:
+        return db.query(models.Subscription).filter(models.Subscription.organization_id == organization_id).first()
+    except SQLAlchemyError as e:
+        logger.error(f"DB Error getting subscription for Org {organization_id}: {e}", exc_info=True)
+        return None
 
 # ==========================================
 # Main execution for schema creation
