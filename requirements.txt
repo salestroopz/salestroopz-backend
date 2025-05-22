@@ -49,5 +49,5 @@ psycopg2-binary>=2.9.0
 APScheduler
 SQLAlchemy 
 
-pip install stripe
+stripe
 # Add any other specific libraries YOUR agents or utilities require
