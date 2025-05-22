@@ -21,11 +21,18 @@ except Exception as e_path:
     # Use a basic print here as logger might not be initialized yet
     print(f"Warning: Could not modify sys.path: {e_path}")
 
-if settings.STRIPE_SECRET_KEY and settings.STRIPE_SECRET_KEY.startswith("sk_"):
+# Configure Stripe API key at application startup
+if settings.STRIPE_SECRET_KEY and settings.STRIPE_SECRET_KEY.startswith("sk_test_"): # Check for "sk_test_" for test keys
     stripe.api_key = settings.STRIPE_SECRET_KEY
-    logger.info("Stripe API key configured.")
+    logger.info(f"Stripe API key configured with key: {settings.STRIPE_SECRET_KEY[:15]}...") # Log a portion for verification
+elif settings.STRIPE_SECRET_KEY and settings.STRIPE_SECRET_KEY.startswith("sk_live_"): # Check for "sk_live_" for live keys
+    stripe.api_key = settings.STRIPE_SECRET_KEY
+    logger.info(f"Stripe API key configured with LIVE key: {settings.STRIPE_SECRET_KEY[:15]}...")
+    logger.warning("CAUTION: Using LIVE Stripe API key!")
 else:
-    logger.error("STRIPE_SECRET_KEY is not configured correctly. Stripe integration will fail.")
+    logger.error(f"STRIPE_SECRET_KEY is MISSING or INVALID in settings. Value: '{settings.STRIPE_SECRET_KEY}'. Stripe integration WILL FAIL.")
+    # Depending on how critical Stripe is, you might even raise an error here to prevent startup
+    # raise RuntimeError("Stripe Secret Key is not configured correctly.")
 
 # --- Third-Party Imports ---
 try:
