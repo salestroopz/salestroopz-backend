@@ -75,8 +75,9 @@ class Settings(BaseSettings):
     ENABLE_IMAP_REPLY_POLLER: bool = Field(default=True, description="Enable the periodic IMAP reply poller")
     IMAP_POLLER_INTERVAL_MINUTES: int = Field(default=10, gt=0, description="How often the IMAP poller runs")
 
-    STRIPE_PUBLISHABLE_KEY: str = "pk_test_YOUR_DEFAULT_PUBLISHABLE_KEY_FOR_LOCAL_DEV" # Fallback if not in env
-    STRIPE_SECRET_KEY: str = "sk_test_YOUR_DEFAULT_SECRET_KEY_FOR_LOCAL_DEV"         # Fallback if not in env
+    STRIPE_PUBLISHABLE_KEY: Optional[str] = os.getenv("STRIPE_PUBLISHABLE_KEY")
+    STRIPE_SECRET_KEY: Optional[str] = os.getenv("STRIPE_SECRET_KEY")
+    STRIPE_WEBHOOK_SECRET: Optional[str] = os.getenv("STRIPE_WEBHOOK_SECRET") # For later webhook verification
   
     
     @property
@@ -94,6 +95,9 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+# Debug print for Stripe key (can be removed after verification)
+print(f"CONFIG_DEBUG: Loaded settings.STRIPE_SECRET_KEY = '{settings.STRIPE_SECRET_KEY}'")
+print(f"CONFIG_DEBUG: Loaded settings.STRIPE_PUBLISHABLE_KEY = '{settings.STRIPE_PUBLISHABLE_KEY}'")
 print(f"CONFIG_DEBUG: Loaded settings.SECRET_KEY = '{settings.SECRET_KEY}'")
 # --- Configuration Warnings (Adjust default value used in check) ---
 if settings.SECRET_KEY == "ENV_VAR_NOT_SET_SECRET_KEY": # This check remains valid for the default case
@@ -108,6 +112,11 @@ if not settings.DEFAULT_SENDER_EMAIL:
 if not settings.allowed_origins_list and "*" not in getattr(settings, "ALLOWED_ORIGINS", ""): # Check if actual list is empty and not wildcard
     warnings.warn("CONFIG WARNING: ALLOWED_ORIGINS environment variable is not set or empty (and not wildcard). CORS errors likely.", UserWarning)
 
+# Add warnings for Stripe keys if not set
+if not settings.STRIPE_PUBLISHABLE_KEY:
+    warnings.warn("STRIPE WARNING: STRIPE_PUBLISHABLE_KEY environment variable not set. Stripe.js will fail.", UserWarning)
+if not settings.STRIPE_SECRET_KEY:
+    warnings.warn("STRIPE WARNING: STRIPE_SECRET_KEY environment variable not set. Stripe backend operations will fail.", UserWarning)
 
 # Use logger carefully here as it's initialized after settings
 # The print statements in get_secret_key_from_file_or_env will show up earlier in logs.
@@ -115,7 +124,10 @@ try:
     from app.utils.logger import logger # Try to use your app's logger if available
     logger.info(f"[{settings.environment.upper()}] Settings loaded. Email sending configured for AWS SES in region: {settings.AWS_REGION}")
     logger.info(f"SECRET_KEY loaded: {'Yes' if settings.SECRET_KEY != 'ENV_VAR_NOT_SET_SECRET_KEY' else 'No (Using Default/Placeholder)'}")
+    logger.info(f"STRIPE_SECRET_KEY loaded: {'Yes' if settings.STRIPE_SECRET_KEY else 'No'}")
+    logger.info(f"STRIPE_PUBLISHABLE_KEY loaded: {'Yes' if settings.STRIPE_PUBLISHABLE_KEY else 'No'}")
 except ImportError:
     print(f"[{settings.environment.upper()}] Settings loaded (basic print). Email sending configured for AWS SES in region: {settings.AWS_REGION}")
     print(f"SECRET_KEY loaded (basic print): {'Yes' if settings.SECRET_KEY != 'ENV_VAR_NOT_SET_SECRET_KEY' else 'No (Using Default/Placeholder)'}")
-
+    print(f"STRIPE_SECRET_KEY loaded (basic print): {'Yes' if settings.STRIPE_SECRET_KEY else 'No'}")
+    print(f"STRIPE_PUBLISHABLE_KEY loaded (basic print): {'Yes' if settings.STRIPE_PUBLISHABLE_KEY else 'No'}")
