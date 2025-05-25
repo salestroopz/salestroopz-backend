@@ -13,7 +13,7 @@ st.set_page_config(
 # --- Load and Display Logo in Sidebar (Consistent across all pages) ---
 try:
     logo_path = "assets/salestroopz_logo.png"
-    st.sidebar.image(logo_path, use_column_width='auto', width=180) # Adjust width
+    st.sidebar.image(logo_path, use_container_width=True, width=180) # Adjust width
     # st.sidebar.title("SalesTroopz") # Title can be part of the logo or main page
     st.sidebar.markdown("---")
 except FileNotFoundError:
