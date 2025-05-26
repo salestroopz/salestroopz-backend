@@ -13,21 +13,24 @@ import time
 # For the app itself, "wide" is often preferred. Let's keep it centered for the landing.
 st.set_page_config(
     page_title="SalesTroopz – AI-Powered Appointment Setter",
-    page_icon="assets/salestroopz_logo.png", # Make sure this path is correct
-    layout="centered", # As per your content
-    initial_sidebar_state="collapsed" # Landing page usually has sidebar collapsed initially
+    page_icon="🚀",  # <--- CHANGE TO EMOJI FIRST FOR TESTING
+    layout="centered",
+    initial_sidebar_state="collapsed"
 )
 
 # --- Load and Display Logo in Sidebar (Consistent across all pages) ---
-try:
-    logo_path = "assets/salestroopz_logo.png"
-    st.sidebar.image(logo_path, width=150) # Adjusted width for sidebar
-    # st.sidebar.title("SalesTroopz") # Title might be redundant if logo is clear
+# --- Load and Display Logo in Sidebar (Consistent across all pages) ---
+# try:
+#     logo_path = "assets/salestroopz_logo.png"
+#     st.sidebar.image(logo_path, width=150)
+#     st.sidebar.title("SalesTroopz")
+#     st.sidebar.markdown("---")
+# except FileNotFoundError:
+#     st.sidebar.error("Logo image not found at 'assets/salestroopz_logo.png'")
+# except Exception as e:
+#     st.sidebar.error(f"Error loading logo: {e}")
+    st.sidebar.title("SalesTroopz") # Keep title for now
     st.sidebar.markdown("---")
-except FileNotFoundError:
-    st.sidebar.error("Logo image not found at 'assets/salestroopz_logo.png'")
-except Exception as e:
-    st.sidebar.error(f"Error loading logo: {e}")
 
 # --- Session State Initialization ---
 if 'auth_token' not in st.session_state:
