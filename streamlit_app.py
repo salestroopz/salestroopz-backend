@@ -29,8 +29,8 @@ st.set_page_config(
 #     st.sidebar.error("Logo image not found at 'assets/salestroopz_logo.png'")
 # except Exception as e:
 #     st.sidebar.error(f"Error loading logo: {e}")
-    st.sidebar.title("SalesTroopz") # Keep title for now
-    st.sidebar.markdown("---")
+   st.sidebar.title("SalesTroopz") # Keep title for now
+   st.sidebar.markdown("---")
 
 # --- Session State Initialization ---
 if 'auth_token' not in st.session_state:
