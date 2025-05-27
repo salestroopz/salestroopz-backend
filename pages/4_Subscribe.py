@@ -5,132 +5,7 @@ import time
 import requests # For direct API calls if you ever need them from Python (though JS component handles payment)
 import json
 
-# --- Configuration ---
-# It's good practice to get this from st.secrets or a shared config module
-FASTAPI_BACKEND_URL = os.getenv("BACKEND_API_URL", "http://localhost:8000")
-STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY", "pk_test_YOUR_STRIPE_TEST_PUBLISHABLE_KEY_HERE") # Replace default
 
-# Define your plans and their Stripe Price IDs (for the BASE recurring fee)
-# The metered item for success fee is added on the backend when the base subscription is created.
-PLANS = {
-    "Launchpad": {
-        "name": "Launchpad Plan",
-        "price_display": "$199/mo",
-        "base_price_id": "price_YOUR_LAUNCHPAD_MONTHLY_BASE_PRICE_ID", # Replace!
-        "description": "Ideal for getting started. Includes 500 leads, 2 ICPs, 3 campaigns.",
-        "success_fee_info": "+ $50 per qualified meeting-intent reply.",
-        "features": [
-            "AI-Powered Campaign Generation",
-            "Intelligent Reply Classification",
-            "Basic Performance Analytics",
-            "500 Leads/Month",
-            "2 ICP Definitions",
-            "3 Active Campaigns"
-        ]
-    },
-    "Scale": {
-        "name": "Scale Plan",
-        "price_display": "$499/mo",
-        "base_price_id": "price_YOUR_SCALE_MONTHLY_BASE_PRICE_ID", # Replace!
-        "description": "For growing teams needing more volume and CRM integration.",
-        "success_fee_info": "+ $35 per qualified meeting-intent reply.",
-        "features": [
-            "All Launchpad Features",
-            "CRM Synchronization",
-            "Advanced Performance Analytics",
-            "1,500 Leads/Month",
-            "5 ICP Definitions",
-            "10 Active Campaigns"
-        ]
-    },
-    "Enterprise": {
-        "name": "Enterprise Plan",
-        "price_display": "Custom Pricing",
-        "base_price_id": None, # Handled manually
-        "description": "Tailored solutions, dedicated support, and custom integrations for large teams.",
-        "success_fee_info": "Success fee based on % of qualified pipeline (negotiated).",
-        "features": [
-            "All Scale Features",
-            "Custom Lead Limits & Campaign Caps",
-            "Bespoke Integrations",
-            "Dedicated Account Manager",
-            "Premium Support"
-        ],
-        "cta_label": "Contact Us for Enterprise",
-        "cta_link": "mailto:sales@salestroopz.com" # Or your contact page
-    }
-}
-
-def display_subscription_page():
-    st.title("🚀 Subscribe to SalesTroopz")
-
-    if not st.session_state.get("auth_token"):
-        st.warning("Please log in or sign up to subscribe to a plan.")
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("Login", use_container_width=True):
-                st.switch_page("pages/1_Login.py")
-        with col2:
-            if st.button("Sign Up", use_container_width=True):
-                st.switch_page("pages/2_Signup.py")
-        st.stop() # Stop further execution of this page if not logged in
-
-    auth_token = st.session_state.auth_token
-    user_email = st.session_state.get("user_email", "User")
-
-    # --- Display Current Subscription Status (Optional but good) ---
-    # You would fetch this from yourExcellent! Login and signup working well is a huge step forward. Now, let's tackle the subscription page (`pages/4_Subscribe.py`) where users can select a plan and go through the Stripe payment backend if you have an endpoint for it
-    # For now, we can use a placeholder or update it after subscription
-    current_sub_status = st.session_state.get("subscription_status", "Not Subscribed")
-    if current_sub_status == "active":
-        st.success(f"You are currently subscribed to a plan! ({st.session_state.get('subscribed_plan_name', 'Active Plan')})")
-        # TODO: Add link to manage subscription (e.g., Stripe Customer Portal)
-        # if st.button("Manage Subscription"):
-            # Call backend to get Stripe Portal link, then st.link_button or st.markdown flow.
-
-
-# **Assumptions:**
-
-# 1.  **FastAPI Backend Ready:** Your `/api/v1/subscriptions/create-subscription` endpoint is implemented, tested (e.g., with Postman), link
-        return # Don't show plan selection if already active (or show upgrade options)
-    elif current_sub_status != "Not Subscribed": # e.g., past_due, canceled
-        st.warning(f"Your current subscription status: {current_sub_status.replace('_', ' ').capitalize()}")
-
-
-    st.markdown("Choose the plan that's right for your sales team's needs and start automating your outreach today!")
-    st.markdown("---")
-
-    # --- Plan Selection UI ---
-    # Create columns for plans
-    plan_keys = list(PLANS.keys())
-    cols = st.columns(len(plan_keys))
-
-    selected_price_id_for_checkout = None
-    selected_plan_name_for_checkout = None
-
-    for i, plan and working correctly (creates Stripe Customer, Stripe Subscription, adds metered item, saves to your DB, handles SCA).
-# 2.  **Stripe Setup:**
-    *   You have your Stripe **Publishable Key** (Test mode).
-    *   You have **Price IDs** (Test mode) for your "Launchpad" and "Scale" base plans (e.g., `price_LMNmonthlyBase`, `price_XYZmonthlyBase`).
-    *   You have **Price IDs** for your metered "meeting-intent reply" fees for each plan (e.g., `price_LMNmeteredReply`, `price_XYZmeteredReply`).
-#3.  **Streamlit Authentication:** `st.session_state.auth_token` is populated after a user logs in.
-# 4.  **File Structure:** You have:
-    *   `pages/4_Subscribe.py`
-    *   `components/stripe_checkout.html`
-
----
-
-**Step 1: Refine `pages/4_Subscribe.py`**
-
-This Streamlit page will:
-*   Ensure the user is logged in.
-*   Display your pricing plans.
-*   Allow the user to select a plan.
-*   Once a plan is selected, render the `stripe_checkout.html` component, passing the necessary data to it (auth token, selected base plan's Price ID, backend URL, Stripe publishable key).
-*   Receive and display the outcome from the Stripe checkout component.
-
-```python
-# pages/4_Subscribe.py
 _key in enumerate(plan_keys):
         with cols[i]:
             plan = PLANS[plan_key]
@@ -146,8 +21,6 @@ _key in enumerate(plan_keys):
                 
                 if plan["base_price_id"]: # For Launchpad and Scale
                     if st.button(f"Choose {plan['name']}", key=f"chooseimport streamlit as st
-import os
-import time # For potential delays or UX niceties
 
 # --- Configuration ---
 # Use st.secrets for sensitive or environment-specific values in deployed apps
