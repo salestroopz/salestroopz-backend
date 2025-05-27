@@ -1,40 +1,25 @@
 # pages/4_Subscribe.py
 import streamlit as st
 import os
-import time
-import requests # For direct API calls if you ever need them from Python (though JS component handles payment)
-import json
-
-
-_key in enumerate(plan_keys):
-        with cols[i]:
-            plan = PLANS[plan_key]
-            with st.container(border=True):
-                st.subheader(plan["name"])
-                st.markdown(f"**{plan['price_display']}**")
-                if plan.get("success_fee_info"):
-                    st.caption(plan["success_fee_info"])
-                st.markdown(plan["description"])
-                with st.expander("View Features"):
-                    for feature in plan["features"]:
-                        st.markdown(f"- {feature}")
-                
-                if plan["base_price_id"]: # For Launchpad and Scale
-                    if st.button(f"Choose {plan['name']}", key=f"chooseimport streamlit as st
+import time # For potential delays or UX niceties
+# requests and json might not be strictly needed here if all API calls are handled by the JS component,
+# but good to have if you plan to add direct Python API calls from this page later (e.g., to fetch current sub status).
+# import requests 
+# import json
 
 # --- Configuration ---
 # Use st.secrets for sensitive or environment-specific values in deployed apps
 # For local development, os.getenv can fall back to defaults.
+# Ensure these secrets/env vars are set correctly in your Streamlit environment (e.g., .streamlit/secrets.toml or Render env vars)
 FASTAPI_BACKEND_URL = st.secrets.get("FASTAPI_BACKEND_URL", os.getenv("BACKEND_API_URL", "http://localhost:8000"))
-STRIPE_PUBLISHABLE_KEY = st.secrets.get("STRIPE_PUBLISHABLE_KEY", os.getenv("STRIPE_PUBLISHABLE_KEY", "pk_test_YOUR_FALLBACK_PUBLISHABLE_KEY"))
+STRIPE_PUBLISHABLE_KEY = st.secrets.get("STRIPE_PUBLISHABLE_KEY", os.getenv("STRIPE_PUBLISHABLE_KEY", "pk_test_YOUR_FALLBACK_PUBLISHABLE_KEY")) # Ensure this is your actual TEST publishable key
 
 # Define your plans and their Stripe Price IDs (for the BASE recurring fee)
-# The metered item Price IDs will be handled on the backend when the subscription is created.
 PLANS_CONFIG = {
-    "launchpad": { # Use a consistent key, e.g., lowercase plan name
+    "launchpad": {
         "name": "Launchpad Plan",
         "display_price": "$199/mo",
-        "base_fee_stripe_price_id": "price_YOUR_LAUNCHPAD_MONTHLY_BASE_PRICE_ID", # Replace!
+        "base_fee_stripe_price_id": "price_YOUR_LAUNCHPAD_MONTHLY_BASE_PRICE_ID", # <<<--- REPLACE THIS
         "description": "Ideal for getting started. Includes 500 leads, 2 ICPs, 3 campaigns.",
         "success_fee_display": "+ $50 / meeting-intent reply",
         "features": ["500 Leads/mo", "2 ICP Definitions", "3 Active Campaigns", "AI Campaign Generation", "Basic Analytics"]
@@ -42,111 +27,89 @@ PLANS_CONFIG = {
     "scale": {
         "name": "Scale Plan",
         "display_price": "$499/mo",
-        "base_fee_stripe_price_id": "price_YOUR_SCALE_MONTHLY_BASE_PRICE_ID", # Replace!
+        "base_fee_stripe_price_id": "price_YOUR_SCALE_MONTHLY_BASE_PRICE_ID", # <<<--- REPLACE THIS
         "description": "For growing teams. Includes 1,500 leads, CRM sync, 5 campaigns.",
         "success_fee_display": "+ $35 / meeting-intent reply",
         "features": ["1,500 Leads/mo", "5 ICP Definitions", "5 Active Campaigns", "AI Campaign Generation", "Advanced Analytics", "CRM Sync (Beta)"]
+    },
+    "enterprise": { # Example for Enterprise (display only, no direct Stripe component)
+        "name": "Enterprise Plan",
+        "display_price": "Custom Pricing",
+        "base_fee_stripe_price_id": None, # Not directly subscribable via this component
+        "description": "Tailored solutions, dedicated support, and custom integrations for large teams.",
+        "success_fee_display": "Success fee based on % of qualified pipeline (negotiated).",
+        "features": ["All Scale Features", "Custom Limits", "Bespoke Integrations", "Dedicated Support"],
+        "cta_button_label": "Contact Sales",
+        "cta_action": "contact_sales" # Special action to handle differently
     }
-    # Add "Enterprise" here if you want to display it, with a "Contact Us" button
 }
 
 def display_subscription_page():
     st.title("🚀 Subscribe to SalesTroopz")
-    st.markdown_{plan_key}", use_container_width=True, type="primary"):
-                        st.session_state.selected_price_id = plan["base_price_id"]
-                        st.session_state.selected_plan_name = plan["name"]
-                        # We don't rerun here; the Stripe component will be displayed below
-                        # based on this session state.
-                elif plan.get("cta_link"): # For Enterprise
-                    st.link_button(plan["cta_label"], plan["cta_link"], use_container_width=True)
-
-
-    # --- Stripe Checkout Component Section ---
-    if st.session_state.get("selected_price_id"):
-        st.markdown("---")
-        st.subheader(f"Complete Your Subscription: {st.session_state.selected_plan_name}")
-        st.markdown("Please enter your payment details below. Securely processed by Stripe.")
-
-        # Get the component value from the previous run (if any)
-        component_result = st.session_state.get("stripe_checkout_result")
-
-        if component_result:
-            if component_result.get("success"):
-                st.success(f"Subscription successful! Status: {component_result.get('status', 'N/A')}")
-                st.balloons()
-                if component_result.get("subscription_id"):
-                     st.write(f"Your Subscription ID: {component_result.get('subscription_id')}")
-                # Update session state to reflect active subscription
-                st.session_state.subscription_status = "active" # Or the status from response
-                st.session_state.subscribed_plan_name = st.session_state.selected_plan_name
-                # Clear selection and result to avoid re-processing
-                del st.session_state["selected_price_id"]
-                del st.session_state["stripe_checkout_result"]
-                if st.button("Go to Dashboard"):
-                    st.switch_page("pages/0_App.py")
-                st.stop() # Stop further rendering of payment form on this run
-            elif component_result.get("error"):
-                st.error(f"Subscription failed: {component_result.get('error')}")
-            elif component_result.get("requires_action"):
-                st.warning("Subscription requires further action.("Choose the plan that best fits your sales outreach needs.")
+    st.markdown("Choose the plan that best fits your sales outreach needs.")
     st.markdown("---")
 
     # --- Authentication Check ---
     if 'auth_token' not in st.session_state or not st.session_state.auth_token:
-        st.warning("Please log in to manage your subscription or choose a plan.")
-        if st.button("Go to Login", key="sub_page_login_btn"):
-            st.switch_page("pages/1_Login.py")
-        return
+        st.warning("Please log in or sign up to subscribe to a plan.")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Go to Login", key="sub_page_login_btn", use_container_width=True):
+                st.switch_page("pages/1_Login.py")
+        with col2:
+            if st.button("Go to Sign Up", key="sub_page_signup_btn", use_container_width=True):
+                st.switch_page("pages/2_Signup.py")
+        return # Stop further execution if not logged in
 
     auth_token = st.session_state.auth_token
 
-    # TODO: Check current subscription status from backend
-    # For now, we'll assume they are choosing a new plan or upgrading.
-    # current_sub_status = get_current_subscription_status_api(auth_token) # You'd need this API
-    # if current_sub_status and current_sub_status.get("status") == "active":
-    #     st.success(f"You are currently subscribed to the {current_sub_status.get('plan_name', 'current')} plan.")
-    #     st.write("To change your plan or manage billing, please visit your account settings (link to Stripe Customer Portal).")
-    #     # Add button for Stripe Customer Portal here
-    #     return
-
+    # TODO (Future): Fetch current subscription status from backend and display it.
+    # current_sub = get_current_subscription_api(auth_token)
+    # if current_sub and current_sub.get("status") == "active":
+    #     st.success(f"You are currently subscribed to: {current_sub.get('plan_name')}")
+    #     # Add link to Stripe Customer Portal or manage subscription page
+    #     return # Don't show plan selection if already active
 
     # --- Plan Selection ---
     st.subheader("Select Your Plan:")
     
-    # Using columns for a nicer layout of plan cards
     plan_keys = list(PLANS_CONFIG.keys())
     cols = st.columns(len(plan_keys))
-
-    selected_price_id_for_checkout = None
 
     for i, plan_key in enumerate(plan_keys):
         with cols[i]:
             plan = PLANS_CONFIG[plan_key]
-            with st.container(border=True):
-                st.subheader(plan["name"])
-                st.markdown(f"**{plan['display_price']}**")
+            with st.container(border=True): # Use border=True for a card-like effect
+                st.header(plan["name"]) # Use header for plan names
+                st.markdown(f"## **{plan['display_price']}**")
                 st.caption(plan["success_fee_display"])
                 st.markdown(f"*{plan['description']}*")
-                with st.expander("View Features"):
-                    for feature in plan["features"]:
-                        st.markdown(f"- {feature}")
                 
-                if st.button(f"Choose {plan['name']}", key=f"choose_plan_{plan_key}", use_container_width=True, type="primary"):
-                    st.session_state.selected_price_id_for_checkout = plan["base_fee_stripe_price_id"]
-                    st.session_state.selected_plan_name_for_checkout = plan["name"]
-                    # Clear previous checkout results when a new plan is chosen before payment attempt
-                    if "stripe_checkout_result" in st.session_state:
-                        del st.session_state["stripe_checkout_result"]
-                    st.rerun() # Rerun to show the payment form for the selected plan
+                st.markdown("**Key Features:**")
+                for feature in plan["features"]:
+                    st.markdown(f"- {feature}")
+                
+                st.markdown("---") # Little separator before button
+                
+                if plan.get("base_fee_stripe_price_id"): # For Launchpad and Scale
+                    if st.button(f"Choose {plan['name']}", key=f"choose_plan_{plan_key}", use_container_width=True, type="primary"):
+                        st.session_state.selected_price_id_for_checkout = plan["base_fee_stripe_price_id"]
+                        st.session_state.selected_plan_name_for_checkout = plan["name"]
+                        if "stripe_checkout_result" in st.session_state: # Clear previous results
+                            del st.session_state["stripe_checkout_result"]
+                        st.rerun()
+                elif plan.get("cta_action") == "contact_sales": # For Enterprise
+                    st.link_button(plan["cta_button_label"], "mailto:your_sales_email@example.com?subject=Enterprise Plan Inquiry", use_container_width=True)
+
 
     st.markdown("---")
 
     # --- Payment Form Section (Appears after a plan is selected) ---
-    if "selected_price_id_for_checkout" in st.session_state and st.session_state.selected_price_id_for_checkout:
+    if st.session_state.get("selected_price_id_for_checkout"):
         price_id_to_use = st.session_state.selected_price_id_for_checkout
         plan_name_to_use = st.session_state.selected_plan_name_for_checkout
 
-        st.subheader(f"Payment for: {plan_name_to_use}")
+        st.header(f"💳 Payment for: {plan_name_to_use}") # Use header
         st.caption("Please enter your card details below. Securely processed by Stripe.")
 
         # --- Display Checkout Result ---
@@ -157,94 +120,64 @@ def display_subscription_page():
                 st.balloons()
                 if component_value.get("subscription_id"):
                      st.write(f"Your Stripe Subscription ID: {component_value.get('subscription_id')}")
-                # TODO: Update st.session_state.subscription_status with the new status
-                # TODO: Potentially navigate to a dashboard or thank you page
-                if st.button("Go to My Dashboard", key="post_sub_dashboard_btn"):
+                
+                st.session_state.subscription_status = component_value.get('status', 'active') # Update global status
+                # Clear selections after success
+                del st.session_state["selected_price_id_for_checkout"]
+                del st.session_state["stripe_checkout_result"]
+
+                if st.button("🎉 Go to My Dashboard", key="post_sub_dashboard_btn", type="primary"):
                     st.switch_page("pages/0_App.py")
+                st.stop() # Stop rendering the payment form further on this run
 
             elif component_value.get("error"):
                 st.error(f"Subscription failed: {component_value.get('error')}")
-                # Allow user to try again by re-rendering the component or showing a retry button
                 if st.button("Try Payment Again?", key="retry_payment_btn"):
-                    if "stripe_checkout_result" in st.session_state: # Clear previous error
-                        del st.session_state["stripe_checkout_result"]
+                    del st.session_state["stripe_checkout_result"] # Clear error to allow re-render of component
                     st.rerun()
-
             elif component_value.get("requires_action"):
-                st.warning("Your bank requires additional confirmation for this subscription. Please follow any prompts that appeared from Stripe (e.g., 3D Secure). If successful, your subscription will activate.")
+                st.warning("Your bank requires additional confirmation. Please follow any prompts from Stripe (e.g., 3D Secure). If successful, your subscription will activate.")
             
-            # Offer a way to change plan if payment failed or they want to reconsider
-            if not component_value.get("success"):
-                if st.button("Change Plan / Cancel Payment", key="cancel_payment_btn"):
+            if not component_value.get("success"): # If there was an error or requires_action
+                if st.button("Change Plan / Cancel", key="cancel_payment_btn"):
                     del st.session_state["selected_price_id_for_checkout"]
                     if "stripe_checkout_result" in st.session_state:
                         del st.session_state["stripe_checkout_result"]
                     st.rerun()
 
-
-        # --- Load and Render Stripe Checkout Component HTML ---
-        # Only render if we don't have a fresh success/error message to display
-        # or if the user explicitly wants to retry/change.
-        if not component_value or (component_value and component_value.get("error") and "retry_payment_btn_clicked_state" in st.session_state):
-            # A bit complex state management here for retry, might need refinement.
-            # For simplicity, just always show the component if a plan is selected and no definitive success.
-            if "retry_payment_btn_clicked_state" in st.session_state:
-                del st.session_state["retry_payment_btn_clicked_state"]
-
-
+        # Only render the Stripe component if no result is being displayed OR if user clicked retry
+        if not component_value or (component_value and component_value.get("error")): # Re-show if there's an error
             try:
-                # Ensure this path is correct from the root of where streamlit runs
                 with open("components/stripe_checkout.html", "r") as f:
                     html_template = f.read()
                 
+                # Ensure all VAR_ placeholders are correctly replaced
                 component_html = html_template.replace("VAR_STRIPE_PUBLISHABLE_KEY", STRIPE_PUBLISHABLE_KEY)\
                                               .replace("VAR_FASTAPI_BACKEND_URL", FASTAPI_BACKEND_URL)\
- Please follow the prompts from Stripe if any appear (e.g., for 3D Secure).")
-            
-            # Option to clear result if user wants to try again without full page reload
-            if "stripe_checkout_result" in st.session_state and st.button("Try again with different card/details?", key="clear_stripe_result"):
-                del st.session_state["stripe_checkout_result"]
-                st.rerun()
+                                              .replace("VAR_AUTH_TOKEN", auth_token)\
+                                              .replace("VAR_PRICE_ID", price_id_to_use) 
+                
+                returned_value = st.components.v1.html(component_html, height=450, scrolling=False, key="stripe_checkout_form_active") # Unique key
+                
+                if returned_value:
+                    st.session_state.stripe_checkout_result = returned_value
+                    st.rerun()
 
-        # Load and display the Stripe HTML/JS component
-        try:
-            # Make sure the path to stripe_checkout.html is correct from the perspective of where
-            # `streamlit run` is executed (usually the project root).
-            with open("components/stripe_checkout.html", "r") as f:
-                html_template = f.read()
-            
-            component_html = html_template.replace("VAR_STRIPE_PUBLISHABLE_KEY", STRIPE_PUBLISHABLE_KEY)\
-                                          .replace("VAR_FASTAPI_BACKEND_URL", FASTAPI_BACKEND_URL)\
-                                          .replace("VAR_AUTH_TOKEN", auth_token)\
-                                          .replace("VAR_PRICE_ID", st.session_state.selected_price_id) # Use selected
-            
-            # key="stripe_checkout_result" allows JS to send data back
-            # This component will use the VAR_PRICE_ID set above.
-            # If the user clicks a different plan, this page will rerun,
-            # st.session_state.selected_price_id will update, and the component
-            # will re-render with the new price_id.
-            returned_value = st.components.v1.html(component_html, height=450, scrolling=False, key="stripe_checkout_form")
-            
-            if returned_value: # This is how Streamlit.setComponentValue is received in Python
-                st.session_state.stripe_checkout_result = returned_value
-                # Rerun immediately to process the result at the top of this section
-                # This also helps in clearing the component or showing success/error message cleanly
-                st.rerun()
-
-        except FileNotFoundError:
-            st.error("Critical Error: Stripe payment component (stripe_checkout.html) not found.")
-        except Exception as e:
-            st.error(f"An error occurred loading the payment component: {e}")
+            except FileNotFoundError:
+                st.error("Critical Error: Stripe payment component (stripe_checkout.html) not found. Please ensure 'components/stripe_checkout.html' exists.")
+            except Exception as e:
+                st.error(f"An error occurred loading the payment component: {e}")
     else:
         st.info("Select a plan above to proceed to payment.")
 
-# --- Ensure this function is called to render the page ---
-if __name__ == "__main__": # Allows testing this page directly if needed
+# --- Call the main function for this page ---
+if __name__ == "__main__":
     # Mock session state for direct testing of this page
+    # This part is only for running `streamlit run pages/4_Subscribe.py` directly
     if 'auth_token' not in st.session_state:
-        st.session_state.auth_token = "your_test_jwt_for_subscribe_page_direct_run" # Replace for actual testing
-        st.session_state.user_email = "test_user@example.com"
+        st.session_state.auth_token = "mock_jwt_token_for_subscribe_test" # Replace if needed for direct test
+        st.session_state.user_email = "test@example.com"
     display_subscription_page()
 else:
-    # This is how it will run when navigated to via Streamlit's multi-page app mechanism
+    # This is how Streamlit runs it as part of a multi-page app
     display_subscription_page()
