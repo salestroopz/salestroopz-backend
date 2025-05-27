@@ -89,7 +89,7 @@ def display_subscription_page():
             # Call backend to get Stripe Portal link, then st.link_button or st.markdown flow.
 
 
-**Assumptions:**
+# **Assumptions:**
 
 1.  **FastAPI Backend Ready:** Your `/api/v1/subscriptions/create-subscription` endpoint is implemented, tested (e.g., with Postman), link
         return # Don't show plan selection if already active (or show upgrade options)
