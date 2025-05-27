@@ -91,7 +91,7 @@ def display_subscription_page():
 
 # **Assumptions:**
 
-1.  **FastAPI Backend Ready:** Your `/api/v1/subscriptions/create-subscription` endpoint is implemented, tested (e.g., with Postman), link
+# 1.  **FastAPI Backend Ready:** Your `/api/v1/subscriptions/create-subscription` endpoint is implemented, tested (e.g., with Postman), link
         return # Don't show plan selection if already active (or show upgrade options)
     elif current_sub_status != "Not Subscribed": # e.g., past_due, canceled
         st.warning(f"Your current subscription status: {current_sub_status.replace('_', ' ').capitalize()}")
@@ -109,12 +109,12 @@ def display_subscription_page():
     selected_plan_name_for_checkout = None
 
     for i, plan and working correctly (creates Stripe Customer, Stripe Subscription, adds metered item, saves to your DB, handles SCA).
-2.  **Stripe Setup:**
+# 2.  **Stripe Setup:**
     *   You have your Stripe **Publishable Key** (Test mode).
     *   You have **Price IDs** (Test mode) for your "Launchpad" and "Scale" base plans (e.g., `price_LMNmonthlyBase`, `price_XYZmonthlyBase`).
     *   You have **Price IDs** for your metered "meeting-intent reply" fees for each plan (e.g., `price_LMNmeteredReply`, `price_XYZmeteredReply`).
-3.  **Streamlit Authentication:** `st.session_state.auth_token` is populated after a user logs in.
-4.  **File Structure:** You have:
+#3.  **Streamlit Authentication:** `st.session_state.auth_token` is populated after a user logs in.
+# 4.  **File Structure:** You have:
     *   `pages/4_Subscribe.py`
     *   `components/stripe_checkout.html`
 
