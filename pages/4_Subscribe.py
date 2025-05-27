@@ -88,7 +88,6 @@ def display_subscription_page():
         # if st.button("Manage Subscription"):
             # Call backend to get Stripe Portal link, then st.link_button or st.markdown flow.
 
-We'll build upon the conceptual `pages/4_Subscribe.py` and `components/stripe_checkout.html` structure we discussed earlier.
 
 **Assumptions:**
 
