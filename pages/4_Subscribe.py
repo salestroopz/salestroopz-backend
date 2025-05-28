@@ -7,7 +7,7 @@ import time
 # For Render, environment variables are the primary way.
 # os.getenv("ENV_VAR_NAME_ON_RENDER", "fallback_if_not_set")
 
-FASTAPI_BACKEND_URL = os.getenv("FASTAPI_BACKEND_URL")
+FASTAPI_BACKEND_URL = os.getenv("BACKEND_API_URL")
 STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY")
 
 # Check if the essential variables were loaded from environment
