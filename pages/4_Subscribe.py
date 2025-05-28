@@ -150,7 +150,7 @@ def display_subscription_page():
                     st.error("Stripe or Backend URL is not configured. Payment form cannot be loaded.")
                 else:
                     component_html = html_template.replace("VAR_STRIPE_PUBLISHABLE_KEY", STRIPE_PUBLISHABLE_KEY)\
-                                                  .replace("VAR_FASTAPI_BACKEND_URL", FASTAPI_BACKEND_URL)\
+                                                  .replace("VAR_BACKEND_API_URL",BACKEND_API_URL)\
                                                   .replace("VAR_AUTH_TOKEN", auth_token)\
                                                   .replace("VAR_PRICE_ID", price_id_to_use) 
                     
