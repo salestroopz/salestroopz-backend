@@ -4,27 +4,23 @@ import os
 import time
 
 # --- Configuration ---
-# For Render, environment variables are the primary way.
-# os.getenv("ENV_VAR_NAME_ON_RENDER", "fallback_if_not_set")
-
-FASTAPI_BACKEND_URL = os.getenv("BACKEND_API_URL")
+# Ensure the environment variable name here matches what's set on Render.
+# If Render has "BACKEND_API_URL", then os.getenv("BACKEND_API_URL") is correct.
+# The Python variable we store it in will be FASTAPI_BACKEND_URL.
+FASTAPI_BACKEND_URL = os.getenv("BACKEND_API_URL") # Assuming Render env var is BACKEND_API_URL
 STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY")
 
 # Check if the essential variables were loaded from environment
 if not FASTAPI_BACKEND_URL:
-    st.error("FATAL ERROR: FASTAPI_BACKEND_URL environment variable is not set in the deployment environment.", icon="🚨")
-    # For local development convenience ONLY, you might add a fallback here,
-    # but the error above should alert you if it's missing in deployment.
-    # FASTAPI_BACKEND_URL = "http://localhost:8000" # Example local fallback
-    st.stop() # Stop the app if critical config is missing in deployment
+    st.error("FATAL ERROR: BACKEND_API_URL (or your chosen name) environment variable is not set in the deployment environment.", icon="🚨")
+    st.stop() 
 
 if not STRIPE_PUBLISHABLE_KEY:
     st.error("FATAL ERROR: STRIPE_PUBLISHABLE_KEY environment variable is not set in the deployment environment.", icon="🚨")
-    # STRIPE_PUBLISHABLE_KEY = "pk_test_YOUR_FALLBACK_KEY_FOR_LOCAL_DEV_ONLY" # Example local fallback
-    st.stop() # Stop the app
+    st.stop()
 
-# Optional: Log that the values were loaded (Streamlit typically prints to console, visible in Render logs)
-print(f"INFO (4_Subscribe.py): FASTAPI_BACKEND_URL set to: {BACKEND_API_URL}")
+# Corrected print statement:
+print(f"INFO (4_Subscribe.py): FASTAPI_BACKEND_URL set to: {FASTAPI_BACKEND_URL}") # <--- CORRECTED
 print(f"INFO (4_Subscribe.py): STRIPE_PUBLISHABLE_KEY set to: {STRIPE_PUBLISHABLE_KEY[:15]}...")
 
 
@@ -67,10 +63,10 @@ def display_subscription_page():
         st.warning("Please log in or sign up to subscribe to a plan.")
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("Go to Login", key="sub_page_login_btn_alt", use_container_width=True): # Ensure unique key
+            if st.button("Go to Login", key="sub_page_login_btn_alt_v2", use_container_width=True): # Ensure unique key
                 st.switch_page("pages/1_Login.py")
         with col2:
-            if st.button("Go to Sign Up", key="sub_page_signup_btn_alt", use_container_width=True): # Ensure unique key
+            if st.button("Go to Sign Up", key="sub_page_signup_btn_alt_v2", use_container_width=True): # Ensure unique key
                 st.switch_page("pages/2_Signup.py")
         return
 
@@ -118,14 +114,14 @@ def display_subscription_page():
                      st.write(f"Your Stripe Subscription ID: {component_value.get('subscription_id')}")
                 st.session_state.subscription_status = component_value.get('status', 'active')
                 del st.session_state["selected_price_id_for_checkout"]
-                if "stripe_checkout_result" in st.session_state: # Check before deleting
+                if "stripe_checkout_result" in st.session_state: 
                     del st.session_state["stripe_checkout_result"]
-                if st.button("🎉 Go to My Dashboard", key="post_sub_dashboard_btn_unique", type="primary"): # Ensure unique key
+                if st.button("🎉 Go to My Dashboard", key="post_sub_dashboard_btn_unique_v2", type="primary"): 
                     st.switch_page("pages/0_App.py")
                 st.stop()
             elif component_value.get("error"):
                 st.error(f"Subscription failed: {component_value.get('error')}")
-                if st.button("Try Payment Again?", key="retry_payment_btn_unique"): # Ensure unique key
+                if st.button("Try Payment Again?", key="retry_payment_btn_unique_v2"): 
                     if "stripe_checkout_result" in st.session_state:
                         del st.session_state["stripe_checkout_result"]
                     st.rerun()
@@ -133,7 +129,7 @@ def display_subscription_page():
                 st.warning("Your bank requires additional confirmation. Please follow prompts from Stripe.")
             
             if not component_value.get("success"):
-                if st.button("Change Plan / Cancel", key="cancel_payment_btn_unique"): # Ensure unique key
+                if st.button("Change Plan / Cancel", key="cancel_payment_btn_unique_v2"): 
                     if "selected_price_id_for_checkout" in st.session_state:
                         del st.session_state["selected_price_id_for_checkout"]
                     if "stripe_checkout_result" in st.session_state:
@@ -145,16 +141,15 @@ def display_subscription_page():
                 with open("components/stripe_checkout.html", "r") as f:
                     html_template = f.read()
                 
-                # Ensure STRIPE_PUBLISHABLE_KEY and FASTAPI_BACKEND_URL are valid strings
-                if not STRIPE_PUBLISHABLE_KEY or not FASTAPI_BACKEND_URL:
+                if not STRIPE_PUBLISHABLE_KEY or not FASTAPI_BACKEND_URL: # Check the variables that hold the values
                     st.error("Stripe or Backend URL is not configured. Payment form cannot be loaded.")
                 else:
                     component_html = html_template.replace("VAR_STRIPE_PUBLISHABLE_KEY", STRIPE_PUBLISHABLE_KEY)\
-                                                  .replace("VAR_BACKEND_API_URL",BACKEND_API_URL)\
+                                                  .replace("VAR_FASTAPI_BACKEND_URL", FASTAPI_BACKEND_URL)\ # <--- CORRECTED
                                                   .replace("VAR_AUTH_TOKEN", auth_token)\
                                                   .replace("VAR_PRICE_ID", price_id_to_use) 
                     
-                    returned_value = st.components.v1.html(component_html, height=450, scrolling=False, key="stripe_checkout_form_active_subscribe") # Unique key
+                    returned_value = st.components.v1.html(component_html, height=450, scrolling=False, key="stripe_checkout_form_active_subscribe_v2") # Ensure unique key
                     
                     if returned_value:
                         st.session_state.stripe_checkout_result = returned_value
