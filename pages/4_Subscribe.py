@@ -24,7 +24,7 @@ if not STRIPE_PUBLISHABLE_KEY:
     st.stop() # Stop the app
 
 # Optional: Log that the values were loaded (Streamlit typically prints to console, visible in Render logs)
-print(f"INFO (4_Subscribe.py): FASTAPI_BACKEND_URL set to: {FASTAPI_BACKEND_URL}")
+print(f"INFO (4_Subscribe.py): FASTAPI_BACKEND_URL set to: {BACKEND_API_URL}")
 print(f"INFO (4_Subscribe.py): STRIPE_PUBLISHABLE_KEY set to: {STRIPE_PUBLISHABLE_KEY[:15]}...")
 
 
