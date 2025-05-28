@@ -141,15 +141,17 @@ def display_subscription_page():
                 with open("components/stripe_checkout.html", "r") as f:
                     html_template = f.read()
                 
-                if not STRIPE_PUBLISHABLE_KEY or not FASTAPI_BACKEND_URL: # Check the variables that hold the values
+                if not STRIPE_PUBLISHABLE_KEY or not FASTAPI_BACKEND_URL:
                     st.error("Stripe or Backend URL is not configured. Payment form cannot be loaded.")
                 else:
+                    # Comment explaining the correction can go BEFORE the line
+                    # This line now correctly uses FASTAPI_BACKEND_URL variable
                     component_html = html_template.replace("VAR_STRIPE_PUBLISHABLE_KEY", STRIPE_PUBLISHABLE_KEY)\
-                                                  .replace("VAR_FASTAPI_BACKEND_URL", FASTAPI_BACKEND_URL)\ 
+                                                  .replace("VAR_FASTAPI_BACKEND_URL", FASTAPI_BACKEND_URL)\
                                                   .replace("VAR_AUTH_TOKEN", auth_token)\
                                                   .replace("VAR_PRICE_ID", price_id_to_use) 
                     
-                    returned_value = st.components.v1.html(component_html, height=450, scrolling=False, key="stripe_checkout_form_active_subscribe_v2") # Ensure unique key
+                    returned_value = st.components.v1.html(component_html, height=450, scrolling=False, key="stripe_checkout_form_active_subscribe_v2")
                     
                     if returned_value:
                         st.session_state.stripe_checkout_result = returned_value
