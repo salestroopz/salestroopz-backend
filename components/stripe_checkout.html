@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Stripe Checkout Component</title>
+    <script src="https://js.stripe.com/v3/"></script>
+    <style>
+        /* Basic styling - feel free to customize */
+        body {
+            font-family: -apple-system,: 0;
+            box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25);
+        }
+        #card-errors {
+            color: rgb(220, 53, 69); /* Bootstrap danger color */
+            font-size: 0.875rem;
+            margin-top: 8px;
+        }
+        button BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI#submit-button {
+            background-color: #007bff; /* Streamlit primary button color */
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            font-size: 1rem;
+            font-weight: 500; Emoji";
+            margin: 0;
+            padding: 15px;
+            background-color: #f8f9fa; /* Light background for the component itself */
+        }
+        #payment-form {
+            width: 100%;
+            max-width: 500px; /* Max width for the form */
+            margin: 0 auto;
+        }
+        .form-row {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom
+            cursor: pointer;
+            margin-top: 20px;
+            width: 100%;: 6px;
+            color: #333;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+        #card-element {
+            border: 1px solid #ced4da;
+            padding: 12px;
+            border-radius: 
+            transition: background-color 0.2s ease-in-out;
+        }
+        button#submit-button:disabled {
+            background-color: #6c757d; /* Bootstrap secondary/disabled color */
+            cursor: not-allowed;
+        }
+        button#submit-button:hover:not(:disabled) {
+            background-color: #0056b3;
+        }
+        .hidden {
+            display: none;
+        }
+        #spinner {
+            border: 4px solid #4px;
+            background-color: white;
+            box-shadow: inset 0 1px 2f3f3f3; /* Light grey */
+            border-top: 4px solid #007bff; /* Blue */
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;px rgba(0,0,0,.075);
+        }
+        #card-element--focus {
+            border-color: #80bdff;
+            box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25);
+        }
+        #card-errors {
+            color: #dc3545; /* Bootstrap danger color */
+            font-size: 0.875rem;
+            margin-top: 8px;
+            min-height:
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head> 1.2em; /* Reserve space to avoid layout shifts */
+        }
+        #submit-button {
+            background-color: #007bff; /* Bootstrap primary color */
+            color: white;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 4px;
+            font-size: 1rem;
+            font-weight: 500;
+
+<body>
+    <form id="payment-form">
+        <div class="form-row">
+            <label for="card-element">
+                Enter Card Details
+            </label>
+            <div id="card-element">
+                <!-- A Stripe Element will be inserted here. -->
+            </div>
+            <!-- Used to display form errors. -->
+            <div id="card-errors" role="alert"></div>
+        </div>
+
+        <button id="submit-button">Pay & Subscribe</button>
+        <div id="spinner" class="hidden"></div>
+    </form>
+
+    <script>
+        // These placeholders will be replaced by Streamlit Python
+        const stripePublishableKey = "VAR_STRIPE_PUBLISHABLE_KEY";
+        const fastapi            cursor: pointer;
+            margin-top: 20px;
+            width: 100%;
+            transition: background-color 0.15s ease-in-out;
+        }
+BackendUrl    = "VAR_FASTAPI_BACKEND_URL"; // Ensure this matches the Python replace call
+        const authToken            = "VAR_AUTH_TOKEN";
+        const selectedPriceId      = "VAR_PRICE_ID";
+
+        // --- Debugging: Log received variables ---
+        console.log("Stripe Component Loaded. Publishable Key:", stripePublishableKey);
+        console.log("Backend URL:", fastapiBackendUrl);
+        console.log("Price ID:", selected        #submit-button:disabled {
+            background-color: #6c757d; /* Bootstrap secondary/disabled color */
+            cursor: not-allowed;
+        }
+        #submit-button:hover:not(:disabled) {
+            background-color: #0056b3;
+        }
+        .hidden {
+            display: none;
+        }
+        #spinner {
+            border: 4px solid #f3f3f3; /* Light grey */
+            border-top: 4px solid #007bff; /* Blue */
+            border-radius: 50%;
+            width: 24px;
+            PriceId);
+        // console.log("Auth Token:", authToken); // Be careful logging auth tokens in browser console forheight: 24px;
+            animation: spin 1s linear infinite;
+            margin: 10px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <form id="payment-form">
+        <div class="form- production
+
+        const stripe = Stripe(stripePublishableKey);
+        const elements = stripe.elements();
+        const cardElement = elements.create('card', {
+            // You can customize the style of the Card Element here
+            // See: https://stripe.com/docs/js/elements_object/create_element?type=card#row">
+            <label for="card-element">
+                Card Details
+            </label>
+            <div id="card-element">
+                <!-- A Stripe Element will be inserted here. -->
+            </div>
+            <!-- Used to display form errors. -->
+            <div id="card-errors" role="alert"></div>
+        </div>
+        <button id="submit-button">Pay & Subscribe</button>
+        <div id="spinner" classelements_create-options-style
+            style: {
+                base: {
+                    iconColor: '#666EE8',
+                    color: '#31325F',
+                    fontWeight: '400',
+                    fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif',
+                    fontSize: '16px',
+                    '::placeholder': {
+                        color: '#CFD7E0',
+                    },
+                },
+            }
+        });
+        cardElement.mount('#card-element');
+
+        const form = document.getElementById('payment-form');
+        const cardErrorsDiv = document.getElementById('card-errors');
+        const submitButton = document.getElementById('submit-button');
+        const spinner = document.getElementById('spinner');
+
+        card="hidden"></div>
+    </form>
+
+    <script>
+        // These VAR_ placeholders will be replaced by Streamlit Python
+        const stripePublishableKey = "VAR_STRIPE_PUBLISHABLE_KEY";
+        const fastapiBackendUrl = "VAR_FASTAPI_BACKEND_URL"; // Renamed placeholder for clarity
+        const authToken = "VAR_AUTH_TOKEN";
+        const selectedPriceId = "VAR_PRICE_ID";
+
+        // Debugging: Log received variables
+        console.log("Stripe Component Loaded. PK:", stripePublishableKey, "Backend:", fastapiBackendUrl, "PriceID:", selectedPriceId);
+        // console.log("AuthElement.on('change', function(event) {
+            submitButton.disabled = event.empty || event.error; // Disable button if field is empty or has error
+            if (event.error) {
+                cardErrorsDiv.textContent = event.error.message;
+            } else {
+                cardErrorsDiv.textContent = '';
+             Token (first 10 chars):", authToken ? authToken.substring(0, 10) : "Not Provided");
+
+
+        const stripe = Stripe(stripePublishableKey);
+        const elements = stripe.elements();
+        const cardElement = elements.create('card', {
+            // Add any style customization for the CardElement here
+            //}
+        });
+        submitButton.disabled = true; // Initially disabled until card element has valid input
+
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            submitButton.disabled = true;
+            spinner.classList.remove('hidden');
+            cardErrorsDiv.textContent = ''; // Clear previous errors
+
+            const { error, paymentMethod } = await stripe.createPaymentMethod({
+                type: 'card',
+                card: cardElement,
+                // You can add billing_details here if needed, e.g.,
+                // billing_details: {
+                //   name: 'Jenny Rosen', // Collect from another form field See: https://stripe.com/docs/js/elements_object/create_element?type=card# if necessary
+                //   email: 'jenny.rosen@example.com'
+                // }
+            });
+
+            if (error) {
+                console.error('Stripe createPaymentMethod error:', error);
+                cardErrorsDiv.textContent = error.message;
+                submitButton.disabled = false; // Re-enable button
+                spinner.classList.add('hidden');
+                Streamlit.setComponentValue({ error: error.message }); // Send error back to Streamlit
+                return;
+            }
+
+            // console.log('PaymentMethod created:', paymentMethod);
+elements_create-options-style
+            style: {
+                base: {
+                    iconColor: '#666EE8',
+                    color: '#31325F',
+                    fontWeight: '400',
+                    fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif',
+                    fontSize: '16px',
+                    '::placeholder': {
+                        color: '#CFD7E0',
+                    },
+                },
+            }
+        });
+        cardElement.mount('#card-element');
+
+        const form = document.getElementById('payment-form');
+        const cardErrorsDiv = document.getElementById('card-errors');
+        const submitButton = document.getElementById('submit-button');
+        const spinner = document.getElementById('spinner');
+
+        cardElement.on('change', function(event) {
+            submitButton.disabled = event.empty || event.invalid            // Send paymentMethod.id and selectedPriceId to your backend
+            try {
+                const response = await fetch(`${fastapiBackendUrl}/api/v1/subscriptions/create-subscription`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer; // Disable button if input is empty or invalid
+            if (event.error) {
+                cardErrorsDiv.textContent = event.error.message;
+            } else {
+                cardErrorsDiv.textContent = '';
+            }
+        });
+
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            submitButton.disabled = true;
+            spinner.classList.remove('hidden');
+            cardErrorsDiv.textContent = ''; // Clear previous errors
+
+            // Step 1: Create PaymentMethod with Stripe.js
+            const { error, paymentMethod } = await stripe.createPaymentMethod({
+                type: 'card',
+                card ${authToken}`
+                    },
+                    body: JSON.stringify({
+                        payment_method_id: paymentMethod.id,
+                        price_id: selectedPriceId
+                    })
+                });
+
+                const responseData = await response.json();
+                console.log("Backend Response:", responseData);
+
+                if (!response.ok) { // Handles 4xx, 5xx errors from backend
+                    const errorMsg = responseData.detail || `Server error: ${response.status}`;
+                    console.error('Backend error:', errorMsg);
+                    cardErrorsDiv.textContent = errorMsg;
+                    Streamlit.: cardElement,
+                // You can add billing_details here if you collect them on this form
+                // billing_details: { name: 'Jenny Rosen', email: 'jenny.rosen@example.com' }
+            });
+
+            if (error) {
+                console.error('Stripe createPaymentMethod error:', error);
+                cardErrorsDiv.textContent = error.message;
+                submitButton.disabled = false;
+                spinner.classList.add('hidden');
+                Streamlit.setComponentValue({ error: error.message }); // Send error back to Streamlit
+                return;
+            }
+
+            // Step 2: Send PaymentMethod ID and Price ID to your backendsetComponentValue({ error: errorMsg, status: responseData.status });
+                } else {
+                    // Handle SCA (Strong Customer Authentication) if needed
+                    if (responseData.client_secret && 
+                        (responseData.status === 'incomplete' || responseData.status === 'requires_action' || 
+                         (responseData.status === 'trialing' && responseData.client_secret.startsWith('seti_')) ) ) {
+                        
+                        cardErrorsDiv.textContent = 'Subscription requires further authentication. Confirming...';
+                        console.log("SCA Required. Client Secret:", responseData.client_secret);
+                        
+                        let confirmationResult;
+                        if (responseData.client_secret.
+            try {
+                const response = await fetch(`${fastapiBackendUrl}/api/v1/subscriptions/create-subscription`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({
+                        payment_method_id: paymentMethod.id,
+                        price_id: selectedPriceId
+                    })
+                });
+
+                const responseData = await response.json();
+
+                if (!response.ok) { // Handle HTTP errors from your backend (4xx, 5xx)
+                    console.error('Backend error response:', responseData);
+                    const errorMsg = responseData.detail || `Server error: ${response.status}`;
+startsWith('pi_')) { // PaymentIntent client secret
+                             confirmationResult = await stripe.confirmCardPayment(responseData.client_secret);
+                        } else if (responseData.client_secret.startsWith('seti_')) { // SetupIntent client secret (for trials needing setup)
+                             confirmationResult = await stripe.confirmCardSetup(responseData.client_secret);
+                        } else {
+                            const unknownSecretError = 'Error: Unknown client_secret type returned from backend.';
+                            console.error(unknownSecretError);
+                            cardErrorsDiv.textContent = unknownSecretError;
+                            Streamlit.setComponentValue({ error: unknownSecretError });
+                            return; // Exit early
+                        }
+
+                    cardErrorsDiv.textContent = errorMsg;
+                    Streamlit.setComponentValue({ error: errorMsg });
+                } else {
+                    // Backend call was successful (e.g., 200 or 201)
+                    // Now check if SCA (3D Secure) is required
+                    if (responseData.client_secret && 
+                        (responseData.status === 'incomplete' || responseData.status === 'requires_action' || (responseData.status === 'trialing' && responseData.client_secret.startsWith('seti_')))) {
+                        
+                        cardErrorsDiv.textContent = 'Subscription requires further confirmation. Please follow the prompts from your bank...';
+                        
+                        let confirmationResult                        if (confirmationResult.error) {
+                            console.error('Stripe SCA confirmation error:', confirmationResult.error);
+                            cardErrorsDiv.textContent = confirmationResult.error.message;
+                            Streamlit.setComponentValue({ error: `Payment confirmation failed: ${confirmationResult.error.message}` });
+                        } else {
+                            // Check status of paymentIntent or setupIntent
+                            let finalStripeObject = confirmationResult.paymentIntent || confirmationResult.setupIntent;
+                            console.log("SCA Confirmation Result Object:", finalStripeObject);
+                            if (finalStripeObject.status === 'succeeded' || finalStripeObject.status === 'requires_capture') {
+                                Streamlit.setComponentValue({ 
+                                    success: true, 
+                                    status: 'active', // Assume;
+                        // Determine if it's a PaymentIntent or SetupIntent client_secret
+                        if (responseData.client_secret.startsWith('pi_')) {
+                             confirmationResult = await stripe.confirmCardPayment(responseData.client_secret);
+                        } else if (responseData.client_secret.startsWith('seti_')) {
+                             confirmationResult = await stripe.confirmCardSetup(responseData.client_secret);
+                        } else {
+                            const unknownSecretError = 'Error: Unknown client_secret type received from backend.';
+                            cardErrorsDiv.textContent = unknownSecretError;
+                            Streamlit.setComponentValue({ error: unknownSecretError});
+                            submitButton.disabled = false; // Re active after successful confirmation
+                                    subscription_id: responseData.subscription_id 
+                                });
+                            } else {
+                                Streamlit.setComponentValue({ error: `Payment confirmation status: ${finalStripeObject.status}` });
+                            }
+                        }
+                    } else if (responseData.status === 'active' || responseData.status === 'trialing') {
+                         // Direct success or trial started without immediate SCA
+                         Streamlit.setComponentValue({ 
+                             success: true, 
+                             status: responseData.status,
+                             subscription_id: responseData.subscription_id 
+                         });
+                    } else {
+                        // Other backend success statuses that might not be 'active' yet but aren't errors
+                         Streamlit.setComponentValue({ 
+                             success: true, // Consider if this is always true
+                             status: responseData.status,
+                             subscription_id: response-enable button on this specific error
+                            spinner.classList.add('hidden');
+                            return;
+                        }
+
+                        if (confirmationResult.error) {
+                            console.error('Stripe confirmation error:', confirmationResult.error);
+                            cardErrorsDiv.textContent = confirmationResult.error.message;
+                            Streamlit.setComponentValue({ error: `Confirmation failed: ${confirmationResult.error.message}` });
+                        } else {
+                            // Check the status of the PaymentIntent or SetupIntent after confirmation
+                            let finalIntentStatus = confirmationResult.paymentIntent?.status || confirmationResult.setupIntent?.status;
+                            if (finalIntentStatus === 'succeeded' || finalIntentStatus === 'requires_capture') { // 'requires_capture' is also success for some payment methods
+                                Streamlit.setData.subscription_id,
+                             message: `Subscription status: ${responseData.status}` // Or some other info
+                         });
+                    }
+                }
+            } catch (networkError) {
+                console.error('Network or fetch error:', networkError);
+                cardErrorsDiv.textContent = `Network Error: ${networkError.message}. Ensure backend is reachable.`;
+                Streamlit.setComponentValue({ error: `Network Error: ${networkError.message}` });ComponentValue({ 
+                                    success: true, 
+                                    status: 'active', // Assume active; backend webhook should confirm actual Stripe sub status
+                                    subscription_id: responseData.subscription_id 
+                                });
+                            } else {
+                                Streamlit.setComponentValue({ error: `Payment confirmation status: ${finalIntentStatus}` });
+                            }
+                        }
+                    } else if (responseData.status === 'active' || responseData.status === 'trialing') {
+                         // Directly active or trialing without SCA
+                         Streamlit.setComponentValue
+            } finally {
+                submitButton.disabled = false; // Re-enable button unless successful and navigated away
+                spinner.classList.add('hidden');
+            }
+        });
+
+        // Inform Streamlit that the component has loaded and allow it to adjust iframe height.
+        // This should be called after your elements are mounted and ready.
+        // It's good practice to call it once the main setup is done.
+        Streamlit.setFrameHeight(); 
+    </script>
+</body>
+</html>
