@@ -151,7 +151,7 @@ def display_subscription_page():
                                                   .replace("VAR_AUTH_TOKEN", auth_token)\
                                                   .replace("VAR_PRICE_ID", price_id_to_use) 
                     
-                    returned_value = st.components.v1.html(component_html, height=450, scrolling=False, key="stripe_checkout_form_active_subscribe_v2")
+                    returned_value = st.components.v1.html(component_html, height=450, scrolling=False)
                     
                     if returned_value:
                         st.session_state.stripe_checkout_result = returned_value
