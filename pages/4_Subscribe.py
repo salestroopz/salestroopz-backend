@@ -106,7 +106,7 @@ def display_subscription_page():
         st.caption("Please enter your card details below. Securely processed by Stripe.")
 
         component_value = st.session_state.get("stripe_checkout_result")
-        if component_value:
+        if component_value and isinstance(component_value, dict):
             if component_value.get("success"):
                 st.success(f"Subscription to {plan_name_to_use} successful! Status: {component_value.get('status', 'N/A')}")
                 st.balloons()
