@@ -48,4 +48,4 @@ EXPOSE 8080
 #    - Uses --server.address=0.0.0.0 to listen on all available network interfaces within the container.
 #    - Uses --server.headless=true which is essential for running in a server environment.
 #    *** IMPORTANT: Replace 'streamlit_app.py' if your main script has a different name! ***
-CMD ["streamlit", "run", "streamlit_app.py", "--server.port", "$PORT", "--server.address", "0.0.0.0", "--server.headless=true"]
+CMD streamlit run streamlit_app.py --server.port $PORT --server.address 0.0.0.0 --server.headless=true
