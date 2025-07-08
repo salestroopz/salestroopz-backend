@@ -1,6 +1,6 @@
 [theme]
 primaryColor = "#2563EB"
-backgroundColor = "#F9FAFB" 
+backgroundColor = "#F9FAFB"
 secondaryBackgroundColor = "#FFFFFF"
 textColor = "#1F2937"
 font = "sans serif"
@@ -9,8 +9,8 @@ font = "sans serif"
 port = 8080
 address = "0.0.0.0"
 headless = true
-enableCORS = true  # Must be true when enableXsrfProtection=true
-enableXsrfProtection = true  # Security feature
+enableCORS = false
+enableXsrfProtection = false
 
 [browser]
 serverAddress = "0.0.0.0"
